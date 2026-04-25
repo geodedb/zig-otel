@@ -25,6 +25,8 @@ optional sections are listed under "Limitations" with a short rationale.
 | Status: setStatus(Ok) drops description                | `src/api/trace.zig: setStatus`    | covered by `test/trace.zig` end-to-end |
 | Span.recordException records canonical attributes      | `src/api/trace.zig: recordException` | unit-tested via `test {}` block |
 | Span.addEvent gated behind build flag                  | `src/api/trace.zig: addEvent`     | compile-time check |
+| SimpleSpanProcessor (synchronous on-end export)        | `src/sdk/export.zig: SimpleSpanProcessor` | covered by exporter end-to-end tests |
+| BatchSpanProcessor (queued export with worker dispatch) | `src/sdk/export.zig: BatchSpanProcessor` | synchronous-drain default exercised by `test/trace.zig` + `test/otlp.zig`; the off-producer worker variant is gated on `BatchSpanProcessorOptions.async_workers > 0` and DevNW `-Dotel_use_devnw_pool=true`, exercised by `test/batch_async.zig` |
 
 ## Propagation
 
@@ -128,10 +130,6 @@ optional sections are listed under "Limitations" with a short rationale.
   Zig-0.16 stdlib underflow when the additional-buffers slice is empty
   — see `docs/DEPENDENCIES.md` (gRPC row) for the full rationale and
   `test/grpc_loopback.zig` for the round-trip acceptance test.
-- **BatchSpanProcessor**: ships in synchronous-drain form. The 0.16
-  `std.Io` API moved background coordination behind an `Io` instance; once
-  the SDK accepts an `Io` (planned), the worker-thread variant returns
-  with the original sub-second flush cadence.
 - **YAML parser**: covers the OTel declarative-config 1.0.0 mappings
   required by `tracer_provider`, `meter_provider`, `logger_provider`, and
   the top-level scalars (`disabled`, `log_level`, `file_format`). Anchors,

@@ -13,6 +13,13 @@ const metrics_api = @import("../api/metrics.zig");
 const logs_api = @import("../api/logs.zig");
 const attrs_mod = @import("../internal/attributes.zig");
 const Resource = @import("resource.zig").Resource;
+const build_options = @import("build_options");
+
+// Comptime-conditional thread-pool import. Mirrors the slog/metrics
+// pattern: when the build flag is off the alias is an empty struct so
+// every reference in this file is gated behind the same `if` check and
+// dead-code-eliminated.
+const tp = if (build_options.use_devnw_pool) @import("thread_pool") else struct {};
 
 // ---------------------------------------------------------------- Span export
 
@@ -133,6 +140,29 @@ pub const BatchSpanProcessorOptions = struct {
     max_queue_size: usize = 2048,
     max_export_batch_size: usize = 512,
     schedule_delay_ms: u64 = 5_000,
+    /// 0 keeps the synchronous drain. >0 spawns a DevNW thread-pool with
+    /// the given worker count when `-Dotel_use_devnw_pool=true`. The
+    /// option is silently ignored (synchronous drain stays in effect)
+    /// when the build flag is off so callers can set it unconditionally.
+    async_workers: u32 = 0,
+};
+
+/// Optional thread-pool handle. Only present when
+/// `build_options.use_devnw_pool == true` and `options.async_workers > 0`.
+/// The conditional type keeps the `?*tp.ThreadPool` field absent (well,
+/// `?*void`-sized) in builds compiled with the flag off so the
+/// synchronous-drain hot path is untouched.
+const PoolHandle = if (build_options.use_devnw_pool) ?*tp.ThreadPool else ?*void;
+
+/// Queue mutex. With the pool active, both producer threads (`onEnd`)
+/// and worker drain tasks touch the queue; without the pool, only the
+/// producer thread does, so a no-op mutex saves the futex traffic. The
+/// thread-pool's `sync.Mutex` wraps `std.Io.Mutex` with the legacy
+/// zero-arg API so we don't have to plumb an `io` through the
+/// processor surface.
+const QueueMutex = if (build_options.use_devnw_pool) tp.sync.Mutex else struct {
+    pub fn lock(_: *@This()) void {}
+    pub fn unlock(_: *@This()) void {}
 };
 
 pub const BatchSpanProcessor = struct {
@@ -141,10 +171,30 @@ pub const BatchSpanProcessor = struct {
     resource_ref: *const Resource,
     options: BatchSpanProcessorOptions,
     queue: std.ArrayList(*trace_api.SpanState),
+    /// Guards `queue` + `dropped` when the async worker is enabled.
+    /// Becomes a zero-cost no-op stub when the pool flag is off (only
+    /// the producer thread touches the queue in that mode).
+    mutex: QueueMutex = .{},
+    /// Serializes exporter invocations across drain tasks. Many
+    /// downstream `SpanExporter` impls (the in-memory recorder, the
+    /// stdout JSON writer, the OTLP/HTTP path) are not thread-safe, and
+    /// the spec only requires that batch ordering be preserved per
+    /// export call — concurrent exports would also break per-attempt
+    /// retry accounting. The mutex is uncontended in single-worker
+    /// configurations and only guards the cross-thread fan-out case.
+    export_mutex: QueueMutex = .{},
+    /// In-flight drain tasks. Incremented on submit, decremented at the
+    /// tail of every worker drain. `forceFlush` busy-polls this and the
+    /// queue length until both reach zero (bounded by the timeout).
+    pending_tasks: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
     dropped: u32 = 0,
+    /// Active iff `build_options.use_devnw_pool` *and*
+    /// `options.async_workers > 0`. Owned and torn down by `deinit`.
+    pool: PoolHandle = null,
 
     pub fn init(allocator: std.mem.Allocator, exporter: SpanExporter, resource_ref: *const Resource, options: BatchSpanProcessorOptions) !*BatchSpanProcessor {
         const self = try allocator.create(BatchSpanProcessor);
+        errdefer allocator.destroy(self);
         self.* = .{
             .allocator = allocator,
             .exporter = exporter,
@@ -152,10 +202,41 @@ pub const BatchSpanProcessor = struct {
             .options = options,
             .queue = .empty,
         };
+        if (build_options.use_devnw_pool) {
+            if (options.async_workers > 0) {
+                const pool = try allocator.create(tp.ThreadPool);
+                errdefer allocator.destroy(pool);
+                // Configure a small pool sized to the caller's
+                // `async_workers`. `default_backpressure = .block` makes
+                // `submit()` wait on a full queue rather than dropping
+                // spans on the producer side; the bounded-queue contract
+                // (`max_queue_size`) is still enforced before we enqueue
+                // a drain task, so the producer never blocks past one
+                // task scheduling latency under steady-state load.
+                pool.* = try tp.ThreadPool.init(allocator, .{
+                    .max_threads = options.async_workers,
+                    .min_threads = options.async_workers,
+                    .queue_capacity = 1024,
+                    .default_backpressure = .block,
+                });
+                self.pool = pool;
+            }
+        }
         return self;
     }
 
     pub fn deinit(self: *BatchSpanProcessor) void {
+        // Tear down the pool first so no in-flight drain task can race
+        // with the queue cleanup below. `.drain` waits for queued and
+        // executing tasks; the timeout is a safety net.
+        if (build_options.use_devnw_pool) {
+            if (self.pool) |pool| {
+                pool.shutdown(.drain, 5_000_000_000) catch {};
+                pool.deinit();
+                self.allocator.destroy(pool);
+                self.pool = null;
+            }
+        }
         for (self.queue.items) |s| s.deinit();
         self.queue.deinit(self.allocator);
         self.allocator.destroy(self);
@@ -165,7 +246,9 @@ pub const BatchSpanProcessor = struct {
         return .{ .ctx = self, .onEndFn = batchOnEnd, .forceFlushFn = batchForceFlush, .shutdownFn = batchShutdown };
     }
 
-    fn drain(self: *BatchSpanProcessor) ![]*trace_api.SpanState {
+    /// Pop up to `max_export_batch_size` spans from the queue. Caller
+    /// must hold `self.mutex`.
+    fn drainLocked(self: *BatchSpanProcessor) ![]*trace_api.SpanState {
         const n = @min(self.queue.items.len, self.options.max_export_batch_size);
         if (n == 0) return &[_]*trace_api.SpanState{};
         const out = try self.allocator.alloc(*trace_api.SpanState, n);
@@ -202,44 +285,152 @@ pub const BatchSpanProcessor = struct {
                 .dropped_attributes_count = span.attributes.dropped,
             };
         }
+        // Serialize the exporter call so two worker threads can't
+        // simultaneously mutate a non-thread-safe `SpanExporter` (the
+        // in-memory recorder, OTLP/HTTP, etc.). The lock is a no-op
+        // when the pool flag is off — the producer thread is the only
+        // caller in that mode.
+        self.export_mutex.lock();
         _ = self.exporter.exportSpans(datas) catch {};
+        self.export_mutex.unlock();
         for (batch) |s| s.deinit();
     }
 };
 
+/// Async-path helpers, lazily compiled. Referenced exclusively from
+/// inside `if (build_options.use_devnw_pool)` blocks below; with the
+/// flag off the namespace is empty and the symbols are never analyzed
+/// (Zig 0.16's lazy evaluation of comptime-conditional branches keeps
+/// the typed pool API out of the no-pool build graph).
+const async_pool = if (build_options.use_devnw_pool) struct {
+    fn drainTask(ctx: *anyopaque, _: *tp.TaskContext) void {
+        const self: *BatchSpanProcessor = @ptrCast(@alignCast(ctx));
+        self.mutex.lock();
+        const batch = self.drainLocked() catch {
+            self.mutex.unlock();
+            _ = self.pending_tasks.fetchSub(1, .acq_rel);
+            return;
+        };
+        self.mutex.unlock();
+        self.exportBatch(batch);
+        _ = self.pending_tasks.fetchSub(1, .acq_rel);
+    }
+
+    /// Submit a drain task. The pending-counter bump and decrement are
+    /// always paired: bump here on the producer side, decrement at the
+    /// tail of `drainTask` (or in the inline-fallback branch when
+    /// `submit` fails).
+    fn submitDrain(self: *BatchSpanProcessor) void {
+        const pool = self.pool orelse return;
+        _ = self.pending_tasks.fetchAdd(1, .acq_rel);
+        _ = pool.submit(drainTask, @ptrCast(self), .{}) catch {
+            // Inline-drain fallback so the bounded queue can't grow
+            // unbounded if the pool's queue is full or the descriptor
+            // pool is exhausted.
+            self.mutex.lock();
+            const batch = self.drainLocked() catch {
+                self.mutex.unlock();
+                _ = self.pending_tasks.fetchSub(1, .acq_rel);
+                return;
+            };
+            self.mutex.unlock();
+            self.exportBatch(batch);
+            _ = self.pending_tasks.fetchSub(1, .acq_rel);
+        };
+    }
+} else struct {};
+
 fn batchOnEnd(ctx: ?*anyopaque, span: *trace_api.SpanState) void {
     const self: *BatchSpanProcessor = @ptrCast(@alignCast(ctx.?));
+    self.mutex.lock();
     if (self.queue.items.len >= self.options.max_queue_size) {
         self.dropped +%= 1;
+        self.mutex.unlock();
         span.deinit();
         return;
     }
     self.queue.append(self.allocator, span) catch {
         self.dropped +%= 1;
+        self.mutex.unlock();
         span.deinit();
         return;
     };
-    if (self.queue.items.len >= self.options.max_export_batch_size) {
-        const batch = self.drain() catch return;
-        self.exportBatch(batch);
+    const should_flush = self.queue.items.len >= self.options.max_export_batch_size;
+    self.mutex.unlock();
+
+    if (!should_flush) return;
+
+    if (build_options.use_devnw_pool) {
+        if (self.pool != null) {
+            async_pool.submitDrain(self);
+            return;
+        }
     }
+
+    // Synchronous drain path.
+    self.mutex.lock();
+    const batch = self.drainLocked() catch {
+        self.mutex.unlock();
+        return;
+    };
+    self.mutex.unlock();
+    self.exportBatch(batch);
 }
 
 fn batchForceFlush(ctx: ?*anyopaque, timeout_ms: u64) anyerror!void {
     const self: *BatchSpanProcessor = @ptrCast(@alignCast(ctx.?));
-    while (self.queue.items.len > 0) {
-        const batch = self.drain() catch return error.ExportTimeout;
-        self.exportBatch(batch);
+
+    if (build_options.use_devnw_pool) {
+        if (self.pool != null) {
+            // Drain whatever is queued by submitting tasks, then poll
+            // until both the queue and the in-flight task counter reach
+            // zero. Inner `pool.submit` uses `.block` backpressure
+            // (configured at init), so submission itself doesn't spin.
+            // Clock + sleep both come from `tp.clock`: 0.16.0 dropped
+            // `std.time.nanoTimestamp` and `std.Thread.sleep`, and
+            // thread-pool already wraps the replacements with the
+            // legacy zero-arg signatures.
+            const deadline_ns: i128 = @as(i128, timeout_ms) * std.time.ns_per_ms;
+            const start: i128 = tp.clock.nanoTimestamp();
+            while (true) {
+                self.mutex.lock();
+                const remaining = self.queue.items.len;
+                self.mutex.unlock();
+
+                if (remaining == 0 and self.pending_tasks.load(.acquire) == 0) break;
+
+                if (remaining > 0) async_pool.submitDrain(self);
+
+                // Cooperative wait. 200µs balances responsiveness
+                // against CPU burn on a 1-second timeout budget.
+                tp.clock.sleep(200 * std.time.ns_per_us);
+                const elapsed: i128 = @as(i128, tp.clock.nanoTimestamp()) - start;
+                if (elapsed >= deadline_ns) return error.ExportTimeout;
+            }
+            try self.exporter.forceFlush(timeout_ms);
+            return;
+        }
     }
+
+    // Synchronous-drain path.
+    self.mutex.lock();
+    while (self.queue.items.len > 0) {
+        const batch = self.drainLocked() catch {
+            self.mutex.unlock();
+            return error.ExportTimeout;
+        };
+        self.mutex.unlock();
+        self.exportBatch(batch);
+        self.mutex.lock();
+    }
+    self.mutex.unlock();
     try self.exporter.forceFlush(timeout_ms);
 }
 
 fn batchShutdown(ctx: ?*anyopaque) void {
     const self: *BatchSpanProcessor = @ptrCast(@alignCast(ctx.?));
-    while (self.queue.items.len > 0) {
-        const batch = self.drain() catch break;
-        self.exportBatch(batch);
-    }
+    // Best-effort flush; ignore timeout errors — shutdown is final.
+    batchForceFlush(ctx, 5_000) catch {};
     self.exporter.shutdown();
 }
 

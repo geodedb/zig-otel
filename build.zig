@@ -18,6 +18,7 @@ pub fn build(b: *std.Build) void {
     const use_devnw_metrics = b.option(bool, "otel_use_devnw_metrics", "Use DevNW metrics aggregation registry") orelse false;
     const use_devnw_tls = b.option(bool, "otel_use_devnw_tls", "Use DevNW tls for HTTPS in OTLP/HTTP transport") orelse false;
     const use_devnw_grpc = b.option(bool, "otel_use_devnw_grpc", "Use DevNW grpc-zig for OTLP/gRPC transport") orelse false;
+    const use_devnw_pool = b.option(bool, "otel_use_devnw_pool", "Use DevNW thread-pool for BatchSpanProcessor worker") orelse false;
 
     const opts = b.addOptions();
     opts.addOption(bool, "otel_profiles", otel_profiles);
@@ -29,6 +30,7 @@ pub fn build(b: *std.Build) void {
     opts.addOption(bool, "use_devnw_metrics", use_devnw_metrics);
     opts.addOption(bool, "use_devnw_tls", use_devnw_tls);
     opts.addOption(bool, "use_devnw_grpc", use_devnw_grpc);
+    opts.addOption(bool, "use_devnw_pool", use_devnw_pool);
     opts.addOption([]const u8, "version", "0.1.0");
     const build_options_module = opts.createModule();
 
@@ -145,6 +147,10 @@ pub fn build(b: *std.Build) void {
         }
         otel_module.addImport("grpc_zig", grpc_all);
     }
+    if (use_devnw_pool) {
+        const tp_dep = b.dependency("thread_pool", .{ .target = target, .optimize = optimize });
+        otel_module.addImport("thread_pool", tp_dep.module("thread_pool"));
+    }
     otel_module.addImport("build_options", build_options_module);
 
     const static_lib = b.addLibrary(.{
@@ -210,6 +216,7 @@ pub fn build(b: *std.Build) void {
         "test/instrumentation_slog.zig",
         "test/otlp_wire_parity.zig",
         "test/tls_loopback.zig",
+        "test/batch_async.zig",
     };
     for (test_files) |path| {
         const m = b.createModule(.{

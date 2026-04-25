@@ -41,6 +41,10 @@
             .url = "git+https://gitlab.com/devnw/zig/grpc-zig#fd5405b860f25e3dd9226b3d63b676ab58f183d4",
             .hash = "grpc_zig-0.1.0-7FnvpLrAAQAMxd1Mf0GfWePI0Ijw1vX-ZsEc6RCsIsq6",
         },
+        .thread_pool = .{
+            .url = "git+https://gitlab.com/devnw/zig/thread-pool#ad878c812a5ee000098bc32b6ec3508b45289354",
+            .hash = "thread_pool-0.2.0-11B1BrLfdQCw8kH30ZfQCBMJK3BC0E3qg-WEzjjvIgJl",
+        },
     },
     .paths = .{
         "build.zig",

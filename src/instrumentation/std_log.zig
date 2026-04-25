@@ -40,7 +40,10 @@ pub fn bridgeLogFn(
     args: anytype,
 ) void {
     const logger = current_logger orelse return;
-    var buf: [4096]u8 = undefined;
+    // The slog branch may expand control characters (e.g. `\n` → `\\n`),
+    // so the sanitised destination buffer is sized 2x the rendered buffer
+    // to absorb worst-case escape expansion without dropping the record.
+    var buf: [8192]u8 = undefined;
     const message = if (build_options.use_devnw_slog) blk: {
         // Route formatting through slog's text-value writer so log payloads
         // are sanitized identically across the DevNW ecosystem (control
@@ -50,7 +53,7 @@ pub fn bridgeLogFn(
         var fmt_buf: [4096]u8 = undefined;
         const rendered = std.fmt.bufPrint(&fmt_buf, format, args) catch return;
         var writer: std.Io.Writer = .fixed(&buf);
-        slog.text_value.writeTextValue(&writer, slog.Value{ .str = rendered }) catch return;
+        slog.text_value.writeTextValue(&writer, slog.Value{ .str = rendered }) catch break :blk rendered;
         break :blk writer.buffered();
     } else std.fmt.bufPrint(&buf, format, args) catch return;
     var record: logs_api.LogRecord = .{

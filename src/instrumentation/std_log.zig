@@ -8,6 +8,8 @@
 const std = @import("std");
 const logs_api = @import("../api/logs.zig");
 const ctx_mod = @import("../api/context.zig");
+const build_options = @import("build_options");
+const slog = if (build_options.use_devnw_slog) @import("slog") else struct {};
 
 threadlocal var current_logger: ?logs_api.Logger = null;
 threadlocal var current_context: ?ctx_mod.Context = null;
@@ -39,7 +41,18 @@ pub fn bridgeLogFn(
 ) void {
     const logger = current_logger orelse return;
     var buf: [4096]u8 = undefined;
-    const message = std.fmt.bufPrint(&buf, format, args) catch return;
+    const message = if (build_options.use_devnw_slog) blk: {
+        // Route formatting through slog's text-value writer so log payloads
+        // are sanitized identically across the DevNW ecosystem (control
+        // chars, etc). The std.fmt.bufPrint call materializes the format
+        // args; writeTextValue then renders the resulting string as a slog
+        // Value.
+        var fmt_buf: [4096]u8 = undefined;
+        const rendered = std.fmt.bufPrint(&fmt_buf, format, args) catch return;
+        var writer: std.Io.Writer = .fixed(&buf);
+        slog.text_value.writeTextValue(&writer, slog.Value{ .str = rendered }) catch return;
+        break :blk writer.buffered();
+    } else std.fmt.bufPrint(&buf, format, args) catch return;
     var record: logs_api.LogRecord = .{
         .severity = mapLevel(level),
         .severity_text = @tagName(level),

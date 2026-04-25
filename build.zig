@@ -11,11 +11,14 @@ pub fn build(b: *std.Build) void {
     const deprecated_span_events = b.option(bool, "deprecated_span_events", "Enable deprecated Span.addEvent shim bridged to logs") orelse false;
     const tsan = b.option(bool, "tsan", "Enable ThreadSanitizer on test artifacts") orelse false;
     const no_cli = b.option(bool, "no-cli", "Skip building the CLI executable (library-only build)") orelse false;
+    const use_devnw_slog = b.option(bool, "otel_use_devnw_slog", "Route std.log bridge through DevNW slog") orelse false;
 
     const opts = b.addOptions();
     opts.addOption(bool, "otel_profiles", otel_profiles);
     opts.addOption(bool, "deprecated_span_events", deprecated_span_events);
+    opts.addOption(bool, "use_devnw_slog", use_devnw_slog);
     opts.addOption([]const u8, "version", "0.1.0");
+    const build_options_module = opts.createModule();
 
     // ------------------------------------------------------------------
     // Library module — primary public surface.
@@ -25,7 +28,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    otel_module.addOptions("build_options", opts);
+    if (use_devnw_slog) {
+        const slog_dep = b.dependency("slog", .{ .target = target, .optimize = optimize });
+        otel_module.addImport("slog", slog_dep.module("slogz"));
+    }
+    otel_module.addImport("build_options", build_options_module);
 
     const static_lib = b.addLibrary(.{
         .name = "otel",
@@ -87,13 +94,17 @@ pub fn build(b: *std.Build) void {
         "test/otlp.zig",
         "test/config.zig",
         "test/security.zig",
+        "test/instrumentation_slog.zig",
     };
     for (test_files) |path| {
         const m = b.createModule(.{
             .root_source_file = b.path(path),
             .target = target,
             .optimize = optimize,
-            .imports = &.{.{ .name = "otel", .module = otel_module }},
+            .imports = &.{
+                .{ .name = "otel", .module = otel_module },
+                .{ .name = "build_options", .module = build_options_module },
+            },
         });
         const t = b.addTest(.{ .root_module = m });
         if (tsan) t.root_module.sanitize_thread = true;

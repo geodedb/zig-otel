@@ -101,9 +101,10 @@ fn httpTransportImpl(self: *OtlpHttpExporter, allocator: std.mem.Allocator, path
     const io = self.io orelse return error.UnsupportedTransport;
 
     // Build full URL: endpoint already validated as starting with "http://"
-    // or "https://" in `init`, so concatenation is sufficient — we don't
-    // need to re-parse just to splice the signal path.
-    const full_url = try std.fmt.allocPrint(allocator, "{s}{s}", .{ self.config.endpoint, path });
+    // or "https://" in `init`. Strip any trailing slash so an endpoint of
+    // "http://x:8080/" + path "/v1/traces" doesn't yield "/v1//v1/traces".
+    const trimmed_endpoint = std.mem.trimRight(u8, self.config.endpoint, "/");
+    const full_url = try std.fmt.allocPrint(allocator, "{s}{s}", .{ trimmed_endpoint, path });
     defer allocator.free(full_url);
 
     // `extra_headers` is borrowed by `fetch` for the duration of the call.

@@ -236,7 +236,7 @@ fn encodeSpansJson(allocator: std.mem.Allocator, items: []const exp.SpanData) ![
 /// through the dependency without disturbing the wire-shape contract.
 fn encodeSpansJsonDevnw(allocator: std.mem.Allocator, items: []const exp.SpanData) ![]u8 {
     var aw: std.Io.Writer.Allocating = .init(allocator);
-    defer aw.deinit();
+    errdefer aw.deinit();
 
     var enc = devnw_json.streamingEncoder(allocator, &aw.writer, .{});
     defer enc.deinit();
@@ -252,7 +252,8 @@ fn encodeSpansJsonDevnw(allocator: std.mem.Allocator, items: []const exp.SpanDat
     try enc.endArray();
     try enc.endObject();
 
-    return try allocator.dupe(u8, aw.written());
+    // toOwnedSlice transfers the buffer to the caller without an extra dupe.
+    return try aw.toOwnedSlice();
 }
 
 test "encodeSpansProto handles empty input" {

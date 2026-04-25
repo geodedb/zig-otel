@@ -173,6 +173,41 @@ stages:
 - release
 
 # ---------------------------------------------------------------
+# Linux runner reliability — the company runner pool occasionally
+# trips an nvidia-container-cli driver/library version mismatch in
+# the prestart hook (system failure, not our code). Auto-retry the
+# affected jobs on runner_system_failure so a transient hook bounce
+# doesn't redden the pipeline. Caps at 2 (the GitLab maximum) so a
+# truly broken runner still surfaces.
+# ---------------------------------------------------------------
+
+.linux-retry-system: &linux-retry-system
+  max: 2
+  when:
+  - runner_system_failure
+  - stuck_or_timeout_failure
+  - scheduler_failure
+  - api_failure
+
+zig-test-integration-0.16.0:
+  retry: *linux-retry-system
+
+zig-test-stress-0.16.0:
+  retry: *linux-retry-system
+
+zig-test-unit-debug-0.16.0:
+  retry: *linux-retry-system
+
+zig-test-unit-releasesafe-0.16.0:
+  retry: *linux-retry-system
+
+zig-test-unit-releasefast-0.16.0:
+  retry: *linux-retry-system
+
+zig-test-unit-releasesmall-0.16.0:
+  retry: *linux-retry-system
+
+# ---------------------------------------------------------------
 # Cross-OS gating: apply rules to the catalog-generated jobs so
 # macOS / Windows only run on default branch, schedule, or when
 # RUN_CROSS_OS=true. Elsewhere they fall back to manual.

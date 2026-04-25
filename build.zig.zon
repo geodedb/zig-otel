@@ -37,6 +37,10 @@
             .url = "git+https://gitlab.com/devnw/zig/tls#c0895db0adc841abdb44bd8ff6fe1edd3e321aa6",
             .hash = "tls-0.1.1-mtEaLKedEgBUv1K_Vd1PCWYrB1hjpvN5rskwXvFKdiBK",
         },
+        .grpc_zig = .{
+            .url = "git+https://gitlab.com/devnw/zig/grpc-zig#fd5405b860f25e3dd9226b3d63b676ab58f183d4",
+            .hash = "grpc_zig-0.1.0-7FnvpLrAAQAMxd1Mf0GfWePI0Ijw1vX-ZsEc6RCsIsq6",
+        },
     },
     .paths = .{
         "build.zig",

@@ -93,6 +93,7 @@ optional sections are listed under "Limitations" with a short rationale.
 | Protobuf wire encoder for spans                        | `src/exporters/otlp_http.zig: encodeSpansProto` | unit |
 | JSON wire encoder for spans                            | `src/exporters/otlp_http.zig: encodeSpansJson`  | unit |
 | gRPC unary 5-byte length prefix                        | `src/exporters/otlp_grpc.zig: frame` | `test/otlp.zig: gRPC frame prefix` |
+| OTLP/gRPC unary transport (real client)                | `src/exporters/otlp_grpc.zig: unaryExport` (uses DevNW `grpc-zig`) | `test/grpc_loopback.zig: round-trips a span` (gated on `-Dotel_use_devnw_grpc=true`) |
 
 ## Security
 
@@ -118,9 +119,15 @@ optional sections are listed under "Limitations" with a short rationale.
   `error.UnsupportedTransport` so misconfigurations remain loud. See
   `docs/DEPENDENCIES.md` (TLS row) for the rationale and `test/tls_loopback.zig`
   for the round-trip acceptance test.
-- **HTTP/2 + gRPC transport**: `OtlpGrpcExporter` ships with the
-  framing primitives but no production HTTP/2 client. Lands when
-  `grpc-zig` (and a HTTP/2 stack) integrate.
+- **HTTP/2 + gRPC transport**: `OtlpGrpcExporter` ships with both the
+  framing primitives (`frame()`) and a real unary transport powered by
+  DevNW `grpc-zig` (HTTP/2 + h2c) behind `-Dotel_use_devnw_grpc=true`.
+  Without the flag (or without an `Io` plumbed into the exporter),
+  `expSpans` returns `error.UnsupportedTransport`. The pin includes a
+  one-line patch to grpc-zig's `transport.zig::ioWrite` that fixes a
+  Zig-0.16 stdlib underflow when the additional-buffers slice is empty
+  — see `docs/DEPENDENCIES.md` (gRPC row) for the full rationale and
+  `test/grpc_loopback.zig` for the round-trip acceptance test.
 - **BatchSpanProcessor**: ships in synchronous-drain form. The 0.16
   `std.Io` API moved background coordination behind an `Io` instance; once
   the SDK accepts an `Io` (planned), the worker-thread variant returns

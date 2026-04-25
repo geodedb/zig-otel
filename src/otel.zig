@@ -68,6 +68,13 @@ pub const exporters = struct {
     pub const prometheus = @import("exporters/prometheus.zig");
     pub const otlp_http = @import("exporters/otlp_http.zig");
     pub const otlp_grpc = @import("exporters/otlp_grpc.zig");
+    /// Loopback gRPC server harness used by the integration test. Lives
+    /// in the library tree (rather than under `test/`) so it can share
+    /// the otel module's `grpc_server` import — Zig 0.16 forbids the
+    /// same source file (e.g. grpc-zig's `proto/service.zig`) belonging
+    /// to two distinct modules in the same compilation. See the file's
+    /// doc comment for the full rationale.
+    pub const otlp_grpc_test_server = @import("exporters/otlp_grpc_test_server.zig");
 };
 
 pub const instrumentation = struct {

@@ -17,6 +17,7 @@ pub fn build(b: *std.Build) void {
     const use_devnw_protobuf = b.option(bool, "otel_use_devnw_protobuf", "Encode OTLP via DevNW protobuf") orelse false;
     const use_devnw_metrics = b.option(bool, "otel_use_devnw_metrics", "Use DevNW metrics aggregation registry") orelse false;
     const use_devnw_tls = b.option(bool, "otel_use_devnw_tls", "Use DevNW tls for HTTPS in OTLP/HTTP transport") orelse false;
+    const use_devnw_grpc = b.option(bool, "otel_use_devnw_grpc", "Use DevNW grpc-zig for OTLP/gRPC transport") orelse false;
 
     const opts = b.addOptions();
     opts.addOption(bool, "otel_profiles", otel_profiles);
@@ -27,6 +28,7 @@ pub fn build(b: *std.Build) void {
     opts.addOption(bool, "use_devnw_protobuf", use_devnw_protobuf);
     opts.addOption(bool, "use_devnw_metrics", use_devnw_metrics);
     opts.addOption(bool, "use_devnw_tls", use_devnw_tls);
+    opts.addOption(bool, "use_devnw_grpc", use_devnw_grpc);
     opts.addOption([]const u8, "version", "0.1.0");
     const build_options_module = opts.createModule();
 
@@ -69,6 +71,79 @@ pub fn build(b: *std.Build) void {
         // tracked in docs/DEPENDENCIES.md (TLS row).
         const tls_dep = b.dependency("tls", .{ .target = target, .optimize = optimize });
         otel_module.addImport("tls", tls_dep.module("tls13_full"));
+    }
+    if (use_devnw_grpc) {
+        const grpc_dep = b.dependency("grpc_zig", .{ .target = target, .optimize = optimize });
+
+        // Build a single "umbrella" module that exposes BOTH the
+        // grpc-zig client and server APIs. Upstream publishes them as
+        // two separate modules (`grpc-client` and `grpc-server`) whose
+        // roots transitively import the same shared files
+        // (`proto/service.zig`, `transport.zig`, etc.). Zig 0.16
+        // forbids the same source file belonging to two distinct
+        // modules in one compilation, so importing both upstream
+        // modules into our consumer trips a hard build error. We
+        // instead synthesize a tiny umbrella source *inside the
+        // upstream src/ directory* via `addWriteFile`, then build a
+        // single module rooted at that synthesized file. The umbrella
+        // imports `client.zig` and `server.zig` as siblings, which
+        // works because both live in the same directory upstream and
+        // already share their transitive imports — the whole graph
+        // belongs to ONE module (`grpc_all`) so the collision is
+        // resolved.
+        //
+        // The umbrella module also picks up the zlib link from
+        // `grpc-server` (the public module exports that linkage), so
+        // we re-link it here to keep the C dependency satisfied.
+        const grpc_src_root = grpc_dep.path("src");
+        const wf = b.addWriteFiles();
+        const umbrella_path = wf.addCopyFile(b.path("third_party/grpc_zig/all.zig"), "all.zig");
+        // Clone every upstream `src/` file into the same WriteFiles
+        // directory so the synthesized `all.zig` can `@import` siblings
+        // (and they can transitively `@import` each other) within the
+        // single module identity.
+        const upstream_files = [_][]const u8{
+            "client.zig",
+            "server.zig",
+            "compat.zig",
+            "benchmark.zig",
+            "proto/service.zig",
+            "features/auth.zig",
+            "features/compression.zig",
+            "features/streaming.zig",
+            "features/health.zig",
+            "http2/connection.zig",
+            "http2/frame.zig",
+            "http2/hpack.zig",
+            "http2/stream.zig",
+        };
+        for (upstream_files) |sub| {
+            _ = wf.addCopyFile(grpc_src_root.path(b, sub), sub);
+        }
+        // `transport.zig` is sourced from a local patched copy because
+        // upstream's `ioWrite` calls `netWrite(..., data, &.{}, 0)`,
+        // which underflows in `netWritePosix` (the stdlib API requires
+        // at least one element in the iovec slice for the splat-pattern
+        // computation). The patched copy passes the payload as a
+        // single-element iovec with an empty header, matching the
+        // stdlib contract. Drop this entry once upstream lands a fix.
+        _ = wf.addCopyFile(b.path("third_party/grpc_zig/transport.zig"), "transport.zig");
+
+        const grpc_all = b.createModule(.{
+            .root_source_file = umbrella_path,
+            .target = target,
+            .optimize = optimize,
+        });
+        // Reuse the zlib library that upstream's `grpc-client` /
+        // `grpc-server` modules link in. Easiest way to inherit it is
+        // to depend on either upstream module's link state via
+        // `module.linkLibrary`; we bind through `grpc-server`'s linkage
+        // declaration.
+        const upstream_server = grpc_dep.module("grpc-server");
+        for (upstream_server.link_objects.items) |lo| {
+            grpc_all.link_objects.append(b.allocator, lo) catch @panic("OOM");
+        }
+        otel_module.addImport("grpc_zig", grpc_all);
     }
     otel_module.addImport("build_options", build_options_module);
 
@@ -147,6 +222,32 @@ pub fn build(b: *std.Build) void {
             },
         });
         const t = b.addTest(.{ .root_module = m });
+        if (tsan) t.root_module.sanitize_thread = true;
+        unit_step.dependOn(&b.addRunArtifact(t).step);
+        check_step.dependOn(&t.step);
+    }
+
+    // gRPC loopback test — the test source compiles regardless of the
+    // grpc flag (it skips at runtime via `error.SkipZigTest` when the
+    // flag is off). The test reaches the server harness through
+    // `otel.exporters.otlp_grpc_test_server`, so we don't need to
+    // wire any grpc-zig module on the test module itself. The umbrella
+    // module (`grpc_zig`) lives entirely inside the otel module's
+    // import graph and exposes both client and server APIs through one
+    // module identity — see the umbrella wiring above.
+    {
+        const grpc_test_module = b.createModule(.{
+            .root_source_file = b.path("test/grpc_loopback.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        grpc_test_module.addImport("otel", otel_module);
+        grpc_test_module.addImport("build_options", build_options_module);
+        // No direct grpc_server import on the test module: it reaches the
+        // server through `otel.exporters.otlp_grpc_test_server` (gated by
+        // the same flag) so the grpc-zig source files are owned by a
+        // single module in the compilation.
+        const t = b.addTest(.{ .root_module = grpc_test_module });
         if (tsan) t.root_module.sanitize_thread = true;
         unit_step.dependOn(&b.addRunArtifact(t).step);
         check_step.dependOn(&t.step);

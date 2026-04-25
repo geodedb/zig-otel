@@ -31,3 +31,31 @@ test "attribute set caps string values" {
     try as.putString("k", huge[0..]);
     try std.testing.expectEqual(@as(usize, otel.internal.attributes.max_string_value_bytes), as.getString("k").?.len);
 }
+
+// -------------------------------------------------------------------------
+// Fuzz target — exercise `redact.isSensitive` and `redact.maskString`
+// against arbitrary inputs. Property: the function must never crash or
+// return a slice that aliases neither the redacted marker nor the input.
+// Required so `zig build test --fuzz` (CI: `zig-fuzz` job) finds at
+// least one fuzz target; without it the runner errors with "no fuzz
+// tests found".
+// -------------------------------------------------------------------------
+
+fn fuzzRedact(_: void, smith: *std.testing.Smith) anyerror!void {
+    var key_buf: [256]u8 = undefined;
+    var value_buf: [512]u8 = undefined;
+    const key_len = smith.slice(&key_buf);
+    const value_len = smith.slice(&value_buf);
+    const key = key_buf[0..key_len];
+    const value = value_buf[0..value_len];
+    const masked = otel.internal.redact.maskString(key, value);
+    if (otel.internal.redact.isSensitive(key)) {
+        try std.testing.expectEqualStrings(otel.internal.redact.redacted_marker, masked);
+    } else {
+        try std.testing.expect(masked.ptr == value.ptr);
+    }
+}
+
+test "fuzz: redact.maskString invariants" {
+    try std.testing.fuzz({}, fuzzRedact, .{});
+}

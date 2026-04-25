@@ -24,6 +24,12 @@ pub const OtlpHttpExporter = struct {
     /// Pluggable transport. Tests inject `fakeTransport`; production uses
     /// `httpTransport` which talks to the network.
     transport: Transport,
+    /// Optional `std.Io` used by the real HTTP transport. The default
+    /// `httpTransport` requires this when `-Dotel_use_devnw_tls=true`; if
+    /// it is `null`, `httpTransport` returns `error.UnsupportedTransport`.
+    /// Callers that swap in a `fakeTransport` (the test suite does) do
+    /// not need to set this — the function pointer is dispatched directly.
+    io: ?std.Io = null,
     prng: std.Random.DefaultPrng,
     closed: bool = false,
 
@@ -64,6 +70,12 @@ pub const Transport = *const fn (
     timeout_ms: u64,
 ) anyerror!TransportResult;
 
+/// Sentinel transport pointer. Production code never invokes this directly;
+/// `expSpans` detects this pointer and routes through `httpTransportImpl`,
+/// which has access to the exporter's `std.Io` instance. Calling it with
+/// no Io plumbed (`build_options.use_devnw_tls=false` or
+/// `exporter.io == null`) returns `error.UnsupportedTransport`, matching
+/// the pre-Phase-6 behaviour so misconfigured callers fail loud.
 fn httpTransport(allocator: std.mem.Allocator, endpoint: []const u8, path: []const u8, headers: ?[]const u8, content_type: []const u8, body: []const u8, timeout_ms: u64) anyerror!TransportResult {
     _ = allocator;
     _ = endpoint;
@@ -72,12 +84,58 @@ fn httpTransport(allocator: std.mem.Allocator, endpoint: []const u8, path: []con
     _ = content_type;
     _ = body;
     _ = timeout_ms;
-    // Real HTTP transport requires a TLS-capable HTTP/1.1 client. The
-    // initial delivery wires the seam (Transport vtable) but defers the
-    // network implementation until tls + http2 are integrated. Returning
-    // UnsupportedTransport keeps us from masquerading as a working
-    // exporter; callers configure a fake transport in tests.
     return error.UnsupportedTransport;
+}
+
+/// Real HTTP/HTTPS transport, gated on `-Dotel_use_devnw_tls=true`. The
+/// build flag's name reflects the original Phase 6 plan (DevNW `tls`); we
+/// pivoted to `std.http.Client` because the DevNW package is QUIC-first
+/// (RFC 9001) and exposes no TLS-over-TCP record layer. The DevNW `tls`
+/// dep stays pinned for future QUIC integration; see
+/// `docs/DEPENDENCIES.md` (TLS row) for the full rationale.
+///
+/// Returns `error.UnsupportedTransport` when the flag is off or the
+/// caller did not plumb an `io`, preserving the loud-failure contract.
+fn httpTransportImpl(self: *OtlpHttpExporter, allocator: std.mem.Allocator, path: []const u8, content_type: []const u8, body: []const u8) anyerror!TransportResult {
+    if (!build_options.use_devnw_tls) return error.UnsupportedTransport;
+    const io = self.io orelse return error.UnsupportedTransport;
+
+    // Build full URL: endpoint already validated as starting with "http://"
+    // or "https://" in `init`, so concatenation is sufficient — we don't
+    // need to re-parse just to splice the signal path.
+    const full_url = try std.fmt.allocPrint(allocator, "{s}{s}", .{ self.config.endpoint, path });
+    defer allocator.free(full_url);
+
+    // `extra_headers` is borrowed by `fetch` for the duration of the call.
+    // Always include content-type; optionally fold in user-supplied
+    // headers (comma-separated `k=v` pairs from `OtlpConfig.headers`).
+    var headers_list: std.ArrayListUnmanaged(std.http.Header) = .empty;
+    defer headers_list.deinit(allocator);
+    try headers_list.append(allocator, .{ .name = "content-type", .value = content_type });
+    if (self.config.headers) |hdr_str| {
+        var it = std.mem.splitScalar(u8, hdr_str, ',');
+        while (it.next()) |pair| {
+            const trimmed = std.mem.trim(u8, pair, " \t");
+            if (trimmed.len == 0) continue;
+            const eq = std.mem.indexOfScalar(u8, trimmed, '=') orelse continue;
+            const name = std.mem.trim(u8, trimmed[0..eq], " \t");
+            const value = std.mem.trim(u8, trimmed[eq + 1 ..], " \t");
+            if (name.len == 0) continue;
+            try headers_list.append(allocator, .{ .name = name, .value = value });
+        }
+    }
+
+    var client: std.http.Client = .{ .allocator = allocator, .io = io };
+    defer client.deinit();
+
+    const result = try client.fetch(.{
+        .location = .{ .url = full_url },
+        .method = .POST,
+        .payload = body,
+        .extra_headers = headers_list.items,
+    });
+
+    return .{ .status = @intFromEnum(result.status), .body = "" };
 }
 
 fn doShutdown(ctx: ?*anyopaque) void {
@@ -113,7 +171,15 @@ fn expSpans(ctx: ?*anyopaque, items: []const exp.SpanData) anyerror!exp.SpanExpo
     // without a sleep primitive (deferred to the Io-aware path).
     const max_attempts: u32 = 5;
     while (true) {
-        const result = self.transport(aa, self.config.endpoint, path, self.config.headers, content_type, body, self.config.timeout_ms) catch |err| {
+        // Sentinel dispatch: when the transport pointer is the in-house
+        // `httpTransport`, route through `httpTransportImpl` so the
+        // implementation can read `self.io` (the `Transport` vtable
+        // signature predates the Io plumbing). Test-injected fakes go
+        // through the function pointer unchanged.
+        const result = (if (self.transport == httpTransport)
+            httpTransportImpl(self, aa, path, content_type, body)
+        else
+            self.transport(aa, self.config.endpoint, path, self.config.headers, content_type, body, self.config.timeout_ms)) catch |err| {
             attempt += 1;
             const backoff_ns = exp.nextBackoff(policy, attempt, &self.prng);
             elapsed_ms += backoff_ns / std.time.ns_per_ms;

@@ -26,8 +26,9 @@ the experimental profiles signal behind a build flag.
   histograms, exemplar-ready data point shape.
 - Exporters: in-memory, stdout JSON, file JSONL, Prometheus text format,
   OTLP/HTTP (protobuf and JSON), unary OTLP/gRPC framing helper.
-- Pluggable transport seam — production HTTP/gRPC implementations bind to
-  TLS/HTTP2 once those dependencies are wired (see
+- Pluggable transport seam — production HTTP/HTTPS via `std.http.Client`
+  (with stdlib `std.crypto.tls`) is wired behind `-Dotel_use_devnw_tls=true`;
+  HTTP/2 + gRPC follow once those dependencies land (see
   [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md)).
 - `OTEL_*` environment variables and `OTEL_CONFIG_FILE` YAML loader. Code
   &gt; YAML &gt; env &gt; defaults precedence with fail-closed validation.

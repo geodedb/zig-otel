@@ -8,7 +8,7 @@ optional sections are listed under "Limitations" with a short rationale.
 | Spec area                  | Version | Status |
 |----------------------------|---------|--------|
 | OpenTelemetry Specification| 1.56.0  | implemented |
-| OTLP Specification         | 1.10.0  | implemented (HTTP wire format complete; HTTP/2 transport pending) |
+| OTLP Specification         | 1.10.0  | implemented (HTTP wire format complete; HTTP/HTTPS transport via `std.http.Client` when `-Dotel_use_devnw_tls=true`; HTTP/2 deferred) |
 | Semantic Conventions       | 1.40.0  | constants generated |
 | Declarative Configuration  | 1.0.0   | YAML subset, env vars, code overrides |
 
@@ -89,6 +89,7 @@ optional sections are listed under "Limitations" with a short rationale.
 | Retry backoff 100 ms initial, x2, max 5 s, max 30 s, full jitter | `src/sdk/export.zig: nextBackoff` | unit + `test/otlp.zig: retries on 503` |
 | Partial success returns `error.PartialSuccess`         | `src/exporters/otlp_http.zig`        | `test/otlp.zig: PartialSuccess on 207` |
 | HTTPS TLS validation on by default                     | `src/sdk/config.zig: OtlpConfig.skip_tls_verify` (default false) | doc |
+| HTTP/HTTPS transport (real client, not just vtable)    | `src/exporters/otlp_http.zig: httpTransportImpl` (uses `std.http.Client` + `std.crypto.tls`) | `test/tls_loopback.zig: round-trips a span` (gated on `-Dotel_use_devnw_tls=true`) |
 | Protobuf wire encoder for spans                        | `src/exporters/otlp_http.zig: encodeSpansProto` | unit |
 | JSON wire encoder for spans                            | `src/exporters/otlp_http.zig: encodeSpansJson`  | unit |
 | gRPC unary 5-byte length prefix                        | `src/exporters/otlp_grpc.zig: frame` | `test/otlp.zig: gRPC frame prefix` |
@@ -106,20 +107,20 @@ optional sections are listed under "Limitations" with a short rationale.
 
 ## Limitations &amp; deferred work
 
-- **HTTP/2 + TLS transport**: `OtlpHttpExporter.transport` and
-  `OtlpGrpcExporter` ship with a vtable seam but the production HTTP/2
-  client (and the gRPC unary encoder over HTTP/2) lands once the DevNW
-  `tls` and `grpc-zig` packages are wired in. Tests inject a fake
-  transport. Calling the default transport returns
-  `error.UnsupportedTransport` so failures are loud. The DevNW `tls`
-  package is now **pinned** (`-Dotel_use_devnw_tls=true` resolves the
-  `tls13_full` module into the build graph) but the HTTPS transport is
-  **not yet implemented**: `tls` is QUIC-first (RFC 9001) and exposes
-  no TLS-over-TCP client API, so driving HTTPS through it requires a
-  TLS 1.3 record-layer driver built on top of the package's parsing
-  primitives. Tracked as a follow-on; see `docs/DEPENDENCIES.md` (TLS
-  row) and `test/tls_loopback.zig` for the contract the follow-on
-  must satisfy.
+- **HTTP/HTTPS transport**: `OtlpHttpExporter` ships with a vtable seam
+  for tests. The real HTTP/HTTPS client (powered by `std.http.Client`
+  with built-in `std.crypto.tls`) is wired behind
+  `-Dotel_use_devnw_tls=true`; the flag's name is preserved from the
+  pre-pivot Phase 6 plan but its semantics are now "switch the
+  transport from the `UnsupportedTransport` stub to the real
+  `std.http.Client` path". Without the flag (or without an `Io` plumbed
+  into the exporter), `httpTransport` returns
+  `error.UnsupportedTransport` so misconfigurations remain loud. See
+  `docs/DEPENDENCIES.md` (TLS row) for the rationale and `test/tls_loopback.zig`
+  for the round-trip acceptance test.
+- **HTTP/2 + gRPC transport**: `OtlpGrpcExporter` ships with the
+  framing primitives but no production HTTP/2 client. Lands when
+  `grpc-zig` (and a HTTP/2 stack) integrate.
 - **BatchSpanProcessor**: ships in synchronous-drain form. The 0.16
   `std.Io` API moved background coordination behind an `Io` instance; once
   the SDK accepts an `Io` (planned), the worker-thread variant returns

@@ -1,38 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright (c) 2024-2026 CodePros
-
-//! CLI entry point for otel.
-//!
-//! This binary is built when `-Dno-cli=true` is *not* passed to
-//! `zig build`. It links against the library module exposed by
-//! `src/root.zig`. Replace the body of `main` with whatever
-//! command surface this project needs.
+// Copyright (c) 2026 DevNW
+//
+// Thin CLI wrapper. Production users embed the library directly; the
+// binary exists so `zig build run -- <args>` provides a smoke test.
 
 const std = @import("std");
-const Io = std.Io;
-const lib = @import("otel");
+const otel = @import("otel");
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const arena = init.arena.allocator();
-
     var stdout_buffer: [4096]u8 = undefined;
-    var stdout_writer = Io.File.stdout().writer(io, &stdout_buffer);
+    var stdout_writer = std.Io.File.stdout().writer(io, &stdout_buffer);
     const out = &stdout_writer.interface;
 
+    try out.print("otel {s}\n", .{otel.version});
     const args = try init.minimal.args.toSlice(arena);
-
-    try out.print("otel v{s}\n", .{lib.version});
-
     if (args.len > 1) {
-        try out.writeAll("args:\n");
-        for (args[1..]) |arg| {
-            try out.print("  - {s}\n", .{arg});
-        }
+        try out.writeAll("Available subcommands run via `zig build golden -- <name>`:\n");
+        try out.writeAll("  - trace-context\n  - signals\n  - invalid-traceparent\n  - redaction\n");
     } else {
-        try out.writeAll("no args provided. pass `-- <args>` to forward them.\n");
+        try out.writeAll("No-op CLI. Use `zig build golden -- <subcommand>` for the acceptance harness.\n");
     }
-
-    try lib.init(.{});
     try out.flush();
 }

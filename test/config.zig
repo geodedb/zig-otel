@@ -1,0 +1,30 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 DevNW
+
+const std = @import("std");
+const otel = @import("otel");
+
+test "config validates endpoint" {
+    var cfg: otel.sdk.config.Config = .{};
+    cfg.traces.otlp.endpoint = "";
+    try std.testing.expectError(error.InvalidEndpoint, cfg.validate());
+}
+
+test "config rejects out-of-range sampler ratio" {
+    var cfg: otel.sdk.config.Config = .{};
+    cfg.traces.sampler_arg = 1.5;
+    try std.testing.expectError(error.InvalidConfig, cfg.validate());
+}
+
+test "exporter kind parsing" {
+    try std.testing.expectEqual(otel.sdk.config.ExporterKind.otlp_http, otel.sdk.config.ExporterKind.fromString("otlp"));
+    try std.testing.expectEqual(otel.sdk.config.ExporterKind.stdout, otel.sdk.config.ExporterKind.fromString("console"));
+    try std.testing.expectEqual(otel.sdk.config.ExporterKind.in_memory, otel.sdk.config.ExporterKind.fromString("memory"));
+    try std.testing.expectEqual(otel.sdk.config.ExporterKind.none, otel.sdk.config.ExporterKind.fromString("nope"));
+}
+
+test "protocol parsing" {
+    try std.testing.expectEqual(otel.sdk.config.Protocol.http_protobuf, otel.sdk.config.Protocol.fromString("http/protobuf").?);
+    try std.testing.expectEqual(otel.sdk.config.Protocol.grpc, otel.sdk.config.Protocol.fromString("grpc").?);
+    try std.testing.expect(otel.sdk.config.Protocol.fromString("invalid") == null);
+}

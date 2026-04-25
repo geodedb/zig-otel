@@ -1,44 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright (c) 2024-2026 CodePros
+// Copyright (c) 2026 DevNW
 
 const std = @import("std");
-
-fn importedModule(
-    b: *std.Build,
-    path: []const u8,
-    target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-    module: *std.Build.Module,
-) *std.Build.Module {
-    return b.createModule(.{
-        .root_source_file = b.path(path),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "otel", .module = module },
-        },
-    });
-}
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    const otel_profiles = b.option(bool, "otel_profiles", "Enable experimental OTLP profiles export") orelse false;
+    const deprecated_span_events = b.option(bool, "deprecated_span_events", "Enable deprecated Span.addEvent shim bridged to logs") orelse false;
     const tsan = b.option(bool, "tsan", "Enable ThreadSanitizer on test artifacts") orelse false;
     const no_cli = b.option(bool, "no-cli", "Skip building the CLI executable (library-only build)") orelse false;
 
+    const opts = b.addOptions();
+    opts.addOption(bool, "otel_profiles", otel_profiles);
+    opts.addOption(bool, "deprecated_span_events", deprecated_span_events);
+    opts.addOption([]const u8, "version", "0.1.0");
+
     // ------------------------------------------------------------------
-    // Library module — primary public surface for downstream consumers.
+    // Library module — primary public surface.
     // ------------------------------------------------------------------
-    const module = b.addModule("otel", .{
-        .root_source_file = b.path("src/root.zig"),
+    const otel_module = b.addModule("otel", .{
+        .root_source_file = b.path("src/otel.zig"),
         .target = target,
         .optimize = optimize,
     });
+    otel_module.addOptions("build_options", opts);
 
     const static_lib = b.addLibrary(.{
         .name = "otel",
         .linkage = .static,
-        .root_module = module,
+        .root_module = otel_module,
     });
     b.installArtifact(static_lib);
 
@@ -46,8 +38,7 @@ pub fn build(b: *std.Build) void {
     build_step.dependOn(&static_lib.step);
 
     // ------------------------------------------------------------------
-    // CLI executable — links against the library module.
-    // Disable with `-Dno-cli` for pure-library builds.
+    // CLI — thin wrapper that forwards to the golden runner.
     // ------------------------------------------------------------------
     if (!no_cli) {
         const cli_module = b.createModule(.{
@@ -55,7 +46,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .imports = &.{
-                .{ .name = "otel", .module = module },
+                .{ .name = "otel", .module = otel_module },
             },
         });
         const cli_exe = b.addExecutable(.{
@@ -72,146 +63,115 @@ pub fn build(b: *std.Build) void {
     }
 
     // ------------------------------------------------------------------
-    // Check step — fast IDE feedback. Compiles unit tests without
-    // running them.
+    // Check step — fast IDE feedback.
     // ------------------------------------------------------------------
     const check_step = b.step("check", "Compile the library and tests without running them");
-    const check_tests = b.addTest(.{
-        .root_module = module,
-    });
+    const check_tests = b.addTest(.{ .root_module = otel_module });
     check_step.dependOn(&check_tests.step);
 
     // ------------------------------------------------------------------
-    // Test suites.
+    // Unit tests live alongside the library code.
     // ------------------------------------------------------------------
     const unit_step = b.step("test", "Run unit tests");
-    const unit_tests = b.addTest(.{
-        .root_module = module,
-    });
+    const unit_tests = b.addTest(.{ .root_module = otel_module });
     if (tsan) unit_tests.root_module.sanitize_thread = true;
     unit_step.dependOn(&b.addRunArtifact(unit_tests).step);
 
-    const integration_step = b.step("test-integration", "Run integration tests");
-    const integration_tests = b.addTest(.{
-        .root_module = importedModule(b, "tests/integration.zig", target, optimize, module),
-    });
-    if (tsan) integration_tests.root_module.sanitize_thread = true;
-    integration_step.dependOn(&b.addRunArtifact(integration_tests).step);
-
-    // Stress runs Debug under TSan so races aren't optimised away.
-    const stress_optimize: std.builtin.OptimizeMode = if (tsan) .Debug else .ReleaseFast;
-    const stress_step = b.step("test-stress", "Run stress and load tests");
-    const stress_tests = b.addTest(.{
-        .root_module = importedModule(b, "tests/stress.zig", target, stress_optimize, module),
-    });
-    if (tsan) stress_tests.root_module.sanitize_thread = true;
-    stress_step.dependOn(&b.addRunArtifact(stress_tests).step);
-
-    const all_tests_step = b.step("test-all", "Run unit, integration, and stress suites");
-    all_tests_step.dependOn(&b.addRunArtifact(unit_tests).step);
-    all_tests_step.dependOn(&b.addRunArtifact(integration_tests).step);
-    all_tests_step.dependOn(&b.addRunArtifact(stress_tests).step);
-
-    // ------------------------------------------------------------------
-    // Example — demonstrates library usage end-to-end.
-    // ------------------------------------------------------------------
-    const example_step = b.step("example", "Build and run the basic example");
-    const example_exe = b.addExecutable(.{
-        .name = "otel-basic",
-        .root_module = importedModule(b, "examples/basic.zig", target, optimize, module),
-    });
-    example_step.dependOn(&b.addRunArtifact(example_exe).step);
-
-    // ------------------------------------------------------------------
-    // Benchmarks — see benchmarks/README.md.
-    //
-    // The benchmark framework (benchmarks/framework.zig) is library-
-    // agnostic and depends only on the Zig stdlib. We expose it as its
-    // own module so any bench source — including files in subdirectories
-    // like benchmarks/micro/ — can `@import("framework")` it. Each suite
-    // is then a standalone exe whose root module imports both the
-    // framework and the project library. ReleaseFast is forced for all
-    // benchmark exes so casual `zig build bench` invocations still
-    // produce comparable numbers regardless of the top-level optimize
-    // option.
-    // ------------------------------------------------------------------
-
-    const framework_module = b.addModule("framework", .{
-        .root_source_file = b.path("benchmarks/framework.zig"),
-        .target = target,
-        .optimize = .ReleaseFast,
-    });
-
-    const bench_exe = b.addExecutable(.{
-        .name = "otel-bench",
-        .root_module = benchModule(b, "benchmarks/bench.zig", target, module, framework_module),
-    });
-    b.installArtifact(bench_exe);
-    const run_bench = b.addRunArtifact(bench_exe);
-    if (b.args) |args| run_bench.addArgs(args);
-    const bench_step = b.step("bench", "Run the default benchmark suite");
-    bench_step.dependOn(&run_bench.step);
-
-    const scale_bench_exe = b.addExecutable(.{
-        .name = "otel-scale-bench",
-        .root_module = benchModule(b, "benchmarks/scale.zig", target, module, framework_module),
-    });
-    b.installArtifact(scale_bench_exe);
-    const run_scale_bench = b.addRunArtifact(scale_bench_exe);
-    if (b.args) |args| run_scale_bench.addArgs(args);
-    const scale_bench_step = b.step("scale-bench", "Run the larger / longer benchmark grid");
-    scale_bench_step.dependOn(&run_scale_bench.step);
-
-    const compare_bench_exe = b.addExecutable(.{
-        .name = "otel-compare-bench",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("benchmarks/compare.zig"),
+    // External test suites under test/.
+    const test_files = [_][]const u8{
+        "test/context.zig",
+        "test/baggage.zig",
+        "test/trace.zig",
+        "test/metrics.zig",
+        "test/logs.zig",
+        "test/otlp.zig",
+        "test/config.zig",
+        "test/security.zig",
+    };
+    for (test_files) |path| {
+        const m = b.createModule(.{
+            .root_source_file = b.path(path),
             .target = target,
-            .optimize = .ReleaseFast,
-            .imports = &.{
-                .{ .name = "framework", .module = framework_module },
-            },
+            .optimize = optimize,
+            .imports = &.{.{ .name = "otel", .module = otel_module }},
+        });
+        const t = b.addTest(.{ .root_module = m });
+        if (tsan) t.root_module.sanitize_thread = true;
+        unit_step.dependOn(&b.addRunArtifact(t).step);
+        check_step.dependOn(&t.step);
+    }
+
+    // ------------------------------------------------------------------
+    // Golden runner — the acceptance harness.
+    // Usage: zig build golden -- <subcommand> [args...]
+    // ------------------------------------------------------------------
+    const golden_module = b.createModule(.{
+        .root_source_file = b.path("tools/golden.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "otel", .module = otel_module }},
+    });
+    const golden_exe = b.addExecutable(.{
+        .name = "otel-golden",
+        .root_module = golden_module,
+    });
+    b.installArtifact(golden_exe);
+    const run_golden = b.addRunArtifact(golden_exe);
+    if (b.args) |args| run_golden.addArgs(args);
+    // Pass stdio through unmodified — the harness controls its own exit
+    // code so the user sees `error.InvalidTraceParent: ...` verbatim and
+    // gets the documented exit values (0 for ok, 2 for invalid).
+    run_golden.stdio = .inherit;
+    const golden_step = b.step("golden", "Run the golden acceptance harness");
+    golden_step.dependOn(&run_golden.step);
+
+    // ------------------------------------------------------------------
+    // Examples.
+    // ------------------------------------------------------------------
+    const example_basic = b.addExecutable(.{
+        .name = "otel-basic",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/basic.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "otel", .module = otel_module }},
         }),
     });
-    b.installArtifact(compare_bench_exe);
-    const run_compare = b.addRunArtifact(compare_bench_exe);
-    if (b.args) |args| run_compare.addArgs(args);
-    const compare_step = b.step("compare-bench", "Diff two benchmark result files and gate on regressions");
-    compare_step.dependOn(&run_compare.step);
+    b.installArtifact(example_basic);
+    const run_basic = b.addRunArtifact(example_basic);
+    if (b.args) |args| run_basic.addArgs(args);
+    const run_basic_step = b.step("run-basic", "Run examples/basic.zig");
+    run_basic_step.dependOn(&run_basic.step);
 
-    const micro_example_exe = b.addExecutable(.{
-        .name = "otel-micro-example",
-        .root_module = benchModule(b, "benchmarks/micro/example.zig", target, module, framework_module),
+    const example_http = b.addExecutable(.{
+        .name = "otel-http-client",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/http_client.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "otel", .module = otel_module }},
+        }),
     });
-    const run_micro_example = b.addRunArtifact(micro_example_exe);
-    if (b.args) |args| run_micro_example.addArgs(args);
-    const micro_example_step = b.step("bench-micro-example", "Example micro-benchmark");
-    micro_example_step.dependOn(&run_micro_example.step);
+    b.installArtifact(example_http);
+    const run_http = b.addRunArtifact(example_http);
+    if (b.args) |args| run_http.addArgs(args);
+    const run_http_step = b.step("run-http-client", "Run examples/http_client.zig");
+    run_http_step.dependOn(&run_http.step);
 
-    const micro_all_step = b.step("bench-micro", "Run all micro-benchmarks");
-    micro_all_step.dependOn(&run_micro_example.step);
-
-    const tools_step = b.step("tools", "Build benchmark tooling artifacts");
-    tools_step.dependOn(&bench_exe.step);
-    tools_step.dependOn(&scale_bench_exe.step);
-    tools_step.dependOn(&compare_bench_exe.step);
-    tools_step.dependOn(&micro_example_exe.step);
-}
-
-fn benchModule(
-    b: *std.Build,
-    path: []const u8,
-    target: std.Build.ResolvedTarget,
-    lib_module: *std.Build.Module,
-    framework_module: *std.Build.Module,
-) *std.Build.Module {
-    return b.createModule(.{
-        .root_source_file = b.path(path),
-        .target = target,
-        .optimize = .ReleaseFast,
-        .imports = &.{
-            .{ .name = "otel", .module = lib_module },
-            .{ .name = "framework", .module = framework_module },
-        },
+    // ------------------------------------------------------------------
+    // fmt convenience.
+    // ------------------------------------------------------------------
+    const fmt_step = b.step("fmt", "Run zig fmt over all sources");
+    const fmt = b.addFmt(.{
+        .paths = &.{ "build.zig", "src", "test", "tools", "examples" },
+        .check = false,
     });
+    fmt_step.dependOn(&fmt.step);
+
+    const fmt_check_step = b.step("fmt-check", "Verify zig fmt is a no-op");
+    const fmt_check = b.addFmt(.{
+        .paths = &.{ "build.zig", "src", "test", "tools", "examples" },
+        .check = true,
+    });
+    fmt_check_step.dependOn(&fmt_check.step);
 }

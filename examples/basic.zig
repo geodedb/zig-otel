@@ -1,35 +1,40 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright (c) 2024-2026 CodePros
-
-//! Basic usage example for otel.
-//!
-//! Run with `zig build example`.
+// Copyright (c) 2026 DevNW
 
 const std = @import("std");
 const Io = std.Io;
-const lib = @import("otel");
+const otel = @import("otel");
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
+    const arena = init.arena.allocator();
 
-    var stdout_buffer: [4096]u8 = undefined;
+    var stdout_buffer: [8 * 1024]u8 = undefined;
     var stdout_writer = Io.File.stdout().writer(io, &stdout_buffer);
     const out = &stdout_writer.interface;
 
-    try out.print("otel Example (v{s})\n", .{lib.version});
-    try out.writeAll("========================\n\n");
+    try out.print("otel basic example v{s}\n", .{otel.version});
 
-    const config = lib.Config{
-        .debug = true,
-        .max_retries = 5,
-        .timeout_ms = 10_000,
-    };
-    try lib.init(config);
+    var resource = try otel.sdk.resource.defaultResource(arena);
+    try resource.attributes.putString(otel.semconv.service_name, "demo");
+
+    var exporter = otel.exporters.in_memory.Recorder.init(arena);
+
+    var tp = try otel.sdk.trace.TracerProvider.init(arena, .{
+        .resource = &resource,
+        .default_exporter = exporter.spanExporter(),
+    });
+    defer tp.deinit();
+
+    const tracer = tp.tracer(.{ .name = "examples/basic" });
+    const span = try tracer.startSpan(.empty(), "doWork", .{});
+    try span.setStringAttribute("work.kind", "demo");
+    span.setStatus(.ok, "");
+    span.end(null);
 
     try out.print(
-        "Initialised with debug={}, max_retries={d}, timeout_ms={d}.\n",
-        .{ config.debug, config.max_retries, config.timeout_ms },
+        "exported {d} span(s); first name = {s}\n",
+        .{ exporter.spans.items.len, exporter.spans.items[0].name },
     );
-    try out.writeAll("Example completed successfully!\n");
     try out.flush();
 }

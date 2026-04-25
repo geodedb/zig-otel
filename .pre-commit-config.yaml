@@ -67,7 +67,7 @@ repos:
     language: system
     files: \.zig$
     pass_filenames: false
-    args: [src/, tests/, examples/, benchmarks/, build.zig]
+    args: [src/, test/, examples/, benchmarks/, tools/, build.zig]
 
   - id: zig-build
     name: zig build (check)
@@ -87,7 +87,7 @@ repos:
   - id: check-todos
     name: check TODOs
     entry: >
-      bash -c 'if grep -rn "TODO\|FIXME\|HACK\|XXX" src/ tests/
+      bash -c 'if grep -rn "TODO\|FIXME\|HACK\|XXX" src/ test/
       --include="*.zig" 2>/dev/null; then echo "Warning: Found
       TODO/FIXME markers"; fi; exit 0'
     language: system

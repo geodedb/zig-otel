@@ -3,6 +3,11 @@
     .version = "0.1.0",
     .fingerprint = 0x4d774a5496f74b07,
     .minimum_zig_version = "0.16.0",
+    // Initial delivery is hermetic: stdlib + in-repo implementations only.
+    // See docs/DEPENDENCIES.md for the seams where DevNW packages slot in
+    // and the rationale for each substitution. To enable a DevNW dep, add
+    // it here with a pinned commit SHA and hash, and flip the corresponding
+    // build option (e.g. -Dotel_use_devnw_slog=true) in build.zig.
     .dependencies = .{},
     .paths = .{
         "build.zig",
@@ -10,11 +15,14 @@
         "Makefile",
         ".gitlab-ci.yml",
         "src",
+        "test",
         "tests",
         "examples",
+        "tools",
         "benchmarks",
         "docs",
         "scripts",
+        "third_party",
         "LICENSE",
         "NOTICE",
         "README.md",

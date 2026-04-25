@@ -8,6 +8,8 @@
 // never silently degrade telemetry.
 
 const std = @import("std");
+const build_options = @import("build_options");
+const devnw_yaml = if (build_options.use_devnw_config) @import("yaml") else struct {};
 
 pub const ExporterKind = enum {
     in_memory,
@@ -101,7 +103,11 @@ pub fn resolve(allocator: std.mem.Allocator, user_overrides: ?Config) !Config {
         defer allocator.free(path);
         const data = try std.fs.cwd().readFileAlloc(allocator, path, 1 << 20);
         defer allocator.free(data);
-        try applyYaml(&cfg, data);
+        if (build_options.use_devnw_config) {
+            try applyYamlStringDevnw(&cfg, allocator, data);
+        } else {
+            try applyYamlString(&cfg, data);
+        }
     } else |err| switch (err) {
         error.EnvironmentVariableNotFound => {},
         else => return err,
@@ -213,7 +219,7 @@ fn envOrNull(name: []const u8) ?[]const u8 {
 /// Minimal YAML subset: top-level mapping plus one level of nesting.
 /// Sufficient for the OpenTelemetry declarative config schema's shallow
 /// scenarios. Documented as a strict subset in docs/SPEC_COMPLIANCE.md.
-fn applyYaml(cfg: *Config, source: []const u8) !void {
+pub fn applyYamlString(cfg: *Config, source: []const u8) !void {
     var lines = std.mem.splitScalar(u8, source, '\n');
     var current_section: []const u8 = "";
     while (lines.next()) |raw_line| {
@@ -358,13 +364,130 @@ fn unquote(s: []const u8) []const u8 {
     return s;
 }
 
+/// DevNW yaml-backed loader. Active only when the `otel_use_devnw_config`
+/// build option is true; otherwise it returns `error.UnsupportedTransport`
+/// so callers can detect the misconfiguration. The DevNW yaml package
+/// surfaces a typed `Value` union (null/bool/int/float/str/seq/map) via
+/// `loadAll` + `resolveToValue`; we walk the top-level map and the three
+/// known provider sub-maps to populate the in-repo `Config`.
+pub fn applyYamlStringDevnw(cfg: *Config, allocator: std.mem.Allocator, source: []const u8) !void {
+    if (comptime !build_options.use_devnw_config) return error.UnsupportedTransport;
+    return devnw_loader.apply(cfg, allocator, source);
+}
+
+fn applyLogLevel(cfg: *Config, s: []const u8) void {
+    if (std.mem.eql(u8, s, "trace")) cfg.log_level = .trace;
+    if (std.mem.eql(u8, s, "debug")) cfg.log_level = .debug;
+    if (std.mem.eql(u8, s, "info")) cfg.log_level = .info;
+    if (std.mem.eql(u8, s, "warn")) cfg.log_level = .warn;
+    if (std.mem.eql(u8, s, "error")) cfg.log_level = .err;
+}
+
+// ----- DevNW yaml Value helpers (compiled only when the dep is wired). -----
+//
+// Wrapping the helpers in a comptime-gated namespace keeps every reference
+// to `devnw_yaml.Value` (and its `.map` payload type) out of the compile
+// graph when `use_devnw_config` is false. The empty-namespace branch keeps
+// the symbol resolvable so the dispatch above type-checks in either mode.
+
+const devnw_loader = if (build_options.use_devnw_config) struct {
+    const Pairs = @TypeOf(@as(devnw_yaml.Value, .{ .map = &.{} }).map);
+
+    fn apply(cfg: *Config, allocator: std.mem.Allocator, source: []const u8) !void {
+        var docs = try devnw_yaml.loadAll(allocator, source, .{});
+        defer {
+            for (docs) |*d| d.deinit();
+            allocator.free(docs);
+        }
+        if (docs.len == 0) return;
+
+        var root = try devnw_yaml.resolveToValue(allocator, &docs[0], .{});
+        defer devnw_yaml.freeValue(allocator, &root);
+
+        const top = mapOf(root) orelse return;
+
+        if (lookupString(top, "file_format")) |s| cfg.file_format = try allocator.dupe(u8, s);
+        if (lookupBool(top, "disabled")) |b| cfg.disabled = b;
+        if (lookupString(top, "log_level")) |s| applyLogLevel(cfg, s);
+
+        if (lookupTable(top, "tracer_provider") orelse lookupTable(top, "traces")) |t| {
+            if (lookupString(t, "exporter")) |s| cfg.traces.exporter = ExporterKind.fromString(s);
+            if (lookupString(t, "endpoint")) |s| cfg.traces.otlp.endpoint = try allocator.dupe(u8, s);
+            if (lookupString(t, "protocol")) |s| {
+                if (Protocol.fromString(s)) |p| cfg.traces.otlp.protocol = p;
+            }
+            if (lookupInt(t, "timeout")) |ms| cfg.traces.otlp.timeout_ms = @intCast(ms);
+        }
+        if (lookupTable(top, "meter_provider") orelse lookupTable(top, "metrics")) |t| {
+            if (lookupString(t, "exporter")) |s| cfg.metrics.exporter = ExporterKind.fromString(s);
+            if (lookupInt(t, "interval")) |ms| cfg.metrics.interval_ms = @intCast(ms);
+        }
+        if (lookupTable(top, "logger_provider") orelse lookupTable(top, "logs")) |t| {
+            if (lookupString(t, "exporter")) |s| cfg.logs.exporter = ExporterKind.fromString(s);
+        }
+    }
+
+    fn mapOf(v: devnw_yaml.Value) ?Pairs {
+        return switch (v) {
+            .map => |m| m,
+            else => null,
+        };
+    }
+
+    fn lookupValue(pairs: Pairs, key: []const u8) ?devnw_yaml.Value {
+        for (pairs) |kv| {
+            switch (kv.k) {
+                .str => |s| if (std.mem.eql(u8, s, key)) return kv.v,
+                else => {},
+            }
+        }
+        return null;
+    }
+
+    fn lookupString(pairs: Pairs, key: []const u8) ?[]const u8 {
+        const v = lookupValue(pairs, key) orelse return null;
+        return switch (v) {
+            .str => |s| s,
+            else => null,
+        };
+    }
+
+    fn lookupBool(pairs: Pairs, key: []const u8) ?bool {
+        const v = lookupValue(pairs, key) orelse return null;
+        return switch (v) {
+            .bool => |b| b,
+            else => null,
+        };
+    }
+
+    fn lookupInt(pairs: Pairs, key: []const u8) ?i64 {
+        const v = lookupValue(pairs, key) orelse return null;
+        return switch (v) {
+            .int => |n| n,
+            else => null,
+        };
+    }
+
+    fn lookupTable(pairs: Pairs, key: []const u8) ?Pairs {
+        const v = lookupValue(pairs, key) orelse return null;
+        return switch (v) {
+            .map => |m| m,
+            else => null,
+        };
+    }
+} else struct {
+    fn apply(_: *Config, _: std.mem.Allocator, _: []const u8) !void {
+        return error.UnsupportedTransport;
+    }
+};
+
 test "validate rejects empty endpoint" {
     var cfg: Config = .{};
     cfg.traces.otlp.endpoint = "";
     try std.testing.expectError(error.InvalidEndpoint, cfg.validate());
 }
 
-test "applyYaml parses basic mapping" {
+test "applyYamlString parses basic mapping" {
     var cfg: Config = .{};
     const src =
         \\disabled: false
@@ -374,7 +497,7 @@ test "applyYaml parses basic mapping" {
         \\  endpoint: "http://collector:4318"
         \\  protocol: http/protobuf
     ;
-    try applyYaml(&cfg, src);
+    try applyYamlString(&cfg, src);
     try std.testing.expectEqual(@as(@TypeOf(cfg.log_level), .warn), cfg.log_level);
     try std.testing.expectEqual(ExporterKind.otlp_http, cfg.traces.exporter);
     try std.testing.expectEqualStrings("http://collector:4318", cfg.traces.otlp.endpoint);

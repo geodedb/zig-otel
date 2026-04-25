@@ -17,6 +17,14 @@
             .url = "git+https://gitlab.com/devnw/zig/json#30b3983dfaab83ebc827205567c32542e111616b",
             .hash = "json-0.1.0-tOue4cGpCwCGYhHHbM0EF6LxFTxPS2s9rcbKRD-o5xW7",
         },
+        .yaml = .{
+            .url = "git+https://gitlab.com/devnw/zig/yaml#d2151db9c6da63a71538d3118a5f064079facbf7",
+            .hash = "yaml-0.1.1-lcW-hHyjBAB9Q8-Bm9ihxzMrOnvfa5T_h6fXJVmXZJvk",
+        },
+        .config = .{
+            .url = "git+https://gitlab.com/devnw/zig/config#7eda77bda98f5bf48570f43ec292ec9219f71480",
+            .hash = "config-0.1.0-TiLumu9gCgAHypciAx8sv9vlgG6b-BjAAjdtL47r3raM",
+        },
     },
     .paths = .{
         "build.zig",

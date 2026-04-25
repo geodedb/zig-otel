@@ -371,7 +371,9 @@ fn unquote(s: []const u8) []const u8 {
 /// `loadAll` + `resolveToValue`; we walk the top-level map and the three
 /// known provider sub-maps to populate the in-repo `Config`.
 pub fn applyYamlStringDevnw(cfg: *Config, allocator: std.mem.Allocator, source: []const u8) !void {
-    if (comptime !build_options.use_devnw_config) return error.UnsupportedTransport;
+    // The comptime branch in `devnw_loader` materialises the off-branch
+    // implementation when the flag is off, so callers always see the same
+    // signature and the dep is never resolved.
     return devnw_loader.apply(cfg, allocator, source);
 }
 
@@ -420,10 +422,12 @@ const devnw_loader = if (build_options.use_devnw_config) struct {
         }
         if (lookupTable(top, "meter_provider") orelse lookupTable(top, "metrics")) |t| {
             if (lookupString(t, "exporter")) |s| cfg.metrics.exporter = ExporterKind.fromString(s);
+            if (lookupString(t, "endpoint")) |s| cfg.metrics.otlp.endpoint = try allocator.dupe(u8, s);
             if (lookupInt(t, "interval")) |ms| cfg.metrics.interval_ms = @intCast(ms);
         }
         if (lookupTable(top, "logger_provider") orelse lookupTable(top, "logs")) |t| {
             if (lookupString(t, "exporter")) |s| cfg.logs.exporter = ExporterKind.fromString(s);
+            if (lookupString(t, "endpoint")) |s| cfg.logs.otlp.endpoint = try allocator.dupe(u8, s);
         }
     }
 

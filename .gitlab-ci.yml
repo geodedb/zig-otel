@@ -306,20 +306,13 @@ zig-test-macos-stress-0.16.0:
   rules: *cross-os-rules
   needs: ["zig-build-macos-0.16.0"]
 
+# Windows test jobs are suppressed entirely above (see "Suppress
+# jobs that hit known upstream bugs"). Leaving the build job behind
+# would hold a runner slot for nothing, so disable it too. Re-enable
+# when the ci-catalog PowerShell wrapper lands its fix.
 zig-build-windows-0.16.0:
-  rules: *cross-os-rules
-
-zig-test-windows-unit-0.16.0:
-  rules: *cross-os-rules
-  needs: ["zig-build-windows-0.16.0"]
-
-zig-test-windows-integration-0.16.0:
-  rules: *cross-os-rules
-  needs: ["zig-build-windows-0.16.0"]
-
-zig-test-windows-stress-0.16.0:
-  rules: *cross-os-rules
-  needs: ["zig-build-windows-0.16.0"]
+  rules:
+  - when: never
 
 # ---------------------------------------------------------------
 # Benchmark regression gating.

@@ -65,3 +65,24 @@ test "delta vs cumulative descriptor preserved" {
     }
     try std.testing.expectEqual(otel.api.metrics.Temporality.delta, snapshot[0].temporality);
 }
+
+test "DevNW metrics counter aggregates additions" {
+    if (!@import("build_options").use_devnw_metrics) return error.SkipZigTest;
+    var resource = try otel.sdk.resource.defaultResource(std.testing.allocator);
+    defer resource.deinit();
+    var mp = try otel.sdk.metrics.MeterProvider.init(std.testing.allocator, .{
+        .resource = &resource,
+        .backend = .devnw,
+    });
+    defer mp.deinit();
+    const m = mp.meter(.{ .name = "demo" });
+    const c = try m.counter(.{ .name = "events", .kind = .counter });
+    c.add(2, &.{});
+    c.add(5, &.{});
+    const snap = try otel.sdk.metrics.collect(&mp, std.testing.allocator);
+    defer {
+        for (snap) |s| std.testing.allocator.free(s.points);
+        std.testing.allocator.free(snap);
+    }
+    try std.testing.expectEqual(@as(i64, 7), snap[0].points[0].value.number.int);
+}

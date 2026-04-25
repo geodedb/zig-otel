@@ -29,6 +29,10 @@
             .url = "git+https://gitlab.com/devnw/zig/protobuf#f18747d87010afc0517a0f0e40cb00fd352e4191",
             .hash = "protobuf-3.0.0-0e82akVdKQBR-5UyQkdGI2f9WiRtiENLEMw_nH7HusOd",
         },
+        .metrics = .{
+            .url = "git+https://gitlab.com/devnw/zig/metrics#cdf63b99240a8c49eefd63475d9d88adcc3dd3ad",
+            .hash = "metrics-0.1.0-uPGXFrKCAQDNKbOPVeu3GbohS6f7Jw5sROQeYpu977PZ",
+        },
     },
     .paths = .{
         "build.zig",

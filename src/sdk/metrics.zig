@@ -6,6 +6,7 @@
 // `collect()`).
 
 const std = @import("std");
+const build_options = @import("build_options");
 const metrics_api = @import("../api/metrics.zig");
 const attrs_mod = @import("../internal/attributes.zig");
 const clock_mod = @import("../internal/clock.zig");
@@ -13,10 +14,25 @@ const trace_api = @import("../api/trace.zig");
 const Resource = @import("resource.zig").Resource;
 const exp = @import("export.zig");
 
+/// DevNW metrics module — only resolved when the build flag is on. The
+/// in-repo aggregation pipeline owns the OpenTelemetry data-point shape;
+/// when `Backend.devnw` is selected the SDK *additionally* mirrors writes
+/// into a DevNW `Registry` so Prometheus-shaped exposure is available
+/// alongside OTLP. See docs/DEPENDENCIES.md for the rationale.
+const devnw_metrics = if (build_options.use_devnw_metrics) @import("devnw_metrics") else struct {};
+
+/// Selects the aggregation backend. The in-repo backend is always
+/// available; `devnw` mirrors counter/up-down/histogram/gauge writes
+/// into a DevNW `metrics.Registry` while the in-repo aggregation
+/// continues to own the OpenTelemetry data-point shape returned by
+/// `collect()`.
+pub const Backend = enum { in_repo, devnw };
+
 pub const MetricsConfig = struct {
     resource: ?*Resource = null,
     clock: clock_mod.Clock = clock_mod.default,
     readers: []const MetricReader = &.{},
+    backend: Backend = .in_repo,
 };
 
 pub const MetricReader = struct {
@@ -39,11 +55,36 @@ const InstrumentBackend = struct {
     /// Back-pointer so instrument operations can route through the
     /// provider without a threadlocal.
     provider: *MeterProvider,
+    /// Mirror handle into the DevNW `metrics.Registry` when the
+    /// `Backend.devnw` aggregation is selected. Counters and observable
+    /// counters mirror to a DevNW Counter; up/down counters and gauges
+    /// mirror to a DevNW Gauge (the only signed primitive); histograms
+    /// mirror to a DevNW Histogram. The mirror is owned by the
+    /// Registry — we hold a borrowed pointer here and the Registry
+    /// frees the underlying metric on `deinit`.
+    devnw_mirror: DevnwMirror = .none,
+    /// Sanitized name handed to the DevNW registry. Owned by the
+    /// instrument; freed on `deinit`.
+    devnw_name: ?[]u8 = null,
 
     pub fn deinit(self: *InstrumentBackend, allocator: std.mem.Allocator) void {
         for (self.points.items) |*pt| pt.deinit(allocator);
         self.points.deinit(allocator);
+        if (self.devnw_name) |n| allocator.free(n);
     }
+};
+
+/// Tagged borrowed handle into the DevNW registry. `none` for the
+/// in-repo backend or for instruments whose DevNW registration failed
+/// (e.g. duplicate name after sanitisation) — failure is non-fatal so
+/// the OTLP path keeps working.
+const DevnwMirror = if (build_options.use_devnw_metrics) union(enum) {
+    none,
+    counter: *devnw_metrics.Counter,
+    gauge: *devnw_metrics.Gauge,
+    histogram: *devnw_metrics.Histogram,
+} else union(enum) {
+    none,
 };
 
 const AggregatedPoint = struct {
@@ -82,6 +123,12 @@ const HistogramAcc = struct {
     }
 };
 
+/// DevNW Registry storage. When the build flag is off the type collapses
+/// to a zero-size struct so MeterProvider stays the same shape.
+const DevnwRegistryHolder = if (build_options.use_devnw_metrics) struct {
+    registry: ?devnw_metrics.Registry = null,
+} else struct {};
+
 pub const MeterProvider = struct {
     allocator: std.mem.Allocator,
     config: MetricsConfig,
@@ -89,6 +136,7 @@ pub const MeterProvider = struct {
     owns_resource: bool,
     instruments: std.ArrayList(*InstrumentBackend),
     clock: clock_mod.Clock,
+    devnw: DevnwRegistryHolder = .{},
 
     pub fn init(allocator: std.mem.Allocator, config: MetricsConfig) !MeterProvider {
         var owns = false;
@@ -101,7 +149,7 @@ pub const MeterProvider = struct {
             resource_ptr = owned;
             owns = true;
         }
-        return .{
+        var self: MeterProvider = .{
             .allocator = allocator,
             .config = config,
             .resource = resource_ptr,
@@ -109,6 +157,10 @@ pub const MeterProvider = struct {
             .instruments = .empty,
             .clock = config.clock,
         };
+        if (build_options.use_devnw_metrics and config.backend == .devnw) {
+            self.devnw.registry = devnw_metrics.Registry.init(allocator);
+        }
+        return self;
     }
 
     pub fn deinit(self: *MeterProvider) void {
@@ -118,6 +170,9 @@ pub const MeterProvider = struct {
             self.allocator.destroy(inst);
         }
         self.instruments.deinit(self.allocator);
+        if (build_options.use_devnw_metrics) {
+            if (self.devnw.registry) |*r| r.deinit();
+        }
         if (self.owns_resource) {
             self.resource.deinit();
             self.allocator.destroy(self.resource);
@@ -149,7 +204,46 @@ pub const MeterProvider = struct {
             .provider = self,
         };
         try self.instruments.append(self.allocator, inst);
+        if (build_options.use_devnw_metrics and self.config.backend == .devnw) {
+            self.registerDevnwMirror(inst) catch {
+                // Mirror registration is best-effort: a duplicate name
+                // (post-sanitisation) or OOM in the registry must not
+                // break the OpenTelemetry write path. Leave the mirror
+                // tagged `.none` so writes skip the duplicate side.
+            };
+        }
         return inst;
+    }
+
+    fn registerDevnwMirror(self: *MeterProvider, inst: *InstrumentBackend) !void {
+        if (!build_options.use_devnw_metrics) return;
+        const reg_ptr = if (self.devnw.registry) |*r| r else return;
+        const sanitized = try sanitizeMetricName(self.allocator, inst.descriptor.name);
+        errdefer self.allocator.free(sanitized);
+        const help = if (inst.descriptor.description.len > 0) inst.descriptor.description else inst.descriptor.name;
+        switch (inst.descriptor.kind) {
+            .counter, .observable_counter => {
+                const c = try reg_ptr.counter(sanitized, help);
+                inst.devnw_mirror = .{ .counter = c };
+            },
+            .up_down_counter, .observable_up_down_counter, .gauge, .observable_gauge => {
+                // DevNW exposes a signed 64-bit Gauge; re-use it for
+                // both up/down counters and gauges. f64 gauges round to
+                // i64 on the mirror side — the OTLP path keeps the
+                // double precision.
+                const g = try reg_ptr.gauge(sanitized, help);
+                inst.devnw_mirror = .{ .gauge = g };
+            },
+            .histogram => {
+                const bounds = if (inst.descriptor.explicit_buckets) |b|
+                    b.boundaries
+                else
+                    &default_histogram_bounds;
+                const h = try reg_ptr.histogram(sanitized, help, bounds);
+                inst.devnw_mirror = .{ .histogram = h };
+            },
+        }
+        inst.devnw_name = sanitized;
     }
 
     fn pointFor(self: *MeterProvider, inst: *InstrumentBackend, attributes: []const attrs_mod.Entry, now: u64) !*AggregatedPoint {
@@ -187,6 +281,30 @@ pub const MeterProvider = struct {
 };
 
 const default_histogram_bounds = [_]f64{ 0, 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000 };
+
+/// Coerce an OpenTelemetry instrument name (which permits `.`, `-`, and
+/// `/` per the spec) into the Prometheus-flavoured identifier the DevNW
+/// `Registry` validates against (`[a-zA-Z_:][a-zA-Z0-9_:]*`). All
+/// disallowed bytes collapse to `_`. A leading digit is prefixed with
+/// `_` so the resulting string passes `validateName`. The caller owns
+/// the returned slice.
+fn sanitizeMetricName(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
+    if (name.len == 0) return try allocator.dupe(u8, "_");
+    const needs_prefix = name[0] >= '0' and name[0] <= '9';
+    const out_len = name.len + @as(usize, if (needs_prefix) 1 else 0);
+    const out = try allocator.alloc(u8, out_len);
+    var off: usize = 0;
+    if (needs_prefix) {
+        out[0] = '_';
+        off = 1;
+    }
+    for (name, 0..) |c, i| {
+        const ok = (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_' or c == ':' or
+            ((c >= '0' and c <= '9') and (i > 0 or needs_prefix));
+        out[off + i] = if (ok) c else '_';
+    }
+    return out;
+}
 
 fn attributeKey(allocator: std.mem.Allocator, entries: []const attrs_mod.Entry) ![]u8 {
     var buf: std.ArrayList(u8) = .empty;
@@ -242,6 +360,7 @@ fn counterAdd(ctx: ?*anyopaque, value: u64, attributes: []const attrs_mod.Entry)
         else => {},
     }
     pt.last_unix_nano = provider_ptr.clock.now();
+    mirrorCounterAdd(inst, value);
 }
 
 fn providerOf(inst: *InstrumentBackend) *MeterProvider {
@@ -268,6 +387,7 @@ fn udcAdd(ctx: ?*anyopaque, value: i64, attributes: []const attrs_mod.Entry) voi
         else => {},
     }
     pt.last_unix_nano = provider_ptr.clock.now();
+    mirrorGaugeAdd(inst, value);
 }
 
 fn makeHistogram(ctx: ?*anyopaque, d: metrics_api.InstrumentDescriptor) anyerror!metrics_api.Histogram {
@@ -296,6 +416,7 @@ fn histRecord(ctx: ?*anyopaque, value: f64, attributes: []const attrs_mod.Entry)
         else => {},
     }
     pt.last_unix_nano = provider_ptr.clock.now();
+    mirrorHistogramObserve(inst, value);
 }
 
 fn makeGauge(ctx: ?*anyopaque, d: metrics_api.InstrumentDescriptor) anyerror!metrics_api.Gauge {
@@ -313,6 +434,59 @@ fn gaugeSet(ctx: ?*anyopaque, value: f64, attributes: []const attrs_mod.Entry) v
         else => {},
     }
     pt.last_unix_nano = provider_ptr.clock.now();
+    mirrorGaugeSet(inst, value);
+}
+
+// ---------------------------------------------------------------- Mirror writes
+//
+// The mirror helpers fan-out updates into the DevNW `metrics.Registry`
+// when `Backend.devnw` is selected. They are no-ops when the build
+// option is off (the comptime branch is removed entirely) or when the
+// instrument is unmirrored (registration failed). All writes are
+// lock-free atomics on the DevNW side, so we don't take the provider
+// lock here.
+
+fn mirrorCounterAdd(inst: *InstrumentBackend, value: u64) void {
+    if (!build_options.use_devnw_metrics) return;
+    switch (inst.devnw_mirror) {
+        .counter => |c| c.add(value),
+        else => {},
+    }
+}
+
+fn mirrorGaugeAdd(inst: *InstrumentBackend, value: i64) void {
+    if (!build_options.use_devnw_metrics) return;
+    switch (inst.devnw_mirror) {
+        .gauge => |g| g.add(value),
+        else => {},
+    }
+}
+
+fn mirrorGaugeSet(inst: *InstrumentBackend, value: f64) void {
+    if (!build_options.use_devnw_metrics) return;
+    // DevNW Gauge stores i64; truncate fractional component to land in
+    // the closest representable integer. Callers that care about double
+    // precision should consume the OTLP path.
+    const truncated: i64 = blk: {
+        if (std.math.isNan(value) or std.math.isInf(value)) break :blk 0;
+        const max_f: f64 = @floatFromInt(std.math.maxInt(i64));
+        const min_f: f64 = @floatFromInt(std.math.minInt(i64));
+        if (value >= max_f) break :blk std.math.maxInt(i64);
+        if (value <= min_f) break :blk std.math.minInt(i64);
+        break :blk @intFromFloat(value);
+    };
+    switch (inst.devnw_mirror) {
+        .gauge => |g| g.set(truncated),
+        else => {},
+    }
+}
+
+fn mirrorHistogramObserve(inst: *InstrumentBackend, value: f64) void {
+    if (!build_options.use_devnw_metrics) return;
+    switch (inst.devnw_mirror) {
+        .histogram => |h| h.observe(value),
+        else => {},
+    }
 }
 
 /// Snapshot every instrument into `out_alloc`-owned MetricData slices.

@@ -280,6 +280,21 @@ fn encodeSpansJsonDevnw(allocator: std.mem.Allocator, items: []const exp.SpanDat
 //      OTLP itself defines this field as `int64`; the in-repo wire output
 //      is the contract enforced by the parity test, so the DevNW path
 //      mirrors the existing behaviour.
+//
+// SYNCHRONIZE WITH `encodeSpansProto` ABOVE — these wire-type choices are
+// *not* what OTLP 1.10.0 prescribes; they mirror the in-repo encoder's
+// existing wire output so the parity test passes:
+//   - `AnyValue.int_value`           => .sint64   (matches `writeSint64` at otlp.zig usage)
+//   - `Span.kind`                    => .uint64   (in-repo uses `writeUint64`)
+//   - `Span.dropped_attributes_count` => .uint64  (in-repo uses `writeUint64`)
+//   - `Status.code`                  => .uint64   (in-repo uses `writeUint64`)
+//
+// If `encodeSpansProto` is ever updated to emit OTLP-spec-correct wire
+// types (e.g. `int64`/`uint32`/enum), the parallel descriptor here MUST be
+// updated in lockstep, or the parity test will start failing on the DevNW
+// side and look like a DevNW regression. The fix is to update both at
+// once, then expand the parity-test fixtures to cover the affected
+// fields.
 
 const ProtoMessages = if (build_options.use_devnw_protobuf) struct {
     const fd = devnw_proto.fd;

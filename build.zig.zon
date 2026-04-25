@@ -33,6 +33,10 @@
             .url = "git+https://gitlab.com/devnw/zig/metrics#cdf63b99240a8c49eefd63475d9d88adcc3dd3ad",
             .hash = "metrics-0.1.0-uPGXFrKCAQDNKbOPVeu3GbohS6f7Jw5sROQeYpu977PZ",
         },
+        .tls = .{
+            .url = "git+https://gitlab.com/devnw/zig/tls#c0895db0adc841abdb44bd8ff6fe1edd3e321aa6",
+            .hash = "tls-0.1.1-mtEaLKedEgBUv1K_Vd1PCWYrB1hjpvN5rskwXvFKdiBK",
+        },
     },
     .paths = .{
         "build.zig",

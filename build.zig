@@ -16,6 +16,7 @@ pub fn build(b: *std.Build) void {
     const use_devnw_config = b.option(bool, "otel_use_devnw_config", "Route OTEL_CONFIG_FILE through DevNW yaml + config") orelse false;
     const use_devnw_protobuf = b.option(bool, "otel_use_devnw_protobuf", "Encode OTLP via DevNW protobuf") orelse false;
     const use_devnw_metrics = b.option(bool, "otel_use_devnw_metrics", "Use DevNW metrics aggregation registry") orelse false;
+    const use_devnw_tls = b.option(bool, "otel_use_devnw_tls", "Use DevNW tls for HTTPS in OTLP/HTTP transport") orelse false;
 
     const opts = b.addOptions();
     opts.addOption(bool, "otel_profiles", otel_profiles);
@@ -25,6 +26,7 @@ pub fn build(b: *std.Build) void {
     opts.addOption(bool, "use_devnw_config", use_devnw_config);
     opts.addOption(bool, "use_devnw_protobuf", use_devnw_protobuf);
     opts.addOption(bool, "use_devnw_metrics", use_devnw_metrics);
+    opts.addOption(bool, "use_devnw_tls", use_devnw_tls);
     opts.addOption([]const u8, "version", "0.1.0");
     const build_options_module = opts.createModule();
 
@@ -57,6 +59,16 @@ pub fn build(b: *std.Build) void {
     if (use_devnw_metrics) {
         const metrics_dep = b.dependency("metrics", .{ .target = target, .optimize = optimize });
         otel_module.addImport("devnw_metrics", metrics_dep.module("metrics"));
+    }
+    if (use_devnw_tls) {
+        // The DevNW tls package is QUIC-oriented (RFC 9001-first; no
+        // traditional TCP record-layer driver). The `tls13_full` module
+        // exposes the message-parsing primitives we'd need to drive a
+        // TLS-over-TCP record loop ourselves. Wiring the import here
+        // proves the module resolves; the real HTTPS transport landing is
+        // tracked in docs/DEPENDENCIES.md (TLS row).
+        const tls_dep = b.dependency("tls", .{ .target = target, .optimize = optimize });
+        otel_module.addImport("tls", tls_dep.module("tls13_full"));
     }
     otel_module.addImport("build_options", build_options_module);
 
@@ -122,6 +134,7 @@ pub fn build(b: *std.Build) void {
         "test/security.zig",
         "test/instrumentation_slog.zig",
         "test/otlp_wire_parity.zig",
+        "test/tls_loopback.zig",
     };
     for (test_files) |path| {
         const m = b.createModule(.{

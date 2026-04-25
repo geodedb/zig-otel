@@ -111,7 +111,15 @@ optional sections are listed under "Limitations" with a short rationale.
   client (and the gRPC unary encoder over HTTP/2) lands once the DevNW
   `tls` and `grpc-zig` packages are wired in. Tests inject a fake
   transport. Calling the default transport returns
-  `error.UnsupportedTransport` so failures are loud.
+  `error.UnsupportedTransport` so failures are loud. The DevNW `tls`
+  package is now **pinned** (`-Dotel_use_devnw_tls=true` resolves the
+  `tls13_full` module into the build graph) but the HTTPS transport is
+  **not yet implemented**: `tls` is QUIC-first (RFC 9001) and exposes
+  no TLS-over-TCP client API, so driving HTTPS through it requires a
+  TLS 1.3 record-layer driver built on top of the package's parsing
+  primitives. Tracked as a follow-on; see `docs/DEPENDENCIES.md` (TLS
+  row) and `test/tls_loopback.zig` for the contract the follow-on
+  must satisfy.
 - **BatchSpanProcessor**: ships in synchronous-drain form. The 0.16
   `std.Io` API moved background coordination behind an `Io` instance; once
   the SDK accepts an `Io` (planned), the worker-thread variant returns

@@ -165,14 +165,19 @@ pub const MeterProvider = struct {
 
     pub fn deinit(self: *MeterProvider) void {
         for (self.config.readers) |r| r.shutdownFn(r.ctx);
+        // Deinit the DevNW registry BEFORE freeing instrument-owned
+        // sanitized names — counters/gauges hold those slices by
+        // reference, so dropping them while the registry is still alive
+        // would be a UAF the moment DevNW grows a key-iterating shutdown
+        // path.
+        if (build_options.use_devnw_metrics) {
+            if (self.devnw.registry) |*r| r.deinit();
+        }
         for (self.instruments.items) |inst| {
             inst.deinit(self.allocator);
             self.allocator.destroy(inst);
         }
         self.instruments.deinit(self.allocator);
-        if (build_options.use_devnw_metrics) {
-            if (self.devnw.registry) |*r| r.deinit();
-        }
         if (self.owns_resource) {
             self.resource.deinit();
             self.allocator.destroy(self.resource);

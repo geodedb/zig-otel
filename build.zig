@@ -352,6 +352,35 @@ pub fn build(b: *std.Build) void {
     const test_stress_step = b.step("test-stress", "Alias for `test`; CI compatibility");
     test_stress_step.dependOn(unit_step);
 
+    // Live OTLP integration tests against a real collector. Self-skip
+    // unless the corresponding endpoint env var is set, so this step
+    // is safe to wire into CI without polluting the hermetic default
+    // suite. CI's `otlp-integration-live` job points it at the GitLab
+    // Observability endpoints with `-Dotel_use_devnw_tls=true` (and,
+    // when grpc-zig client TLS lands, `-Dotel_use_devnw_grpc=true`).
+    const remote_test_module = b.createModule(.{
+        .root_source_file = b.path("test/remote_otlp.zig"),
+        .target = target,
+        .optimize = optimize,
+        // Link libc so `std.c.environ` is reachable. 0.16 dropped
+        // `std.process.getEnvVarOwned`; the replacement walks the libc
+        // environ block. Pulling libc in for the remote-test target
+        // keeps the cost contained — the rest of the suite stays libc-
+        // free for hermetic Debug/ReleaseSafe runs.
+        .link_libc = true,
+        .imports = &.{
+            .{ .name = "otel", .module = otel_module },
+            .{ .name = "build_options", .module = build_options_module },
+        },
+    });
+    const remote_test = b.addTest(.{ .root_module = remote_test_module });
+    if (tsan) remote_test.root_module.sanitize_thread = true;
+    const remote_test_run = b.addRunArtifact(remote_test);
+    // Always re-run — depends on env vars + the remote endpoint, never on cached state.
+    remote_test_run.has_side_effects = true;
+    const remote_step = b.step("test-remote-otlp", "Run live OTLP exporter tests against a remote collector (self-skips without env vars)");
+    remote_step.dependOn(&remote_test_run.step);
+
     // The bench/scale-bench/compare-bench jobs in CI are advisory and
     // gated to default branch / schedule / RUN_BENCH=true. Until the
     // benchmark/ directory's bench.zig is wired against the current API

@@ -208,6 +208,41 @@ zig-test-unit-releasesmall-0.16.0:
   retry: *linux-retry-system
 
 # ---------------------------------------------------------------
+# Live OTLP integration tests against the GitLab Observability
+# endpoints. Self-skip via env vars when the build option is on but
+# the endpoint vars are not — keeps local `zig build test` hermetic.
+# Allow_failure: true because the endpoint may be intermittently
+# unreachable from the runner pool; the unit/integration suites
+# remain the gating signal. Set CI/CD variable
+# `OTEL_INTEGRATION_AUTH_HEADER` to a value like
+# `Authorization=Bearer <token>` if the collector requires auth.
+# ---------------------------------------------------------------
+
+otlp-integration-live:
+  extends: .zig-host-base
+  stage: test
+  rules:
+  - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  - if: '$RUN_OTLP_INTEGRATION == "true"'
+  - when: manual
+    allow_failure: true
+  retry: *linux-retry-system
+  variables:
+    OTEL_INTEGRATION_HTTPS_ENDPOINT: "https://5333796.otel.gitlab-o11y.com:14318"
+    OTEL_INTEGRATION_GRPCS_ENDPOINT: "https://5333796.otel.gitlab-o11y.com:14317"
+  script:
+  - |
+    if [ -n "$OTEL_INTEGRATION_AUTH_HEADER" ]; then
+      export OTEL_EXPORTER_OTLP_HEADERS="$OTEL_INTEGRATION_AUTH_HEADER"
+    fi
+  - zig build test-remote-otlp
+    -Dotel_use_devnw_tls=true
+    -Dotel_use_devnw_grpc=true
+    --summary all
+  allow_failure: true
+
+# ---------------------------------------------------------------
 # Cross-OS gating: apply rules to the catalog-generated jobs so
 # macOS / Windows only run on default branch, schedule, or when
 # RUN_CROSS_OS=true. Elsewhere they fall back to manual.

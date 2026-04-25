@@ -12,11 +12,13 @@ pub fn build(b: *std.Build) void {
     const tsan = b.option(bool, "tsan", "Enable ThreadSanitizer on test artifacts") orelse false;
     const no_cli = b.option(bool, "no-cli", "Skip building the CLI executable (library-only build)") orelse false;
     const use_devnw_slog = b.option(bool, "otel_use_devnw_slog", "Route std.log bridge through DevNW slog") orelse false;
+    const use_devnw_json = b.option(bool, "otel_use_devnw_json", "Route OTLP/JSON encoding through DevNW json") orelse false;
 
     const opts = b.addOptions();
     opts.addOption(bool, "otel_profiles", otel_profiles);
     opts.addOption(bool, "deprecated_span_events", deprecated_span_events);
     opts.addOption(bool, "use_devnw_slog", use_devnw_slog);
+    opts.addOption(bool, "use_devnw_json", use_devnw_json);
     opts.addOption([]const u8, "version", "0.1.0");
     const build_options_module = opts.createModule();
 
@@ -31,6 +33,10 @@ pub fn build(b: *std.Build) void {
     if (use_devnw_slog) {
         const slog_dep = b.dependency("slog", .{ .target = target, .optimize = optimize });
         otel_module.addImport("slog", slog_dep.module("slogz"));
+    }
+    if (use_devnw_json) {
+        const json_dep = b.dependency("json", .{ .target = target, .optimize = optimize });
+        otel_module.addImport("json", json_dep.module("json"));
     }
     otel_module.addImport("build_options", build_options_module);
 

@@ -12,6 +12,8 @@ const json_codec = @import("../internal/json_codec.zig");
 const trace_api = @import("../api/trace.zig");
 const ctx_mod = @import("../api/context.zig");
 const attrs_mod = @import("../internal/attributes.zig");
+const build_options = @import("build_options");
+const devnw_json = if (build_options.use_devnw_json) @import("json") else struct {};
 
 pub const OtlpConfig = config_mod.OtlpConfig;
 
@@ -211,6 +213,9 @@ fn writeKeyValue(w: *otlp.Writer, field_number: u32, kv: attrs_mod.Entry) !void 
 }
 
 fn encodeSpansJson(allocator: std.mem.Allocator, items: []const exp.SpanData) ![]u8 {
+    if (build_options.use_devnw_json) {
+        return encodeSpansJsonDevnw(allocator, items);
+    }
     var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(allocator);
     try buf.appendSlice(allocator, "{\"resourceSpans\":[");
@@ -222,6 +227,32 @@ fn encodeSpansJson(allocator: std.mem.Allocator, items: []const exp.SpanData) ![
     }
     try buf.appendSlice(allocator, "]}");
     return try allocator.dupe(u8, buf.items);
+}
+
+/// DevNW-routed JSON encoder. The per-span JSON still comes from the
+/// in-repo `json_codec.spanToJson` (which gates exact byte-level golden
+/// output), but the `{"resourceSpans":[...]}` wrapper is assembled by
+/// DevNW's streaming `Encoder` via `writeRaw`. This routes the JSON path
+/// through the dependency without disturbing the wire-shape contract.
+fn encodeSpansJsonDevnw(allocator: std.mem.Allocator, items: []const exp.SpanData) ![]u8 {
+    var aw: std.Io.Writer.Allocating = .init(allocator);
+    defer aw.deinit();
+
+    var enc = devnw_json.streamingEncoder(allocator, &aw.writer, .{});
+    defer enc.deinit();
+
+    try enc.beginObject();
+    try enc.writeKey("resourceSpans");
+    try enc.beginArray();
+    for (items) |span| {
+        const child = try json_codec.spanToJson(allocator, span);
+        defer allocator.free(child);
+        try enc.writeRaw(child);
+    }
+    try enc.endArray();
+    try enc.endObject();
+
+    return try allocator.dupe(u8, aw.written());
 }
 
 test "encodeSpansProto handles empty input" {

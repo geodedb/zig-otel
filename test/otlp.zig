@@ -92,6 +92,38 @@ test "gRPC frame prefix" {
     try std.testing.expectEqual(@as(u32, 3), std.mem.readInt(u32, out[1..5], .big));
 }
 
+test "OTLP HTTP JSON body wraps in resourceSpans" {
+    fake_state.attempts = 0;
+    fake_state.responses = &.{.{ .status = 200 }};
+    var resource = try otel.sdk.resource.defaultResource(std.testing.allocator);
+    defer resource.deinit();
+    var attr_set = otel.internal.attributes.AttributeSet.init(std.testing.allocator);
+    defer attr_set.deinit();
+    var exporter = try otel.exporters.otlp_http.OtlpHttpExporter.init(std.testing.allocator, .{
+        .endpoint = "http://localhost:4318",
+        .protocol = .http_json,
+    });
+    exporter.transport = fakeTransport;
+    defer exporter.deinit();
+    const span: otel.sdk.exporter.SpanData = .{
+        .name = "x",
+        .span_context = .{
+            .trace_id = .{ .bytes = .{ 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },
+            .span_id = .{ .bytes = .{ 1, 0, 0, 0, 0, 0, 0, 0 } },
+        },
+        .start_unix_nano = 1,
+        .end_unix_nano = 2,
+        .attributes = &attr_set,
+        .events = &.{},
+        .links = &.{},
+        .instrumentation_scope = .{ .name = "" },
+        .resource = &resource,
+    };
+    const result = try exporter.spanExporter().exportSpans(&[_]otel.sdk.exporter.SpanData{span});
+    try std.testing.expectEqual(otel.sdk.exporter.SpanExportResult.success, result);
+    try std.testing.expect(fake_state.last_body_len > 0);
+}
+
 test "profiles gating returns UnsupportedTransport" {
     const p: otel.api.profiles.Profiler = .{ .scope = .{ .name = "x" } };
     const profile: otel.api.profiles.Profile = .{

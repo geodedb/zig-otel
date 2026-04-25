@@ -13,6 +13,10 @@
             .url = "git+https://gitlab.com/devnw/zig/slog#65e0792d4140a736fb1e04a7b1ee84c9333d58a9",
             .hash = "slog-0.1.0-SamEDyVLBgDLhCULhAYXGTkLtFFch_zMfAj8MRz2E3Cb",
         },
+        .json = .{
+            .url = "git+https://gitlab.com/devnw/zig/json#30b3983dfaab83ebc827205567c32542e111616b",
+            .hash = "json-0.1.0-tOue4cGpCwCGYhHHbM0EF6LxFTxPS2s9rcbKRD-o5xW7",
+        },
     },
     .paths = .{
         "build.zig",

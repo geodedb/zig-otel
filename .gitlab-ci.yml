@@ -243,6 +243,14 @@ zig-test-windows-stress-0.16.0:
   rules:
   - when: never
 
+# Catalog-included security/SBOM jobs default to `tags: [company]`,
+# which can land them on a Windows runner that doesn't have the
+# `/analyzer` Linux binary. Pin them to Linux runners explicitly.
+secret_detection:
+  tags:
+  - company
+  - linux
+
 # ---------------------------------------------------------------
 # Live OTLP integration tests against the GitLab Observability
 # endpoints. Self-skip via env vars when the build option is on but
@@ -333,6 +341,13 @@ zig-build-windows-0.16.0:
 .zig-host-base:
   image: "ubuntu:24.04"
   interruptible: true
+  # The `company` tag pool spans both Linux and Windows runners; without
+  # `linux` the scheduler can drop a docker-image-based job onto a
+  # Windows shell runner that ignores `image:` and tries to run our
+  # bash `before_script` as PowerShell. Pin to Linux explicitly.
+  tags:
+  - company
+  - linux
   before_script:
   - apt-get update -qq
   - apt-get install -y --no-install-recommends curl ca-certificates xz-utils git build-essential python3

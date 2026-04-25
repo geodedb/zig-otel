@@ -27,9 +27,10 @@ the experimental profiles signal behind a build flag.
 - Exporters: in-memory, stdout JSON, file JSONL, Prometheus text format,
   OTLP/HTTP (protobuf and JSON), unary OTLP/gRPC framing helper.
 - Pluggable transport seam — production HTTP/HTTPS via `std.http.Client`
-  (with stdlib `std.crypto.tls`) is wired behind `-Dotel_use_devnw_tls=true`;
-  HTTP/2 + gRPC follow once those dependencies land (see
-  [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md)).
+  behind `-Dotel_use_devnw_tls=true`; OTLP/gRPC unary via DevNW `grpc-zig`
+  behind `-Dotel_use_devnw_grpc=true`; async `BatchSpanProcessor` worker
+  pool via DevNW `thread-pool` behind `-Dotel_use_devnw_pool=true`. See
+  [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md).
 - `OTEL_*` environment variables and `OTEL_CONFIG_FILE` YAML loader. Code
   &gt; YAML &gt; env &gt; defaults precedence with fail-closed validation.
 - Generated semantic-convention constants (resource, HTTP, network, process,
@@ -153,6 +154,29 @@ zig build run-http-client                          # examples/http_client.zig
 `-Dotel_profiles=true` enables the experimental profiles signal.
 `-Ddeprecated_span_events=true` re-enables the legacy `Span.addEvent` shim
 (bridged to logs).
+
+## Optional DevNW backends
+
+Build flags that swap an in-repo seam for the equivalent DevNW package
+(or, for `tls`, the stdlib HTTP/HTTPS client). All default to `false` so
+the hermetic stdlib build keeps working.
+
+| Flag                               | Replaces                                                | Pinned upstream                          |
+|------------------------------------|---------------------------------------------------------|------------------------------------------|
+| `-Dotel_use_devnw_slog=true`       | `std.log` bridge formatter                              | `gitlab.com/devnw/zig/slog`              |
+| `-Dotel_use_devnw_json=true`       | OTLP/JSON envelope encoder                              | `gitlab.com/devnw/zig/json`              |
+| `-Dotel_use_devnw_config=true`     | `OTEL_CONFIG_FILE` YAML loader                          | `gitlab.com/devnw/zig/yaml` + `config`   |
+| `-Dotel_use_devnw_protobuf=true`   | OTLP protobuf encoder (parallel, byte-parity gated)     | `gitlab.com/devnw/zig/protobuf`          |
+| `-Dotel_use_devnw_metrics=true`    | Mirror metric writes into a DevNW Prometheus registry   | `gitlab.com/devnw/zig/metrics`           |
+| `-Dotel_use_devnw_tls=true`        | OTLP/HTTP transport stub → real `std.http.Client` path  | `gitlab.com/devnw/zig/tls` (pinned for QUIC follow-on) |
+| `-Dotel_use_devnw_grpc=true`       | OTLP/gRPC unary transport (with one upstream patch)     | `gitlab.com/devnw/zig/grpc-zig`          |
+| `-Dotel_use_devnw_pool=true`       | Async `BatchSpanProcessor` worker (`async_workers > 0`) | `gitlab.com/devnw/zig/thread-pool`       |
+
+Every flag is independently testable; the stdlib path remains the
+default for hermetic CI. Pinned commit SHAs and Zig package hashes live
+in `build.zig.zon`. See `docs/DEPENDENCIES.md` for the per-row
+rationale, including known caveats (e.g. the gRPC loopback test is
+currently skipped pending an upstream HTTP/2 framing fix).
 
 ## Compatibility
 

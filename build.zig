@@ -14,6 +14,7 @@ pub fn build(b: *std.Build) void {
     const use_devnw_slog = b.option(bool, "otel_use_devnw_slog", "Route std.log bridge through DevNW slog") orelse false;
     const use_devnw_json = b.option(bool, "otel_use_devnw_json", "Route OTLP/JSON encoding through DevNW json") orelse false;
     const use_devnw_config = b.option(bool, "otel_use_devnw_config", "Route OTEL_CONFIG_FILE through DevNW yaml + config") orelse false;
+    const use_devnw_protobuf = b.option(bool, "otel_use_devnw_protobuf", "Encode OTLP via DevNW protobuf") orelse false;
 
     const opts = b.addOptions();
     opts.addOption(bool, "otel_profiles", otel_profiles);
@@ -21,6 +22,7 @@ pub fn build(b: *std.Build) void {
     opts.addOption(bool, "use_devnw_slog", use_devnw_slog);
     opts.addOption(bool, "use_devnw_json", use_devnw_json);
     opts.addOption(bool, "use_devnw_config", use_devnw_config);
+    opts.addOption(bool, "use_devnw_protobuf", use_devnw_protobuf);
     opts.addOption([]const u8, "version", "0.1.0");
     const build_options_module = opts.createModule();
 
@@ -45,6 +47,10 @@ pub fn build(b: *std.Build) void {
         const config_dep = b.dependency("config", .{ .target = target, .optimize = optimize });
         otel_module.addImport("yaml", yaml_dep.module("yaml"));
         otel_module.addImport("config", config_dep.module("config"));
+    }
+    if (use_devnw_protobuf) {
+        const proto_dep = b.dependency("protobuf", .{ .target = target, .optimize = optimize });
+        otel_module.addImport("devnw_protobuf", proto_dep.module("protobuf"));
     }
     otel_module.addImport("build_options", build_options_module);
 
@@ -109,6 +115,7 @@ pub fn build(b: *std.Build) void {
         "test/config.zig",
         "test/security.zig",
         "test/instrumentation_slog.zig",
+        "test/otlp_wire_parity.zig",
     };
     for (test_files) |path| {
         const m = b.createModule(.{

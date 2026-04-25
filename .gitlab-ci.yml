@@ -298,20 +298,29 @@ otlp-integration-live:
 - when: manual
   allow_failure: true
 
+# macOS SaaS runner instances often take 30-60min to spin up the
+# nested VM (`Creating nesting VM macos-15-xcode-16`). Bump the
+# per-job timeout to the 2h SaaS cap so a slow cold start does not
+# kill an otherwise-healthy run. The actual zig build + test phase
+# completes in well under 5 minutes once the VM is up.
 zig-build-macos-0.16.0:
   rules: *cross-os-rules
+  timeout: 2h
 
 zig-test-macos-unit-0.16.0:
   rules: *cross-os-rules
   needs: ["zig-build-macos-0.16.0"]
+  timeout: 2h
 
 zig-test-macos-integration-0.16.0:
   rules: *cross-os-rules
   needs: ["zig-build-macos-0.16.0"]
+  timeout: 2h
 
 zig-test-macos-stress-0.16.0:
   rules: *cross-os-rules
   needs: ["zig-build-macos-0.16.0"]
+  timeout: 2h
 
 # Windows test jobs are suppressed entirely above (see "Suppress
 # jobs that hit known upstream bugs"). Leaving the build job behind

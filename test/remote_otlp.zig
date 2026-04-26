@@ -71,6 +71,37 @@ fn nowNanos() u64 {
     return otel.internal.clock.unixNanoNow();
 }
 
+/// GAP-SEC-H-7: best-effort credential pattern detector. Returns true if
+/// `text` looks like it might contain a bearer token, cookie, or
+/// `key=secret`-shaped pair. Used to suppress dumping arbitrary
+/// collector responses to CI logs (which used to include the
+/// Authorization header on early-failure paths).
+fn scrubCredentials(text: []const u8) bool {
+    const needles = [_][]const u8{ "Bearer ", "Authorization", "Set-Cookie", "token=", "secret=" };
+    for (needles) |needle| {
+        if (std.ascii.indexOfIgnoreCase(text, needle) != null) return true;
+    }
+    return false;
+}
+
+/// Returns true when running under CI, in which case the printer hashes
+/// rather than echoes the endpoint URL (it's user data via the
+/// `OTEL_INTEGRATION_*_ENDPOINT` env var).
+fn isCi() bool {
+    var buf: [16]u8 = undefined;
+    return envInto(&buf, "CI") != null;
+}
+
+/// Hash `endpoint` with SHA-256 and write the first 16 hex chars into
+/// `out_buf`. Used in CI logs so an attacker who scrapes a CI log
+/// can't tell which collector got hit.
+fn hashEndpoint(out_buf: []u8, endpoint: []const u8) []const u8 {
+    const Sha256 = std.crypto.hash.sha2.Sha256;
+    var digest: [Sha256.digest_length]u8 = undefined;
+    Sha256.hash(endpoint, &digest, .{});
+    return hex(out_buf, digest[0..8]);
+}
+
 test "OTLP/HTTPS live export to remote collector" {
     if (!build_options.use_devnw_tls) return error.SkipZigTest;
     var endpoint_buf: [512]u8 = undefined;
@@ -120,7 +151,12 @@ test "OTLP/HTTPS live export to remote collector" {
     // stderr through, so this surfaces in `zig build test --summary all`.
     var hex_buf: [64]u8 = undefined;
     std.debug.print("\n=== otel-zig live OTLP/HTTPS emission ===\n", .{});
-    std.debug.print("  endpoint   = {s}\n", .{endpoint});
+    if (isCi()) {
+        var ep_hash_buf: [32]u8 = undefined;
+        std.debug.print("  endpoint   = sha256:{s} (hashed in CI)\n", .{hashEndpoint(&ep_hash_buf, endpoint)});
+    } else {
+        std.debug.print("  endpoint   = {s}\n", .{endpoint});
+    }
     std.debug.print("  trace_id   = {s}\n", .{hex(&hex_buf, trace_id_bytes[0..])});
     std.debug.print("  parent_id  = {s}\n", .{hex(hex_buf[16..], parent_span_id_bytes[0..])});
     std.debug.print("  service    = otel-zig-integration\n", .{});
@@ -189,21 +225,26 @@ test "OTLP/HTTPS live export to remote collector" {
 
     std.debug.print("  http.status = {d}\n", .{exporter.last_response_status});
     std.debug.print("  resp.bytes  = {d}\n", .{exporter.last_response_body_len});
-    if (exporter.last_response_body_len > 0) {
+    // GAP-SEC-H-7: only dump the response body when the export *failed*
+    // (the success path's body is always empty for OTLP/HTTPS), and
+    // even then suppress it if it looks like it might contain
+    // credentials. This prevents Authorization headers (which some
+    // collectors echo on HTTP errors) from leaking into CI logs.
+    const success = result == .success or result == .partial_success;
+    if (!success and exporter.last_response_body_len > 0) {
         const resp = exporter.last_response_body[0..exporter.last_response_body_len];
-        // Print as both raw hex (binary OTLP partial-success proto) and
-        // best-effort text so the operator can spot ASCII error messages.
-        std.debug.print("  resp.hex    = ", .{});
-        for (resp) |b| std.debug.print("{x:0>2}", .{b});
-        std.debug.print("\n  resp.text   = ", .{});
-        for (resp) |b| {
-            if (b >= 0x20 and b <= 0x7e) {
-                std.debug.print("{c}", .{b});
-            } else {
-                std.debug.print(".", .{});
-            }
+        if (scrubCredentials(resp)) {
+            std.debug.print("  resp.body   = (suppressed: credential pattern detected)\n", .{});
+        } else {
+            // Hash the first 32 bytes so the operator can correlate
+            // failures across runs without the full body in the log.
+            var head_hash_buf: [32]u8 = undefined;
+            const head = if (resp.len < 32) resp else resp[0..32];
+            const Sha256 = std.crypto.hash.sha2.Sha256;
+            var digest: [Sha256.digest_length]u8 = undefined;
+            Sha256.hash(head, &digest, .{});
+            std.debug.print("  resp.head_sha = {s}\n", .{hex(&head_hash_buf, digest[0..8])});
         }
-        std.debug.print("\n", .{});
     }
     std.debug.print("=== /otel-zig live OTLP/HTTPS emission ===\n\n", .{});
 

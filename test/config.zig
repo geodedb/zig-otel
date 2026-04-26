@@ -91,6 +91,81 @@ test "C-1: applyEnvFromMap + deinit leaks nothing under testing allocator" {
     cfg.deinit(std.testing.allocator);
 }
 
+// -------------------------------------------------------------------------
+// GAP-SEC-M-5 / GAP-SEC-L-6 / GAP-SEC-L-7: Config.validate hardening.
+//
+// Together these block SSRF (link-local / loopback-without-opt-in),
+// runaway timeouts (must be capped), and NaN sampler ratios.
+// -------------------------------------------------------------------------
+
+test "M-5: validate rejects link-local IPv4 169.254.169.254 endpoint" {
+    var cfg: otel.sdk.config.Config = .{};
+    cfg.traces.otlp.endpoint = "http://169.254.169.254/v1/traces";
+    try std.testing.expectError(error.InvalidEndpoint, cfg.validate());
+}
+
+test "M-5: validate rejects IPv6 link-local fe80:: endpoint" {
+    var cfg: otel.sdk.config.Config = .{};
+    cfg.traces.otlp.endpoint = "http://[fe80::1]:4318";
+    try std.testing.expectError(error.InvalidEndpoint, cfg.validate());
+}
+
+test "M-5: validate rejects IPv4-mapped IPv6 link-local endpoint" {
+    var cfg: otel.sdk.config.Config = .{};
+    cfg.traces.otlp.endpoint = "http://[::ffff:169.254.169.254]:4318";
+    try std.testing.expectError(error.InvalidEndpoint, cfg.validate());
+}
+
+test "M-5: validate rejects non-http(s) scheme" {
+    var cfg: otel.sdk.config.Config = .{};
+    cfg.traces.otlp.endpoint = "ftp://collector.example.com";
+    try std.testing.expectError(error.InvalidEndpoint, cfg.validate());
+}
+
+test "M-5: validate rejects loopback by default" {
+    var cfg: otel.sdk.config.Config = .{};
+    cfg.traces.otlp.endpoint = "http://127.0.0.1:4318";
+    try std.testing.expectError(error.InvalidEndpoint, cfg.validate());
+}
+
+test "M-5: validate accepts loopback when allow_loopback is set" {
+    var cfg: otel.sdk.config.Config = .{};
+    cfg.traces.otlp.endpoint = "http://127.0.0.1:4318";
+    cfg.traces.otlp.allow_loopback = true;
+    cfg.metrics.otlp.allow_loopback = true;
+    cfg.logs.otlp.allow_loopback = true;
+    // Other endpoints default to http://localhost:4318 — also loopback.
+    cfg.metrics.otlp.endpoint = "http://127.0.0.1:4318";
+    cfg.logs.otlp.endpoint = "http://127.0.0.1:4318";
+    try cfg.validate();
+}
+
+test "M-5: validate accepts ordinary remote https endpoint" {
+    var cfg: otel.sdk.config.Config = .{};
+    cfg.traces.otlp.endpoint = "https://collector.example.com:4318";
+    cfg.metrics.otlp.endpoint = "https://collector.example.com:4318";
+    cfg.logs.otlp.endpoint = "https://collector.example.com:4318";
+    try cfg.validate();
+}
+
+test "L-6: validate rejects timeout above 10 minutes" {
+    var cfg: otel.sdk.config.Config = .{};
+    cfg.traces.otlp.endpoint = "https://collector.example.com:4318";
+    cfg.metrics.otlp.endpoint = "https://collector.example.com:4318";
+    cfg.logs.otlp.endpoint = "https://collector.example.com:4318";
+    cfg.traces.otlp.timeout_ms = 600_001;
+    try std.testing.expectError(error.InvalidConfig, cfg.validate());
+}
+
+test "L-7: validate rejects NaN sampler_arg" {
+    var cfg: otel.sdk.config.Config = .{};
+    cfg.traces.otlp.endpoint = "https://collector.example.com:4318";
+    cfg.metrics.otlp.endpoint = "https://collector.example.com:4318";
+    cfg.logs.otlp.endpoint = "https://collector.example.com:4318";
+    cfg.traces.sampler_arg = std.math.nan(f64);
+    try std.testing.expectError(error.InvalidConfig, cfg.validate());
+}
+
 test "M-4: applyYamlString values survive source buffer free" {
     // Allocate a YAML source on the heap, copy it into another buffer,
     // free the original, then assert Config still holds the right strings.

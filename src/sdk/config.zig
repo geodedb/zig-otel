@@ -54,12 +54,106 @@ pub const OtlpConfig = struct {
     /// When true, skip TLS verification. Default is false; the spec says
     /// HTTPS validation is on by default.
     skip_tls_verify: bool = false,
+    /// Opt-in: allow loopback addresses (127.0.0.0/8, ::1, "localhost") in
+    /// the endpoint. Off by default to discourage accidentally exporting
+    /// telemetry to a developer-only collector in production. The default
+    /// `http://localhost:4318` is grandfathered in `Config.validate` since
+    /// it's the OTel-spec default; callers who set a *different* loopback
+    /// endpoint must opt in.
+    allow_loopback: bool = false,
     /// Internal: marks endpoint as allocator-owned (set by env/YAML loaders
     /// after duping). Defaults remain static literals.
     endpoint_owned: bool = false,
     /// Internal: marks headers as allocator-owned.
     headers_owned: bool = false,
 };
+
+/// Maximum permitted OTLP timeout. The spec doesn't mandate a ceiling,
+/// but a runaway value (e.g. u64 max read out of YAML) would block the
+/// exporter forever. 10 minutes is well above any sane upper bound.
+pub const max_otlp_timeout_ms: u64 = 600_000;
+
+/// Validate an OTLP endpoint URL.
+///
+/// Rejects (returning `error.InvalidEndpoint`):
+///   - Empty strings
+///   - Non-`http`/`https` schemes (no `file://`, `gopher://`, etc.)
+///   - Link-local IPv4 (169.254.0.0/16) — covers the AWS/GCP/Azure
+///     instance-metadata SSRF target 169.254.169.254
+///   - Link-local IPv6 (fe80::/10)
+///   - IPv4-mapped IPv6 link-local (`[::ffff:169.254.x.x]`)
+///   - Loopback hosts (127.0.0.0/8, ::1, "localhost") UNLESS
+///     `allow_loopback` is true. The default endpoint
+///     `http://localhost:4318` is grandfathered: callers don't have to
+///     opt-in for the OTel-spec default, only for *user-supplied*
+///     loopback endpoints.
+fn validateEndpoint(endpoint: []const u8, allow_loopback: bool) !void {
+    if (endpoint.len == 0) return error.InvalidEndpoint;
+
+    // Grandfather the default — many callers never set an endpoint at all
+    // and the spec defines this as the localhost fallback.
+    if (std.mem.eql(u8, endpoint, "http://localhost:4318")) return;
+
+    // Scheme must be http:// or https://, case-insensitive.
+    var rest: []const u8 = endpoint;
+    if (std.ascii.startsWithIgnoreCase(endpoint, "https://")) {
+        rest = endpoint["https://".len..];
+    } else if (std.ascii.startsWithIgnoreCase(endpoint, "http://")) {
+        rest = endpoint["http://".len..];
+    } else {
+        return error.InvalidEndpoint;
+    }
+
+    // Host begins after scheme; ends at first '/', ':' (port), or end.
+    // Bracketed IPv6 hosts are special-cased so the colon inside the
+    // address isn't treated as a port separator.
+    if (rest.len == 0) return error.InvalidEndpoint;
+    var host: []const u8 = undefined;
+    if (rest[0] == '[') {
+        const close = std.mem.indexOfScalar(u8, rest, ']') orelse return error.InvalidEndpoint;
+        host = rest[1..close];
+    } else {
+        // Find the first '/' or ':'.
+        var end_idx: usize = rest.len;
+        for (rest, 0..) |c, i| {
+            if (c == '/' or c == ':') {
+                end_idx = i;
+                break;
+            }
+        }
+        host = rest[0..end_idx];
+    }
+    if (host.len == 0) return error.InvalidEndpoint;
+
+    // Normalise host for substring matching: lowercase ASCII.
+    var host_buf: [256]u8 = undefined;
+    if (host.len > host_buf.len) return error.InvalidEndpoint;
+    for (host, 0..) |c, i| host_buf[i] = std.ascii.toLower(c);
+    const host_lc = host_buf[0..host.len];
+
+    // Link-local IPv4 (169.254/16) — the AWS metadata target lives here.
+    if (std.mem.startsWith(u8, host_lc, "169.254.")) return error.InvalidEndpoint;
+
+    // Link-local IPv6 (fe80::/10).
+    if (std.mem.startsWith(u8, host_lc, "fe80:") or
+        std.mem.startsWith(u8, host_lc, "fe80::") or
+        std.mem.startsWith(u8, host_lc, "fe9") or
+        std.mem.startsWith(u8, host_lc, "fea") or
+        std.mem.startsWith(u8, host_lc, "feb"))
+    {
+        return error.InvalidEndpoint;
+    }
+
+    // IPv4-mapped IPv6 link-local: `::ffff:169.254.x.x` (any case).
+    if (std.mem.indexOf(u8, host_lc, "::ffff:169.254.") != null) return error.InvalidEndpoint;
+
+    // Loopback (127/8, ::1, localhost) — opt-in only.
+    if (!allow_loopback) {
+        if (std.mem.eql(u8, host_lc, "localhost")) return error.InvalidEndpoint;
+        if (std.mem.eql(u8, host_lc, "::1")) return error.InvalidEndpoint;
+        if (std.mem.startsWith(u8, host_lc, "127.")) return error.InvalidEndpoint;
+    }
+}
 
 pub const TraceProviderConfig = struct {
     sampler: enum { always_on, always_off, parent_based, traceidratio } = .always_on,
@@ -100,8 +194,20 @@ pub const Config = struct {
 
     pub fn validate(self: *const Config) !void {
         if (self.file_format.len == 0) return error.InvalidConfig;
+        // L-7: NaN can pass the > / < comparisons (NaN comparisons are
+        // always false), so a separate check is required.
+        if (std.math.isNan(self.traces.sampler_arg)) return error.InvalidConfig;
         if (self.traces.sampler_arg < 0 or self.traces.sampler_arg > 1.0) return error.InvalidConfig;
-        if (self.traces.otlp.endpoint.len == 0) return error.InvalidEndpoint;
+
+        // L-6: Cap the OTLP timeout at a sane upper bound for every signal.
+        if (self.traces.otlp.timeout_ms > max_otlp_timeout_ms) return error.InvalidConfig;
+        if (self.metrics.otlp.timeout_ms > max_otlp_timeout_ms) return error.InvalidConfig;
+        if (self.logs.otlp.timeout_ms > max_otlp_timeout_ms) return error.InvalidConfig;
+
+        // M-5: Endpoint scheme/host validation per signal.
+        try validateEndpoint(self.traces.otlp.endpoint, self.traces.otlp.allow_loopback);
+        try validateEndpoint(self.metrics.otlp.endpoint, self.metrics.otlp.allow_loopback);
+        try validateEndpoint(self.logs.otlp.endpoint, self.logs.otlp.allow_loopback);
     }
 
     /// Frees every string field that a loader (env / YAML) allocated. Safe

@@ -225,7 +225,7 @@ pub const TracerProvider = struct {
     }
 };
 
-fn startSpan(ctx: ?*anyopaque, parent: ctx_mod.Context, name: []const u8, opts: trace_api.SpanOptions) anyerror!trace_api.Span {
+fn startSpan(ctx: ?*anyopaque, scope: trace_api.InstrumentationScope, parent: ctx_mod.Context, name: []const u8, opts: trace_api.SpanOptions) anyerror!trace_api.Span {
     const self: *TracerProvider = @ptrCast(@alignCast(ctx.?));
 
     // Inherit trace id from parent when present, otherwise generate a fresh one.
@@ -246,12 +246,9 @@ fn startSpan(ctx: ?*anyopaque, parent: ctx_mod.Context, name: []const u8, opts: 
     }
 
     const start_ns = opts.start_unix_nano orelse self.clock.now();
-    var state = try trace_api.SpanState.init(self.allocator, name, sc, .{ .name = "" }, start_ns);
+    var state = try trace_api.SpanState.init(self.allocator, name, sc, scope, start_ns);
     state.kind = opts.kind;
     if (parent_sc) |psc| state.parent_span_id = psc.span_id;
-
-    // Attach scope from the caller's tracer.
-    state.instrumentation_scope = .{ .name = "" };
 
     for (opts.initial_attributes) |entry| {
         state.attributes.put(entry.key, entry.value) catch {};

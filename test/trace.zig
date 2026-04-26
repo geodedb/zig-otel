@@ -50,6 +50,37 @@ test "tracer end-to-end with in-memory exporter" {
 
     try std.testing.expectEqual(@as(usize, 1), rec.spans.items.len);
     try std.testing.expectEqual(otel.api.trace.StatusCode.ok, rec.spans.items[0].status_code);
+    // GAP #1: tracer scope must propagate to the recorded span.
+    try std.testing.expectEqualStrings("demo", rec.spans.items[0].instrumentation_scope.name);
+}
+
+test "scope from each tracer is preserved on its spans" {
+    if (@import("build_options").otel_disabled) return error.SkipZigTest;
+    var resource = try otel.sdk.resource.defaultResource(std.testing.allocator);
+    defer resource.deinit();
+    var rec = otel.exporters.in_memory.Recorder.init(std.testing.allocator);
+    defer rec.deinit();
+
+    var tp = try otel.sdk.trace.TracerProvider.init(std.testing.allocator, .{
+        .resource = &resource,
+        .default_exporter = rec.spanExporter(),
+    });
+    defer tp.deinit();
+
+    const t_a = tp.tracer(.{ .name = "lib-a", .version = "1.0.0" });
+    const t_b = tp.tracer(.{ .name = "lib-b", .version = "2.3.4", .schema_url = "https://opentelemetry.io/schemas/1.40.0" });
+
+    const sa = try t_a.startSpan(.empty(), "from-a", .{});
+    sa.end(null);
+    const sb = try t_b.startSpan(.empty(), "from-b", .{});
+    sb.end(null);
+
+    try std.testing.expectEqual(@as(usize, 2), rec.spans.items.len);
+    try std.testing.expectEqualStrings("lib-a", rec.spans.items[0].instrumentation_scope.name);
+    try std.testing.expectEqualStrings("1.0.0", rec.spans.items[0].instrumentation_scope.version);
+    try std.testing.expectEqualStrings("lib-b", rec.spans.items[1].instrumentation_scope.name);
+    try std.testing.expectEqualStrings("2.3.4", rec.spans.items[1].instrumentation_scope.version);
+    try std.testing.expectEqualStrings("https://opentelemetry.io/schemas/1.40.0", rec.spans.items[1].instrumentation_scope.schema_url);
 }
 
 test "alwaysOff sampler drops the span" {

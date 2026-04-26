@@ -240,15 +240,15 @@ pub const Span = struct {
 pub const Tracer = struct {
     ctx: ?*anyopaque = null,
     scope: InstrumentationScope,
-    startSpanFn: *const fn (?*anyopaque, Context, []const u8, SpanOptions) anyerror!Span = noopStart,
+    startSpanFn: *const fn (?*anyopaque, InstrumentationScope, Context, []const u8, SpanOptions) anyerror!Span = noopStart,
 
     pub fn startSpan(self: Tracer, ctx: Context, name: []const u8, opts: SpanOptions) !Span {
         if (comptime build_options.otel_disabled) return Span.noop;
-        return try self.startSpanFn(self.ctx, ctx, name, opts);
+        return try self.startSpanFn(self.ctx, self.scope, ctx, name, opts);
     }
 };
 
-fn noopStart(_: ?*anyopaque, _: Context, _: []const u8, _: SpanOptions) anyerror!Span {
+fn noopStart(_: ?*anyopaque, _: InstrumentationScope, _: Context, _: []const u8, _: SpanOptions) anyerror!Span {
     return .noop;
 }
 

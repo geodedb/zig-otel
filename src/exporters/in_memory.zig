@@ -13,6 +13,12 @@ const id_mod = @import("../internal/id.zig");
 const ctx_mod = @import("../api/context.zig");
 const attrs_mod = @import("../internal/attributes.zig");
 
+pub const StoredScope = struct {
+    name: []u8,
+    version: []u8,
+    schema_url: []u8,
+};
+
 pub const StoredSpan = struct {
     name: []u8,
     sc: ctx_mod.SpanContext,
@@ -22,6 +28,7 @@ pub const StoredSpan = struct {
     end_unix_nano: u64,
     status_code: trace_api.StatusCode,
     attribute_kv: []KV,
+    instrumentation_scope: StoredScope,
 
     pub fn deinit(self: *StoredSpan, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
@@ -30,6 +37,9 @@ pub const StoredSpan = struct {
             allocator.free(kv.value);
         }
         allocator.free(self.attribute_kv);
+        allocator.free(self.instrumentation_scope.name);
+        allocator.free(self.instrumentation_scope.version);
+        allocator.free(self.instrumentation_scope.schema_url);
     }
 };
 
@@ -111,6 +121,11 @@ fn expSpans(ctx: ?*anyopaque, items: []const exp.SpanData) anyerror!exp.SpanExpo
             .end_unix_nano = span.end_unix_nano,
             .status_code = span.status_code,
             .attribute_kv = kvs,
+            .instrumentation_scope = .{
+                .name = try self.allocator.dupe(u8, span.instrumentation_scope.name),
+                .version = try self.allocator.dupe(u8, span.instrumentation_scope.version),
+                .schema_url = try self.allocator.dupe(u8, span.instrumentation_scope.schema_url),
+            },
         });
     }
     return .success;

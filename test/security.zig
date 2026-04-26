@@ -203,6 +203,21 @@ test "H-2: sanitiseLabelName prefixes leading digit with underscore" {
 }
 
 // -------------------------------------------------------------------------
+// GAP-SEC-H-4: skip_tls_verify field is a footgun in a public OTel SDK.
+// Removed entirely (rather than wired) because std.http.Client doesn't
+// expose a stable per-fetch TLS-verify knob and "I configured it but it
+// silently ignored me" is a worse failure mode than "the field doesn't
+// exist". TLS verification is therefore *always on* for the HTTPS path.
+// -------------------------------------------------------------------------
+
+test "H-4: OtlpConfig has no skip_tls_verify field" {
+    const fields = std.meta.fields(otel.sdk.config.OtlpConfig);
+    inline for (fields) |f| {
+        try std.testing.expect(!std.mem.eql(u8, f.name, "skip_tls_verify"));
+    }
+}
+
+// -------------------------------------------------------------------------
 // GAP-SEC-H-3: File exporter must require an explicit base directory
 // and reject absolute paths or any `..` component.
 // -------------------------------------------------------------------------

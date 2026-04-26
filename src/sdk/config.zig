@@ -51,9 +51,14 @@ pub const OtlpConfig = struct {
     timeout_ms: u64 = 10_000,
     compression: enum { none, gzip } = .none,
     insecure: bool = false,
-    /// When true, skip TLS verification. Default is false; the spec says
-    /// HTTPS validation is on by default.
-    skip_tls_verify: bool = false,
+    // GAP-SEC-H-4: removed `skip_tls_verify` field. Zig 0.16
+    // `std.http.Client` doesn't expose a stable per-fetch TLS-verify
+    // knob, so the field used to be silently ignored — a known
+    // foot-gun. TLS verification is therefore always on for the HTTPS
+    // path. If a future Zig release stabilises the API, plumb it
+    // through then; until then refusing to ship the field forces
+    // operators to use the documented escape hatch (set the OS-level
+    // SSL_CERT_FILE during dev) rather than a flag they think works.
     /// Opt-in: allow loopback addresses (127.0.0.0/8, ::1, "localhost") in
     /// the endpoint. Off by default to discourage accidentally exporting
     /// telemetry to a developer-only collector in production. The default

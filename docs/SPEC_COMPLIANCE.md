@@ -90,7 +90,7 @@ optional sections are listed under "Limitations" with a short rationale.
 | Timeout 10 s default                                   | `src/sdk/config.zig: OtlpConfig`     | unit |
 | Retry backoff 100 ms initial, x2, max 5 s, max 30 s, full jitter | `src/sdk/export.zig: nextBackoff` | unit + `test/otlp.zig: retries on 503` |
 | Partial success returns `error.PartialSuccess`         | `src/exporters/otlp_http.zig`        | `test/otlp.zig: PartialSuccess on 207` |
-| HTTPS TLS validation on by default                     | `src/sdk/config.zig: OtlpConfig.skip_tls_verify` (default false) | doc |
+| HTTPS TLS validation on by default                     | always-on (no skip knob — see GAP-SEC-H-4); `std.http.Client` validates against the system CA bundle | doc |
 | HTTP/HTTPS transport (real client, not just vtable)    | `src/exporters/otlp_http.zig: httpTransportImpl` (uses `std.http.Client` + `std.crypto.tls`) | `test/tls_loopback.zig: round-trips a span` (gated on `-Dotel_use_devnw_tls=true`) |
 | Protobuf wire encoder for spans                        | `src/exporters/otlp_http.zig: encodeSpansProto` | unit |
 | JSON wire encoder for spans                            | `src/exporters/otlp_http.zig: encodeSpansJson`  | unit |

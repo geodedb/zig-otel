@@ -156,6 +156,52 @@ test "M-8: header parser drops user-supplied content-type" {
     try std.testing.expectEqualStrings("X-Tenant", out[0].name);
 }
 
+// -------------------------------------------------------------------------
+// GAP-SEC-H-2: Prometheus label-value escaping + label-name sanitisation.
+//
+// Prometheus 0.0.4 text format mandates `\\`, `\"`, `\n` escapes inside
+// label values. Without them, a payload like `pwned"} 999\n...` would
+// break the line and inject a synthetic metric. Label names that violate
+// `[a-zA-Z_][a-zA-Z0-9_]*` would silently mangle dashboards.
+// -------------------------------------------------------------------------
+
+test "H-2: escapes double-quote in label value" {
+    const out = try otel.exporters.prometheus.escapeLabelValue(std.testing.allocator, "p\"q");
+    defer std.testing.allocator.free(out);
+    try std.testing.expectEqualStrings("p\\\"q", out);
+}
+
+test "H-2: escapes backslash in label value" {
+    const out = try otel.exporters.prometheus.escapeLabelValue(std.testing.allocator, "a\\b");
+    defer std.testing.allocator.free(out);
+    try std.testing.expectEqualStrings("a\\\\b", out);
+}
+
+test "H-2: escapes newline in label value" {
+    const out = try otel.exporters.prometheus.escapeLabelValue(std.testing.allocator, "x\ny");
+    defer std.testing.allocator.free(out);
+    try std.testing.expectEqualStrings("x\\ny", out);
+}
+
+test "H-2: round-trips an injection payload safely" {
+    const payload = "pwned\"} 999\ninjected_metric{x=\"y";
+    const out = try otel.exporters.prometheus.escapeLabelValue(std.testing.allocator, payload);
+    defer std.testing.allocator.free(out);
+    try std.testing.expectEqualStrings("pwned\\\"} 999\\ninjected_metric{x=\\\"y", out);
+}
+
+test "H-2: sanitiseLabelName replaces invalid bytes with underscore" {
+    const out = try otel.exporters.prometheus.sanitiseLabelName(std.testing.allocator, "k\"e:y");
+    defer std.testing.allocator.free(out);
+    try std.testing.expectEqualStrings("k_e_y", out);
+}
+
+test "H-2: sanitiseLabelName prefixes leading digit with underscore" {
+    const out = try otel.exporters.prometheus.sanitiseLabelName(std.testing.allocator, "9foo");
+    defer std.testing.allocator.free(out);
+    try std.testing.expectEqualStrings("_9foo", out);
+}
+
 test "C-3: gRPC exporter refuses to export when headers are configured" {
     var resource = otel.sdk.resource.Resource.init(std.testing.allocator);
     defer resource.deinit();

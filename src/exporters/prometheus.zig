@@ -96,13 +96,60 @@ fn sanitize(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
     return out;
 }
 
+/// Sanitise a Prometheus label *name* per `[a-zA-Z_][a-zA-Z0-9_]*`.
+/// Bytes outside the allowed set become `_`. If the first byte is a
+/// digit, an `_` prefix is prepended so the result still matches the
+/// regex. Caller owns the returned slice.
+pub fn sanitiseLabelName(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
+    if (name.len == 0) return allocator.dupe(u8, "_");
+    const needs_prefix = name[0] >= '0' and name[0] <= '9';
+    const out = try allocator.alloc(u8, name.len + @as(usize, if (needs_prefix) 1 else 0));
+    var oi: usize = 0;
+    if (needs_prefix) {
+        out[0] = '_';
+        oi = 1;
+    }
+    for (name) |c| {
+        out[oi] = switch (c) {
+            'a'...'z', 'A'...'Z', '0'...'9', '_' => c,
+            else => '_',
+        };
+        oi += 1;
+    }
+    return out;
+}
+
+/// Escape a Prometheus label *value* per the 0.0.4 text format:
+///   `\\` -> `\\\\`,  `"` -> `\\"`,  `\n` -> `\\n`.
+/// Caller owns the returned slice.
+pub fn escapeLabelValue(allocator: std.mem.Allocator, value: []const u8) ![]u8 {
+    // Worst case: every byte expands to 2 chars (e.g. all backslashes).
+    var out = try std.ArrayList(u8).initCapacity(allocator, value.len);
+    errdefer out.deinit(allocator);
+    for (value) |c| {
+        switch (c) {
+            '\\' => try out.appendSlice(allocator, "\\\\"),
+            '"' => try out.appendSlice(allocator, "\\\""),
+            '\n' => try out.appendSlice(allocator, "\\n"),
+            else => try out.append(allocator, c),
+        }
+    }
+    return try out.toOwnedSlice(allocator);
+}
+
+fn writeLabelKey(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), key: []const u8) !void {
+    const sanitised = try sanitiseLabelName(allocator, key);
+    defer allocator.free(sanitised);
+    try buf.appendSlice(allocator, sanitised);
+}
+
 fn writeLabels(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), attrs_opt: ?*const attrs_mod.AttributeSet) !void {
     const a = attrs_opt orelse return;
     if (a.entries.items.len == 0) return;
     try buf.append(allocator, '{');
     for (a.entries.items, 0..) |entry, i| {
         if (i > 0) try buf.append(allocator, ',');
-        try buf.appendSlice(allocator, entry.key);
+        try writeLabelKey(allocator, buf, entry.key);
         try buf.append(allocator, '=');
         try buf.append(allocator, '"');
         try writeStringValue(allocator, buf, entry.value);
@@ -115,7 +162,7 @@ fn writeBucketLabels(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), attr
     try buf.append(allocator, '{');
     if (attrs_opt) |a| {
         for (a.entries.items) |entry| {
-            try buf.appendSlice(allocator, entry.key);
+            try writeLabelKey(allocator, buf, entry.key);
             try buf.append(allocator, '=');
             try buf.append(allocator, '"');
             try writeStringValue(allocator, buf, entry.value);
@@ -132,7 +179,7 @@ fn writeBucketLabelsInf(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), a
     try buf.append(allocator, '{');
     if (attrs_opt) |a| {
         for (a.entries.items) |entry| {
-            try buf.appendSlice(allocator, entry.key);
+            try writeLabelKey(allocator, buf, entry.key);
             try buf.append(allocator, '=');
             try buf.append(allocator, '"');
             try writeStringValue(allocator, buf, entry.value);
@@ -145,7 +192,11 @@ fn writeBucketLabelsInf(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), a
 
 fn writeStringValue(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), v: attrs_mod.Value) !void {
     switch (v) {
-        .string => |s| try buf.appendSlice(allocator, s),
+        .string => |s| {
+            const escaped = try escapeLabelValue(allocator, s);
+            defer allocator.free(escaped);
+            try buf.appendSlice(allocator, escaped);
+        },
         .bool => |b| try buf.appendSlice(allocator, if (b) "true" else "false"),
         .int => |i| try buf.writer(allocator).print("{d}", .{i}),
         .double => |d| try buf.writer(allocator).print("{d}", .{d}),

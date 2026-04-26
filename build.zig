@@ -293,6 +293,39 @@ pub fn build(b: *std.Build) void {
     golden_step.dependOn(&run_golden.step);
 
     // ------------------------------------------------------------------
+    // GAP-SEC-M-2: deterministic generators for `src/generated/`.
+    // ------------------------------------------------------------------
+    const gen_otlp_module = b.createModule(.{
+        .root_source_file = b.path("tools/gen_otlp.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const gen_otlp_exe = b.addExecutable(.{
+        .name = "gen-otlp",
+        .root_module = gen_otlp_module,
+    });
+    const run_gen_otlp = b.addRunArtifact(gen_otlp_exe);
+    if (b.args) |args| run_gen_otlp.addArgs(args);
+    run_gen_otlp.stdio = .inherit;
+    const gen_otlp_step = b.step("gen-otlp", "Emit a SHA-256 manifest of third_party/opentelemetry-proto-v1.10.0/");
+    gen_otlp_step.dependOn(&run_gen_otlp.step);
+
+    const gen_semconv_module = b.createModule(.{
+        .root_source_file = b.path("tools/gen_semconv.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const gen_semconv_exe = b.addExecutable(.{
+        .name = "gen-semconv",
+        .root_module = gen_semconv_module,
+    });
+    const run_gen_semconv = b.addRunArtifact(gen_semconv_exe);
+    if (b.args) |args| run_gen_semconv.addArgs(args);
+    run_gen_semconv.stdio = .inherit;
+    const gen_semconv_step = b.step("gen-semconv", "Emit a SHA-256 manifest of third_party/semantic-conventions-v1.40.0/");
+    gen_semconv_step.dependOn(&run_gen_semconv.step);
+
+    // ------------------------------------------------------------------
     // Examples.
     // ------------------------------------------------------------------
     const example_basic = b.addExecutable(.{

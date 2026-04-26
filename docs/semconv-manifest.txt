@@ -1,0 +1,4 @@
+# otel semconv-tree manifest (SHA-256 per file)
+# upstream pin: semantic-conventions v1.40.0
+# regenerate: zig build gen-semconv > docs/semconv-manifest.txt
+9162638a9eddb902d0514eb0121c3cf73bb59c5212aae2eb7a48e1797a70b0cc  third_party/semantic-conventions-v1.40.0/LICENSE

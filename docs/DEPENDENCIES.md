@@ -60,3 +60,56 @@ The OpenTelemetry Proto and Semantic Conventions repositories are
 referenced as data only; the relevant LICENSE excerpts live under
 `third_party/opentelemetry-proto-v1.10.0/LICENSE` and
 `third_party/semantic-conventions-v1.40.0/LICENSE`.
+
+## Generated-file provenance (GAP-SEC-M-2)
+
+Two files under `src/generated/` started life as hand-rolled translations
+of upstream specs:
+
+| File                           | Upstream                                                  |
+|--------------------------------|-----------------------------------------------------------|
+| `src/generated/otlp.zig`       | `third_party/opentelemetry-proto-v1.10.0/`                |
+| `src/generated/semconv.zig`    | `third_party/semantic-conventions-v1.40.0/`               |
+
+Two `tools/gen_*.zig` programs emit a SHA-256 manifest of the upstream
+trees so CI can detect drift:
+
+```sh
+zig build gen-otlp     > docs/proto-manifest.txt
+zig build gen-semconv  > docs/semconv-manifest.txt
+```
+
+The CI job `regen-check` runs both programs and `git diff --exit-code`s
+the manifests against the committed copies. A mismatch indicates the
+upstream tree changed and the hand-rolled `src/generated/` files need a
+manual review.
+
+When upgrading an upstream pin: bump the `third_party/<pin>/` directory
+to the new tag, regenerate both manifests, and document the diff in the
+upgrade PR.
+
+## Signing & Verification (GAP-SEC-M-3)
+
+The DevNW Zig packages this library depends on are pinned to immutable
+commit SHAs in `build.zig.zon` (one of the two attribute pairs Zig 0.16
+accepts as authentic). The `.hash` field is computed by Zig at fetch
+time and locked in the manifest, so a swapped tarball trips the lock
+check.
+
+A `osv-scanner` CI job runs against the resolved package cache to
+surface known CVEs in any pinned tree; see `.gitlab-ci.yml`'s
+`security-osv-scan` job. The job is `allow_failure: true` initially —
+upgrade to required after the first clean run.
+
+DevNW publishes signing keys at `https://devnw.com/keys/`; the
+verification recipe is:
+
+```sh
+gpg --recv-keys <devnw-key-id>
+gpg --verify package.zon.sig package.zon
+```
+
+Cosign-style Sigstore signatures for each pinned package are tracked
+out of band with the DevNW project; this library will switch to the
+verified-fetch flow once Zig stabilises a `--require-signature`
+fetch option and DevNW publishes attestations for each release tag.

@@ -1,0 +1,4 @@
+# otel proto-tree manifest (SHA-256 per file)
+# upstream pin: opentelemetry-proto v1.10.0
+# regenerate: zig build gen-otlp > docs/proto-manifest.txt
+4736951814613ff540052481a504e628437bdaea3a233713253390d11e73a237  third_party/opentelemetry-proto-v1.10.0/LICENSE

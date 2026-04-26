@@ -12,6 +12,7 @@ const json_codec = @import("../internal/json_codec.zig");
 const trace_api = @import("../api/trace.zig");
 const ctx_mod = @import("../api/context.zig");
 const attrs_mod = @import("../internal/attributes.zig");
+const redact = @import("../internal/redact.zig");
 const build_options = @import("build_options");
 const devnw_json = if (build_options.use_devnw_json) @import("json") else struct {};
 const devnw_proto = if (build_options.use_devnw_protobuf) @import("devnw_protobuf") else struct {};
@@ -374,7 +375,10 @@ fn writeKeyValue(w: *otlp.Writer, field_number: u32, kv: attrs_mod.Entry) !void 
     try w.writeString(otlp.fn_kv_key, kv.key);
     const v_start = try w.beginSubMessage(otlp.fn_kv_value);
     switch (kv.value) {
-        .string => |s| try w.writeString(otlp.fn_av_string, s),
+        // GAP-SEC-H-6 / GAP-SEC-L-4: redact sensitive string values
+        // before they hit the wire. Span / log / resource attributes
+        // all flow through this writer.
+        .string => |s| try w.writeString(otlp.fn_av_string, redact.maskString(kv.key, s)),
         .bool => |b| try w.writeBool(otlp.fn_av_bool, b),
         .int => |i| try w.writeSint64(otlp.fn_av_int, i),
         .double => |d| try w.writeDouble(otlp.fn_av_double, d),
@@ -649,7 +653,10 @@ pub fn encodeSpansProtoDevnw(allocator: std.mem.Allocator, items: []const exp.Sp
 fn buildKeyValue(kv: attrs_mod.Entry) ProtoMessages.KeyValue {
     var any: ProtoMessages.AnyValue = .{};
     switch (kv.value) {
-        .string => |s| any.string_value = s,
+        // GAP-SEC-H-6: mirror the in-repo encoder's redaction so the
+        // DevNW protobuf path emits the same `[REDACTED]` marker for
+        // sensitive keys (parity with `writeKeyValue`).
+        .string => |s| any.string_value = redact.maskString(kv.key, s),
         .bool => |b| any.bool_value = b,
         .int => |i| any.int_value = i,
         .double => |d| any.double_value = d,

@@ -16,6 +16,7 @@ const attrs_mod = @import("attributes.zig");
 const id_mod = @import("id.zig");
 const ctx_mod = @import("../api/context.zig");
 const Resource = @import("../sdk/resource.zig").Resource;
+const redact = @import("redact.zig");
 
 pub fn spanToJson(arena: std.mem.Allocator, span: exp.SpanData) ![]u8 {
     var buf: std.ArrayList(u8) = .empty;
@@ -158,9 +159,23 @@ pub fn writeAttributes(arena: std.mem.Allocator, buf: *std.ArrayList(u8), set: *
     for (sorted, 0..) |entry, i| {
         if (i > 0) try buf.append(arena, ',');
         try writeKey(arena, buf, entry.key);
-        try writeValue(arena, buf, entry.value);
+        try writeValueRedacted(arena, buf, entry.key, entry.value);
     }
     try buf.append(arena, '}');
+}
+
+/// GAP-SEC-H-6 / GAP-SEC-L-4: route every string attribute value through
+/// the redactor so sensitive keys (password / token / api.key /
+/// authorization / credential, plus their separator-tolerant variants)
+/// emit `[REDACTED]` instead of the actual secret.
+fn writeValueRedacted(arena: std.mem.Allocator, buf: *std.ArrayList(u8), key: []const u8, v: attrs_mod.Value) !void {
+    switch (v) {
+        .string => |s| try writeJsonString(arena, buf, redact.maskString(key, s)),
+        .bool => |b| try buf.appendSlice(arena, if (b) "true" else "false"),
+        .int => |i| try writeI64(arena, buf, i),
+        .double => |d| try writeF64(arena, buf, d),
+        else => try buf.appendSlice(arena, "null"),
+    }
 }
 
 fn writeValue(arena: std.mem.Allocator, buf: *std.ArrayList(u8), v: attrs_mod.Value) !void {

@@ -10,6 +10,7 @@ const exp = @import("../sdk/export.zig");
 const metrics_api = @import("../api/metrics.zig");
 const attrs_mod = @import("../internal/attributes.zig");
 const sdk_metrics = @import("../sdk/metrics.zig");
+const redact = @import("../internal/redact.zig");
 const MeterProvider = sdk_metrics.MeterProvider;
 
 pub const Prometheus = struct {
@@ -152,7 +153,7 @@ fn writeLabels(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), attrs_opt:
         try writeLabelKey(allocator, buf, entry.key);
         try buf.append(allocator, '=');
         try buf.append(allocator, '"');
-        try writeStringValue(allocator, buf, entry.value);
+        try writeStringValue(allocator, buf, entry.key, entry.value);
         try buf.append(allocator, '"');
     }
     try buf.append(allocator, '}');
@@ -165,7 +166,7 @@ fn writeBucketLabels(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), attr
             try writeLabelKey(allocator, buf, entry.key);
             try buf.append(allocator, '=');
             try buf.append(allocator, '"');
-            try writeStringValue(allocator, buf, entry.value);
+            try writeStringValue(allocator, buf, entry.key, entry.value);
             try buf.append(allocator, '"');
             try buf.append(allocator, ',');
         }
@@ -182,7 +183,7 @@ fn writeBucketLabelsInf(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), a
             try writeLabelKey(allocator, buf, entry.key);
             try buf.append(allocator, '=');
             try buf.append(allocator, '"');
-            try writeStringValue(allocator, buf, entry.value);
+            try writeStringValue(allocator, buf, entry.key, entry.value);
             try buf.append(allocator, '"');
             try buf.append(allocator, ',');
         }
@@ -190,10 +191,15 @@ fn writeBucketLabelsInf(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), a
     try buf.appendSlice(allocator, "le=\"+Inf\"}");
 }
 
-fn writeStringValue(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), v: attrs_mod.Value) !void {
+/// GAP-SEC-H-6: redact the value when the key matches the sensitive
+/// taxonomy. Strings are then escaped per the Prometheus 0.0.4 text
+/// format. Non-string values pass through unchanged — there's no
+/// secret-shape attack on numerics or booleans.
+fn writeStringValue(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), key: []const u8, v: attrs_mod.Value) !void {
     switch (v) {
         .string => |s| {
-            const escaped = try escapeLabelValue(allocator, s);
+            const masked = redact.maskString(key, s);
+            const escaped = try escapeLabelValue(allocator, masked);
             defer allocator.free(escaped);
             try buf.appendSlice(allocator, escaped);
         },

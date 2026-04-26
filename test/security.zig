@@ -203,6 +203,79 @@ test "H-2: sanitiseLabelName prefixes leading digit with underscore" {
 }
 
 // -------------------------------------------------------------------------
+// GAP-SEC-H-6 / GAP-SEC-L-4: every attribute writer must invoke
+// redact.maskString so sensitive values never reach the wire / disk.
+// Covers:
+//   - JSON codec (stdout / file exporters, golden harness)
+//   - OTLP HTTP encodeSpansProto / encodeSpansJson
+//   - Prometheus exporter
+//   - Resource attributes (L-4 — same fix family)
+// -------------------------------------------------------------------------
+
+fn makeSpanWithAttr(resource: *otel.sdk.resource.Resource, attr_set: *otel.internal.attributes.AttributeSet) otel.sdk.exporter.SpanData {
+    return .{
+        .name = "x",
+        .span_context = .{
+            .trace_id = .{ .bytes = .{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 } },
+            .span_id = .{ .bytes = .{ 1, 2, 3, 4, 5, 6, 7, 8 } },
+        },
+        .start_unix_nano = 1,
+        .end_unix_nano = 2,
+        .attributes = attr_set,
+        .events = &.{},
+        .links = &.{},
+        .instrumentation_scope = .{ .name = "t" },
+        .resource = resource,
+    };
+}
+
+test "H-6: JSON codec redacts Authorization span attribute value" {
+    var resource = otel.sdk.resource.Resource.init(std.testing.allocator);
+    defer resource.deinit();
+    var attr_set = otel.internal.attributes.AttributeSet.init(std.testing.allocator);
+    defer attr_set.deinit();
+    try attr_set.putString("Authorization", "Bearer abc-secret");
+
+    const span = makeSpanWithAttr(&resource, &attr_set);
+    const json = try otel.internal.json_codec.spanToJson(std.testing.allocator, span);
+    defer std.testing.allocator.free(json);
+
+    try std.testing.expect(std.mem.indexOf(u8, json, "[REDACTED]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "Bearer abc-secret") == null);
+}
+
+test "H-6: OTLP protobuf encoder redacts sensitive span attributes" {
+    var resource = otel.sdk.resource.Resource.init(std.testing.allocator);
+    defer resource.deinit();
+    var attr_set = otel.internal.attributes.AttributeSet.init(std.testing.allocator);
+    defer attr_set.deinit();
+    try attr_set.putString("api.key", "DEADBEEFCAFE");
+
+    const span = makeSpanWithAttr(&resource, &attr_set);
+    const body = try otel.exporters.otlp_http.encodeSpansProto(std.testing.allocator, &.{span});
+    defer std.testing.allocator.free(body);
+
+    try std.testing.expect(std.mem.indexOf(u8, body, "[REDACTED]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, body, "DEADBEEFCAFE") == null);
+}
+
+test "L-4: OTLP encoder redacts sensitive resource attribute" {
+    var resource = otel.sdk.resource.Resource.init(std.testing.allocator);
+    defer resource.deinit();
+    try resource.attributes.putString("db.password", "topsecret");
+
+    var attr_set = otel.internal.attributes.AttributeSet.init(std.testing.allocator);
+    defer attr_set.deinit();
+
+    const span = makeSpanWithAttr(&resource, &attr_set);
+    const body = try otel.exporters.otlp_http.encodeSpansProto(std.testing.allocator, &.{span});
+    defer std.testing.allocator.free(body);
+
+    try std.testing.expect(std.mem.indexOf(u8, body, "[REDACTED]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, body, "topsecret") == null);
+}
+
+// -------------------------------------------------------------------------
 // GAP-SEC-H-4: skip_tls_verify field is a footgun in a public OTel SDK.
 // Removed entirely (rather than wired) because std.http.Client doesn't
 // expose a stable per-fetch TLS-verify knob and "I configured it but it

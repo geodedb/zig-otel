@@ -520,4 +520,17 @@ pub fn build(b: *std.Build) void {
     if (tsan) framework_test.root_module.sanitize_thread = true;
     const framework_test_step = b.step("bench-framework-test", "Run benchmark framework unit tests");
     framework_test_step.dependOn(&b.addRunArtifact(framework_test).step);
+
+    // Tests for the multi-shot loopback HTTP discard server used by
+    // the level-6 integration bench. Std-only — no otel imports
+    // needed, since the server's contract is independent of the SDK.
+    const loopback_test_module = b.createModule(.{
+        .root_source_file = b.path("benchmarks/integration/loopback_server.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const loopback_test = b.addTest(.{ .root_module = loopback_test_module });
+    if (tsan) loopback_test.root_module.sanitize_thread = true;
+    const loopback_test_step = b.step("bench-loopback-test", "Run loopback HTTP discard server tests");
+    loopback_test_step.dependOn(&b.addRunArtifact(loopback_test).step);
 }

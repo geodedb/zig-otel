@@ -63,6 +63,10 @@ pub const LoopbackServer = struct {
     /// total connections handled, not just user requests.
     request_count: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
     /// First server-thread error, if any. Surfaced via `lastError()`.
+    /// CONTRACT: only read after `stop()` has joined the server thread —
+    /// the field is mutated unguarded by `runMulti` and reading it
+    /// concurrently is a data race. The post-join read is safe because
+    /// `Thread.join` is a happens-before edge.
     err: ?anyerror = null,
     thread: ?std.Thread = null,
 
@@ -74,6 +78,8 @@ pub const LoopbackServer = struct {
         return self.request_count.load(.acquire);
     }
 
+    /// Only safe to call after `stop()` has joined the server thread.
+    /// See `err` field doc for the cross-thread contract.
     pub fn lastError(self: *const LoopbackServer) ?anyerror {
         return self.err;
     }

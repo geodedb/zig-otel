@@ -202,6 +202,45 @@ test "H-2: sanitiseLabelName prefixes leading digit with underscore" {
     try std.testing.expectEqualStrings("_9foo", out);
 }
 
+// -------------------------------------------------------------------------
+// GAP-SEC-H-3: File exporter must require an explicit base directory
+// and reject absolute paths or any `..` component.
+// -------------------------------------------------------------------------
+
+test "H-3: file exporter rejects parent-traversal sub_path" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try std.testing.expectError(
+        error.InvalidPath,
+        otel.exporters.file.FileJsonl.open(std.testing.allocator, std.testing.io, tmp.dir, "../escape.txt"),
+    );
+}
+
+test "H-3: file exporter rejects absolute path" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try std.testing.expectError(
+        error.InvalidPath,
+        otel.exporters.file.FileJsonl.open(std.testing.allocator, std.testing.io, tmp.dir, "/etc/cron.d/x"),
+    );
+}
+
+test "H-3: file exporter rejects empty sub_path" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try std.testing.expectError(
+        error.InvalidPath,
+        otel.exporters.file.FileJsonl.open(std.testing.allocator, std.testing.io, tmp.dir, ""),
+    );
+}
+
+test "H-3: file exporter accepts a relative path inside the base dir" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var jsonl = try otel.exporters.file.FileJsonl.open(std.testing.allocator, std.testing.io, tmp.dir, "spans.jsonl");
+    defer jsonl.close();
+}
+
 test "C-3: gRPC exporter refuses to export when headers are configured" {
     var resource = otel.sdk.resource.Resource.init(std.testing.allocator);
     defer resource.deinit();

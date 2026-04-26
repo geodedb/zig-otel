@@ -286,10 +286,7 @@ fn expSpans(ctx: ?*anyopaque, items: []const exp.SpanData) anyerror!exp.SpanExpo
         .http_json => "application/json",
     };
 
-    var attempt: u32 = 0;
-    var elapsed_ms: u64 = 0;
-    const policy: exp.RetryPolicy = .{};
-    const max_attempts: u32 = 5;
+    var retry: exp.RetryState = .{};
     while (true) {
         // Sentinel dispatch: when the transport pointer is the in-house
         // `httpTransport`, route through `httpTransportImpl` so the
@@ -304,28 +301,14 @@ fn expSpans(ctx: ?*anyopaque, items: []const exp.SpanData) anyerror!exp.SpanExpo
                 error.ConnectionRefused, error.ConnectionResetByPeer, error.UnsupportedTransport, error.NetworkUnreachable => {},
                 else => return err,
             }
-            attempt += 1;
-            const backoff_ns = exp.nextBackoff(policy, attempt, &self.prng);
-            elapsed_ms += backoff_ns / std.time.ns_per_ms;
-            if (attempt >= max_attempts or elapsed_ms >= policy.max_elapsed_ms) return error.RetryExhausted;
-            // Block the calling thread for the computed backoff so a
-            // persistently-failing sink does not pin a CPU core. This is
-            // intentionally OS-thread-blocking: the OTLP exporter is
-            // invoked from the BSP/Simple processor pump, never the
-            // user's hot path, and the sleep duration is bounded by
-            // `policy.max_elapsed_ms`.
-            clock.sleepNs(backoff_ns);
+            if (!retry.shouldRetry(&self.prng)) return error.RetryExhausted;
             continue;
         };
         if (result.status == 207) return error.PartialSuccess;
         if (result.status >= 200 and result.status < 300) return .success;
         if (result.status >= 400 and result.status < 500) return error.RetryExhausted;
         if (result.status >= 500 or result.status == 429) {
-            attempt += 1;
-            const backoff_ns = exp.nextBackoff(policy, attempt, &self.prng);
-            elapsed_ms += backoff_ns / std.time.ns_per_ms;
-            if (attempt >= max_attempts or elapsed_ms >= policy.max_elapsed_ms) return error.RetryExhausted;
-            clock.sleepNs(backoff_ns);
+            if (!retry.shouldRetry(&self.prng)) return error.RetryExhausted;
             continue;
         }
         return error.RetryExhausted;

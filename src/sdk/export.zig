@@ -13,6 +13,7 @@ const metrics_api = @import("../api/metrics.zig");
 const logs_api = @import("../api/logs.zig");
 const attrs_mod = @import("../internal/attributes.zig");
 const Resource = @import("resource.zig").Resource;
+const clock_mod = @import("../internal/clock.zig");
 const build_options = @import("build_options");
 
 // Comptime-conditional thread-pool import. Mirrors the slog/metrics
@@ -600,10 +601,46 @@ pub fn nextBackoff(policy: RetryPolicy, attempt: u32, prng: *std.Random.DefaultP
     return jittered * std.time.ns_per_ms;
 }
 
+/// State carried across iterations of an exporter retry loop. Keeps the
+/// per-attempt accounting and the actual sleep in one place so HTTP and
+/// gRPC exporters share the bounded-retry contract instead of each
+/// reimplementing it (and forgetting to sleep, which was P-N1 / P-N2).
+pub const RetryState = struct {
+    attempt: u32 = 0,
+    elapsed_ms: u64 = 0,
+    policy: RetryPolicy = .{},
+    max_attempts: u32 = 5,
+
+    /// Increment the attempt counter, compute backoff, and sleep the
+    /// calling thread for that backoff. Returns `true` when the caller
+    /// should continue the retry loop, `false` when the budget is
+    /// exhausted (in which case the caller should return
+    /// `error.RetryExhausted`). Does not sleep on the exhaustion path.
+    pub fn shouldRetry(self: *RetryState, prng: *std.Random.DefaultPrng) bool {
+        self.attempt += 1;
+        const backoff_ns = nextBackoff(self.policy, self.attempt, prng);
+        self.elapsed_ms += backoff_ns / std.time.ns_per_ms;
+        if (self.attempt >= self.max_attempts or self.elapsed_ms >= self.policy.max_elapsed_ms) return false;
+        clock_mod.sleepNs(backoff_ns);
+        return true;
+    }
+};
+
 test "retry backoff scales with attempt" {
     var prng = std.Random.DefaultPrng.init(1);
     const p = RetryPolicy{};
     const a = nextBackoff(p, 0, &prng);
     const b = nextBackoff(p, 4, &prng);
     try std.testing.expect(b >= a or a == 0);
+}
+
+test "retry state honors max_attempts" {
+    var prng = std.Random.DefaultPrng.init(1);
+    var st: RetryState = .{
+        .max_attempts = 2,
+        .policy = .{ .initial_backoff_ms = 0, .max_backoff_ms = 0, .max_elapsed_ms = 1_000_000 },
+    };
+    try std.testing.expect(st.shouldRetry(&prng));
+    try std.testing.expect(!st.shouldRetry(&prng));
+    try std.testing.expectEqual(@as(u32, 2), st.attempt);
 }

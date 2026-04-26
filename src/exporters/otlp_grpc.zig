@@ -117,34 +117,26 @@ fn expSpans(ctx: ?*anyopaque, items: []const exp.SpanData) anyerror!exp.SpanExpo
     // transport seam (see DEPENDENCIES.md, gRPC row).
     const parsed = try parseGrpcEndpoint(self.config.endpoint);
 
-    var attempt: u32 = 0;
-    var elapsed_ms: u64 = 0;
-    const policy: exp.RetryPolicy = .{};
-    const max_attempts: u32 = 5;
+    var retry: exp.RetryState = .{};
     while (true) {
         const status = unaryExport(aa, io, parsed.host, parsed.port, body) catch |err| {
-            attempt += 1;
-            const backoff_ns = exp.nextBackoff(policy, attempt, &self.prng);
-            elapsed_ms += backoff_ns / std.time.ns_per_ms;
-            if (attempt >= max_attempts or elapsed_ms >= policy.max_elapsed_ms) return error.RetryExhausted;
             switch (err) {
                 error.ConnectionRefused,
                 error.ConnectionResetByPeer,
                 error.UnsupportedTransport,
                 error.NetworkUnreachable,
                 error.WouldBlock,
-                => continue,
+                => {},
                 else => return err,
             }
+            if (!retry.shouldRetry(&self.prng)) return error.RetryExhausted;
+            continue;
         };
         switch (status) {
             .ok => return .success,
             .partial_success => return error.PartialSuccess,
             .retryable => {
-                attempt += 1;
-                const backoff_ns = exp.nextBackoff(policy, attempt, &self.prng);
-                elapsed_ms += backoff_ns / std.time.ns_per_ms;
-                if (attempt >= max_attempts or elapsed_ms >= policy.max_elapsed_ms) return error.RetryExhausted;
+                if (!retry.shouldRetry(&self.prng)) return error.RetryExhausted;
                 continue;
             },
             .fatal => return error.RetryExhausted,

@@ -276,6 +276,66 @@ test "L-4: OTLP encoder redacts sensitive resource attribute" {
 }
 
 // -------------------------------------------------------------------------
+// GAP-SEC-H-5 / GAP-SEC-L-5: PRNG seeding for trace IDs and exporter
+// backoff jitter must be CSPRNG-backed at construction time, not a
+// hardcoded constant. Otherwise:
+//   - Two TracerProviders started in the same process produce
+//     deterministic and overlapping trace IDs (H-5)
+//   - All retries from any exporter back off on the same jitter
+//     schedule (L-5)
+// -------------------------------------------------------------------------
+
+test "H-5: two TracerProviders produce different first trace IDs" {
+    var resource_a = otel.sdk.resource.Resource.init(std.testing.allocator);
+    defer resource_a.deinit();
+    var tp_a = try otel.sdk.trace.TracerProvider.init(std.testing.allocator, .{ .resource = &resource_a });
+    defer tp_a.deinit();
+
+    var resource_b = otel.sdk.resource.Resource.init(std.testing.allocator);
+    defer resource_b.deinit();
+    var tp_b = try otel.sdk.trace.TracerProvider.init(std.testing.allocator, .{ .resource = &resource_b });
+    defer tp_b.deinit();
+
+    const id_a = tp_a.id_generator.nextTraceId();
+    const id_b = tp_b.id_generator.nextTraceId();
+
+    // 2^-128 false-fail probability. Pin a strict not-equal.
+    try std.testing.expect(!std.mem.eql(u8, &id_a.bytes, &id_b.bytes));
+}
+
+test "L-5: two OtlpHttpExporters produce different first backoff samples" {
+    var ex_a = try otel.exporters.otlp_http.OtlpHttpExporter.init(std.testing.allocator, .{
+        .endpoint = "http://127.0.0.1:4318",
+    });
+    defer ex_a.deinit();
+    var ex_b = try otel.exporters.otlp_http.OtlpHttpExporter.init(std.testing.allocator, .{
+        .endpoint = "http://127.0.0.1:4318",
+    });
+    defer ex_b.deinit();
+
+    const a = ex_a.prng.random().int(u64);
+    const b = ex_b.prng.random().int(u64);
+    try std.testing.expect(a != b);
+}
+
+test "L-5: two OtlpGrpcExporters produce different first backoff samples" {
+    var ex_a = try otel.exporters.otlp_grpc.OtlpGrpcExporter.init(std.testing.allocator, .{
+        .endpoint = "http://127.0.0.1:4317",
+        .protocol = .grpc,
+    });
+    defer ex_a.deinit();
+    var ex_b = try otel.exporters.otlp_grpc.OtlpGrpcExporter.init(std.testing.allocator, .{
+        .endpoint = "http://127.0.0.1:4317",
+        .protocol = .grpc,
+    });
+    defer ex_b.deinit();
+
+    const a = ex_a.prng.random().int(u64);
+    const b = ex_b.prng.random().int(u64);
+    try std.testing.expect(a != b);
+}
+
+// -------------------------------------------------------------------------
 // GAP-SEC-H-4: skip_tls_verify field is a footgun in a public OTel SDK.
 // Removed entirely (rather than wired) because std.http.Client doesn't
 // expose a stable per-fetch TLS-verify knob and "I configured it but it

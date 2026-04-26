@@ -13,6 +13,7 @@ const trace_api = @import("../api/trace.zig");
 const ctx_mod = @import("../api/context.zig");
 const attrs_mod = @import("../internal/attributes.zig");
 const redact = @import("../internal/redact.zig");
+const id_mod = @import("../internal/id.zig");
 const build_options = @import("build_options");
 const devnw_json = if (build_options.use_devnw_json) @import("json") else struct {};
 const devnw_proto = if (build_options.use_devnw_protobuf) @import("devnw_protobuf") else struct {};
@@ -52,7 +53,9 @@ pub const OtlpHttpExporter = struct {
             .allocator = allocator,
             .config = config,
             .transport = httpTransport,
-            .prng = std.Random.DefaultPrng.init(0xC0DE_C0FFEE),
+            // GAP-SEC-L-5: seed jitter PRNG from CSPRNG so two
+            // exporter instances don't share a backoff schedule.
+            .prng = std.Random.DefaultPrng.init(id_mod.csprngU64()),
         };
     }
 

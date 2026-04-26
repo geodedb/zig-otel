@@ -160,7 +160,12 @@ pub const TracerProvider = struct {
             self.id_generator = g;
         } else {
             const random = try allocator.create(id_mod.Random);
-            random.* = id_mod.Random.init(0xC0DE_C0DE);
+            // GAP-SEC-H-5: seed from the OS CSPRNG so trace IDs are
+            // unpredictable across processes and TracerProvider
+            // instances. The previous hardcoded 0xC0DE_C0DE made every
+            // run produce the same first ID stream, which lets an
+            // observer correlate traces across deployments.
+            random.* = id_mod.Random.initFromCsprng();
             self.default_random = random;
             self.id_generator = random.generator();
         }

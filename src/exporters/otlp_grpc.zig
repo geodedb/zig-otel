@@ -12,6 +12,7 @@ const std = @import("std");
 const exp = @import("../sdk/export.zig");
 const config_mod = @import("../sdk/config.zig");
 const otlp_http = @import("otlp_http.zig");
+const id_mod = @import("../internal/id.zig");
 const build_options = @import("build_options");
 
 // Conditional import — when the flag is off this resolves to `struct {}`
@@ -41,7 +42,9 @@ pub const OtlpGrpcExporter = struct {
         return .{
             .allocator = allocator,
             .config = config,
-            .prng = std.Random.DefaultPrng.init(0xC0DE_C0FFEE),
+            // GAP-SEC-L-5: seed jitter PRNG from CSPRNG so two
+            // exporter instances don't share a backoff schedule.
+            .prng = std.Random.DefaultPrng.init(id_mod.csprngU64()),
         };
     }
 

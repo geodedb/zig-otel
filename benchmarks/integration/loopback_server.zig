@@ -198,6 +198,11 @@ fn handleOne(self: *LoopbackServer, stream: *std.Io.net.Stream) !void {
 /// on loopback, or `ECONNREFUSED` once the listener is closed),
 /// never waits on an HTTP response, and never hangs.
 fn wake(self: *LoopbackServer) void {
+    comptime {
+        if (@import("builtin").os.tag != .linux) {
+            @compileError("LoopbackServer.wake() requires Linux: it issues raw std.os.linux syscalls (socket/connect/close). bench-integration is Linux-only — gate cross-OS bench builds out via build.zig.");
+        }
+    }
     const linux = std.os.linux;
     const sock_rc = linux.socket(linux.AF.INET, linux.SOCK.STREAM | linux.SOCK.CLOEXEC, 0);
     if (std.posix.errno(sock_rc) != .SUCCESS) return;

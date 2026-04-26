@@ -90,6 +90,72 @@ test "C-2: gRPC exporter rejects https:// endpoint without explicit insecure" {
     );
 }
 
+// -------------------------------------------------------------------------
+// GAP-SEC-H-1 / GAP-SEC-M-8: OTLP HTTP header parser RFC 7230 validation
+// and content-type dedup.
+//
+// Reject CRLF / control-byte injection in header names and values, cap
+// the lengths to RFC 7230 sanity limits, and refuse user attempts to
+// override the content-type (which the exporter sets canonically).
+// -------------------------------------------------------------------------
+
+test "H-1: header parser rejects CRLF in value (response splitting)" {
+    var buf: [16]otel.exporters.otlp_http.HeaderEntry = undefined;
+    try std.testing.expectError(
+        error.InvalidHeader,
+        otel.exporters.otlp_http.parseHeaderString("X-Inject=foo\r\nEvil-Header: yes", &buf),
+    );
+}
+
+test "H-1: header parser rejects embedded NUL in value" {
+    var buf: [16]otel.exporters.otlp_http.HeaderEntry = undefined;
+    try std.testing.expectError(
+        error.InvalidHeader,
+        otel.exporters.otlp_http.parseHeaderString("X-Foo=bar\x00baz", &buf),
+    );
+}
+
+test "H-1: header parser rejects DEL byte in value" {
+    var buf: [16]otel.exporters.otlp_http.HeaderEntry = undefined;
+    try std.testing.expectError(
+        error.InvalidHeader,
+        otel.exporters.otlp_http.parseHeaderString("X-Foo=bar\x7f", &buf),
+    );
+}
+
+test "H-1: header parser rejects space in name" {
+    var buf: [16]otel.exporters.otlp_http.HeaderEntry = undefined;
+    try std.testing.expectError(
+        error.InvalidHeader,
+        otel.exporters.otlp_http.parseHeaderString("Bad Name=value", &buf),
+    );
+}
+
+test "H-1: header parser rejects colon in name" {
+    var buf: [16]otel.exporters.otlp_http.HeaderEntry = undefined;
+    try std.testing.expectError(
+        error.InvalidHeader,
+        otel.exporters.otlp_http.parseHeaderString("Bad:Name=value", &buf),
+    );
+}
+
+test "H-1: header parser accepts ordinary token name" {
+    var buf: [16]otel.exporters.otlp_http.HeaderEntry = undefined;
+    const out = try otel.exporters.otlp_http.parseHeaderString("Authorization=Bearer abc", &buf);
+    try std.testing.expectEqual(@as(usize, 1), out.len);
+    try std.testing.expectEqualStrings("Authorization", out[0].name);
+    try std.testing.expectEqualStrings("Bearer abc", out[0].value);
+}
+
+test "M-8: header parser drops user-supplied content-type" {
+    var buf: [16]otel.exporters.otlp_http.HeaderEntry = undefined;
+    // The exporter always emits content-type itself; user-supplied
+    // overrides are dropped silently to avoid duplicate headers.
+    const out = try otel.exporters.otlp_http.parseHeaderString("content-type=text/plain,X-Tenant=org-7", &buf);
+    try std.testing.expectEqual(@as(usize, 1), out.len);
+    try std.testing.expectEqualStrings("X-Tenant", out[0].name);
+}
+
 test "C-3: gRPC exporter refuses to export when headers are configured" {
     var resource = otel.sdk.resource.Resource.init(std.testing.allocator);
     defer resource.deinit();

@@ -45,6 +45,29 @@ pub const OtlpGrpcExporter = struct {
         };
     }
 
+    /// GAP-SEC-C-2 / GAP-SEC-C-3: pre-flight checks that refuse to export
+    /// in known-unsafe configurations. Runs before any IO so the bad
+    /// config is caught even when the gRPC client itself is gated out at
+    /// build time.
+    ///
+    /// Refuses (with `error.UnsupportedTransport`):
+    ///   - C-2: `https://` endpoint while `insecure == false` — grpc-zig
+    ///     does not yet expose a TLS-capable client, so the request would
+    ///     silently downgrade to plaintext h2c. Track when TLS lands in
+    ///     docs/DEPENDENCIES.md (gRPC row).
+    ///   - C-3: `headers != null and headers.len > 0` — grpc-zig has no
+    ///     metadata API yet; the headers (typically `Authorization`)
+    ///     would be silently dropped, exporting telemetry without auth.
+    pub fn checkExportPreconditions(self: *const OtlpGrpcExporter) !void {
+        const parsed = try parseGrpcEndpoint(self.config.endpoint);
+        if (parsed.scheme_secure and !self.config.insecure) {
+            return error.UnsupportedTransport;
+        }
+        if (self.config.headers) |h| {
+            if (h.len > 0) return error.UnsupportedTransport;
+        }
+    }
+
     pub fn deinit(self: *OtlpGrpcExporter) void {
         self.closed = true;
     }
@@ -65,6 +88,13 @@ fn expSpans(ctx: ?*anyopaque, items: []const exp.SpanData) anyerror!exp.SpanExpo
     const self: *OtlpGrpcExporter = @ptrCast(@alignCast(ctx.?));
     if (self.closed) return error.RetryExhausted;
     if (items.len == 0) return .success;
+
+    // GAP-SEC-C-2 / GAP-SEC-C-3: refuse https:// (would silently downgrade
+    // to plaintext h2c without TLS support) and any non-empty headers
+    // (would be silently dropped, exporting unauthenticated). Run before
+    // the build-flag gate so the bad config is caught even when the gRPC
+    // client itself is not compiled in.
+    try self.checkExportPreconditions();
 
     if (!build_options.use_devnw_grpc) return error.UnsupportedTransport;
     const io = self.io orelse return error.UnsupportedTransport;
@@ -124,17 +154,24 @@ const GrpcStatus = enum { ok, partial_success, retryable, fatal };
 const ParsedEndpoint = struct {
     host: []const u8,
     port: u16,
+    /// True when the endpoint scheme was `https://`. Until grpc-zig grows
+    /// a TLS-capable client, an https:// URL paired with `insecure=false`
+    /// must be refused to avoid a silent plaintext downgrade
+    /// (GAP-SEC-C-2).
+    scheme_secure: bool,
 };
 
 /// Strip the optional `http://` / `https://` scheme and split `host:port`.
 /// Defaults the port to 4317 (the OTLP/gRPC standard) when the endpoint
-/// omits it.
+/// omits it. Records whether the scheme was https (see `scheme_secure`).
 fn parseGrpcEndpoint(endpoint: []const u8) !ParsedEndpoint {
     var rest = endpoint;
-    if (std.mem.startsWith(u8, rest, "http://")) {
-        rest = rest["http://".len..];
-    } else if (std.mem.startsWith(u8, rest, "https://")) {
+    var scheme_secure = false;
+    if (std.mem.startsWith(u8, rest, "https://")) {
         rest = rest["https://".len..];
+        scheme_secure = true;
+    } else if (std.mem.startsWith(u8, rest, "http://")) {
+        rest = rest["http://".len..];
     }
     // Drop any path component — gRPC routes by HTTP/2 headers, not URL path.
     if (std.mem.indexOfScalar(u8, rest, '/')) |slash| rest = rest[0..slash];
@@ -143,10 +180,10 @@ fn parseGrpcEndpoint(endpoint: []const u8) !ParsedEndpoint {
         const port_str = rest[colon + 1 ..];
         const port = std.fmt.parseInt(u16, port_str, 10) catch return error.InvalidEndpoint;
         if (host.len == 0) return error.InvalidEndpoint;
-        return .{ .host = host, .port = port };
+        return .{ .host = host, .port = port, .scheme_secure = scheme_secure };
     }
     if (rest.len == 0) return error.InvalidEndpoint;
-    return .{ .host = rest, .port = 4317 };
+    return .{ .host = rest, .port = 4317, .scheme_secure = scheme_secure };
 }
 
 /// Issue a single unary OTLP/gRPC export call against the given host:port.
@@ -218,18 +255,54 @@ test "parseGrpcEndpoint splits host and port" {
     const p = try parseGrpcEndpoint("http://127.0.0.1:4317");
     try std.testing.expectEqualStrings("127.0.0.1", p.host);
     try std.testing.expectEqual(@as(u16, 4317), p.port);
+    try std.testing.expectEqual(false, p.scheme_secure);
 }
 
 test "parseGrpcEndpoint defaults port to 4317" {
     const p = try parseGrpcEndpoint("collector.example.com");
     try std.testing.expectEqualStrings("collector.example.com", p.host);
     try std.testing.expectEqual(@as(u16, 4317), p.port);
+    try std.testing.expectEqual(false, p.scheme_secure);
 }
 
 test "parseGrpcEndpoint strips path component" {
     const p = try parseGrpcEndpoint("http://otel:4317/v1/traces");
     try std.testing.expectEqualStrings("otel", p.host);
     try std.testing.expectEqual(@as(u16, 4317), p.port);
+    try std.testing.expectEqual(false, p.scheme_secure);
+}
+
+test "parseGrpcEndpoint records https scheme as secure" {
+    const p = try parseGrpcEndpoint("https://collector.example.com:4317");
+    try std.testing.expectEqual(true, p.scheme_secure);
+}
+
+test "C-2: checkExportPreconditions refuses https without insecure flag" {
+    var exporter = try OtlpGrpcExporter.init(std.testing.allocator, .{
+        .endpoint = "https://collector.example.com:4317",
+        .protocol = .grpc,
+    });
+    defer exporter.deinit();
+    try std.testing.expectError(error.UnsupportedTransport, exporter.checkExportPreconditions());
+}
+
+test "C-2: checkExportPreconditions allows http endpoint" {
+    var exporter = try OtlpGrpcExporter.init(std.testing.allocator, .{
+        .endpoint = "http://127.0.0.1:4317",
+        .protocol = .grpc,
+    });
+    defer exporter.deinit();
+    try exporter.checkExportPreconditions();
+}
+
+test "C-3: checkExportPreconditions refuses non-empty headers" {
+    var exporter = try OtlpGrpcExporter.init(std.testing.allocator, .{
+        .endpoint = "http://127.0.0.1:4317",
+        .protocol = .grpc,
+        .headers = "Authorization=Bearer x",
+    });
+    defer exporter.deinit();
+    try std.testing.expectError(error.UnsupportedTransport, exporter.checkExportPreconditions());
 }
 
 test "expSpans returns UnsupportedTransport when flag off" {

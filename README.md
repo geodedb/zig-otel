@@ -28,8 +28,11 @@ the experimental profiles signal behind a build flag.
   OTLP/HTTP (protobuf and JSON), unary OTLP/gRPC framing helper.
 - Pluggable transport seam — production HTTP/HTTPS via `std.http.Client`
   behind `-Dotel_use_devnw_tls=true`; OTLP/gRPC unary via DevNW `grpc-zig`
-  behind `-Dotel_use_devnw_grpc=true`; async `BatchSpanProcessor` worker
-  pool via DevNW `thread-pool` behind `-Dotel_use_devnw_pool=true`. See
+  behind `-Dotel_use_devnw_grpc=true` (**experimental**: refuses
+  `https://` endpoints and any non-empty `headers` until the upstream
+  client gains TLS and metadata support — see GAP-SEC-C-2 / GAP-SEC-C-3);
+  async `BatchSpanProcessor` worker pool via DevNW `thread-pool` behind
+  `-Dotel_use_devnw_pool=true`. See
   [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md).
 - `OTEL_*` environment variables and `OTEL_CONFIG_FILE` YAML loader. Code
   &gt; YAML &gt; env &gt; defaults precedence with fail-closed validation.

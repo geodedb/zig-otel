@@ -42,3 +42,70 @@ test "attribute set caps string values" {
 // custom runner. The redact invariants are still covered by the
 // deterministic tests above.
 // -------------------------------------------------------------------------
+
+// -------------------------------------------------------------------------
+// GAP-SEC-C-2 / GAP-SEC-C-3: gRPC exporter posture.
+//
+// Until the grpc-zig client gains TLS support, an https:// endpoint
+// would silently downgrade to plaintext h2c. Refuse explicitly.
+// Likewise, OtlpConfig.headers (e.g. Authorization) cannot reach the
+// grpc-zig request — refuse rather than silently dropping credentials.
+// -------------------------------------------------------------------------
+
+fn makeGrpcExportSpan(resource: *otel.sdk.resource.Resource, attr_set: *otel.internal.attributes.AttributeSet) otel.sdk.exporter.SpanData {
+    return .{
+        .name = "x",
+        .span_context = .{
+            .trace_id = .{ .bytes = .{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 } },
+            .span_id = .{ .bytes = .{ 1, 2, 3, 4, 5, 6, 7, 8 } },
+        },
+        .start_unix_nano = 1,
+        .end_unix_nano = 2,
+        .attributes = attr_set,
+        .events = &.{},
+        .links = &.{},
+        .instrumentation_scope = .{ .name = "t" },
+        .resource = resource,
+    };
+}
+
+test "C-2: gRPC exporter rejects https:// endpoint without explicit insecure" {
+    var resource = otel.sdk.resource.Resource.init(std.testing.allocator);
+    defer resource.deinit();
+    var attr_set = otel.internal.attributes.AttributeSet.init(std.testing.allocator);
+    defer attr_set.deinit();
+
+    var exporter = try otel.exporters.otlp_grpc.OtlpGrpcExporter.init(std.testing.allocator, .{
+        .endpoint = "https://collector.example.com:4317",
+        .protocol = .grpc,
+        // .insecure is false by default; the exporter must refuse rather
+        // than silently downgrade to plaintext h2c.
+    });
+    defer exporter.deinit();
+
+    const span = makeGrpcExportSpan(&resource, &attr_set);
+    try std.testing.expectError(
+        error.UnsupportedTransport,
+        exporter.spanExporter().exportSpans(&[_]otel.sdk.exporter.SpanData{span}),
+    );
+}
+
+test "C-3: gRPC exporter refuses to export when headers are configured" {
+    var resource = otel.sdk.resource.Resource.init(std.testing.allocator);
+    defer resource.deinit();
+    var attr_set = otel.internal.attributes.AttributeSet.init(std.testing.allocator);
+    defer attr_set.deinit();
+
+    var exporter = try otel.exporters.otlp_grpc.OtlpGrpcExporter.init(std.testing.allocator, .{
+        .endpoint = "http://127.0.0.1:4317",
+        .protocol = .grpc,
+        .headers = "Authorization=Bearer x",
+    });
+    defer exporter.deinit();
+
+    const span = makeGrpcExportSpan(&resource, &attr_set);
+    try std.testing.expectError(
+        error.UnsupportedTransport,
+        exporter.spanExporter().exportSpans(&[_]otel.sdk.exporter.SpanData{span}),
+    );
+}

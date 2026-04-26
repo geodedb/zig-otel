@@ -49,6 +49,41 @@ fn defaultNow(_: ?*anyopaque) u64 {
 
 pub const default: Clock = .{ .ctx = null, .nowFn = defaultNow };
 
+/// Block the calling OS thread for `ns` nanoseconds. Used by export
+/// pipelines to honor backoff between retries; never called from a
+/// user hot path. EINTR is retried with the remaining duration.
+pub fn sleepNs(ns: u64) void {
+    if (ns == 0) return;
+    const builtin = @import("builtin");
+    switch (builtin.os.tag) {
+        .linux => {
+            var req: std.os.linux.timespec = .{
+                .sec = @intCast(ns / std.time.ns_per_s),
+                .nsec = @intCast(ns % std.time.ns_per_s),
+            };
+            var rem: std.os.linux.timespec = undefined;
+            while (true) {
+                const rc = std.os.linux.nanosleep(&req, &rem);
+                if (rc == 0) return;
+                // -EINTR returns as a non-zero usize; retry with rem.
+                req = rem;
+            }
+        },
+        .macos, .ios, .tvos, .watchos, .freebsd, .openbsd, .netbsd, .dragonfly, .illumos => {
+            var req: std.c.timespec = .{
+                .sec = @intCast(ns / std.time.ns_per_s),
+                .nsec = @intCast(ns % std.time.ns_per_s),
+            };
+            var rem: std.c.timespec = undefined;
+            while (std.c.nanosleep(&req, &rem) != 0) req = rem;
+        },
+        else => {
+            // Best-effort no-op. The retry loop's bounded attempt
+            // count still prevents a permanent CPU spin.
+        },
+    }
+}
+
 /// Deterministic clock used by tests and the golden harness.
 pub const Fixed = struct {
     value: u64,

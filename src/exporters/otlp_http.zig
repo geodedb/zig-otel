@@ -14,6 +14,7 @@ const ctx_mod = @import("../api/context.zig");
 const attrs_mod = @import("../internal/attributes.zig");
 const redact = @import("../internal/redact.zig");
 const id_mod = @import("../internal/id.zig");
+const clock = @import("../internal/clock.zig");
 const build_options = @import("build_options");
 const devnw_json = if (build_options.use_devnw_json) @import("json") else struct {};
 const devnw_proto = if (build_options.use_devnw_protobuf) @import("devnw_protobuf") else struct {};
@@ -288,8 +289,6 @@ fn expSpans(ctx: ?*anyopaque, items: []const exp.SpanData) anyerror!exp.SpanExpo
     var attempt: u32 = 0;
     var elapsed_ms: u64 = 0;
     const policy: exp.RetryPolicy = .{};
-    // Bound retries so a permanently-down sink doesn't spin forever even
-    // without a sleep primitive (deferred to the Io-aware path).
     const max_attempts: u32 = 5;
     while (true) {
         // Sentinel dispatch: when the transport pointer is the in-house
@@ -301,14 +300,22 @@ fn expSpans(ctx: ?*anyopaque, items: []const exp.SpanData) anyerror!exp.SpanExpo
             httpTransportImpl(self, aa, path, content_type, body)
         else
             self.transport(aa, self.config.endpoint, path, self.config.headers, content_type, body, self.config.timeout_ms)) catch |err| {
+            switch (err) {
+                error.ConnectionRefused, error.ConnectionResetByPeer, error.UnsupportedTransport, error.NetworkUnreachable => {},
+                else => return err,
+            }
             attempt += 1;
             const backoff_ns = exp.nextBackoff(policy, attempt, &self.prng);
             elapsed_ms += backoff_ns / std.time.ns_per_ms;
             if (attempt >= max_attempts or elapsed_ms >= policy.max_elapsed_ms) return error.RetryExhausted;
-            switch (err) {
-                error.ConnectionRefused, error.ConnectionResetByPeer, error.UnsupportedTransport, error.NetworkUnreachable => continue,
-                else => return err,
-            }
+            // Block the calling thread for the computed backoff so a
+            // persistently-failing sink does not pin a CPU core. This is
+            // intentionally OS-thread-blocking: the OTLP exporter is
+            // invoked from the BSP/Simple processor pump, never the
+            // user's hot path, and the sleep duration is bounded by
+            // `policy.max_elapsed_ms`.
+            clock.sleepNs(backoff_ns);
+            continue;
         };
         if (result.status == 207) return error.PartialSuccess;
         if (result.status >= 200 and result.status < 300) return .success;
@@ -318,6 +325,7 @@ fn expSpans(ctx: ?*anyopaque, items: []const exp.SpanData) anyerror!exp.SpanExpo
             const backoff_ns = exp.nextBackoff(policy, attempt, &self.prng);
             elapsed_ms += backoff_ns / std.time.ns_per_ms;
             if (attempt >= max_attempts or elapsed_ms >= policy.max_elapsed_ms) return error.RetryExhausted;
+            clock.sleepNs(backoff_ns);
             continue;
         }
         return error.RetryExhausted;

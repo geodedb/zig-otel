@@ -1,0 +1,838 @@
+{
+  "date": "2026-04-26",
+  "slug": "zero-overhead-when-disabled",
+  "target_repo": "devnw/zig/otel",
+  "baseline_ref": "4de1b11",
+  "language": "zig",
+
+  "scenarios": [
+    {
+      "id": "micro_attr_put_new",
+      "layer": "micro",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "AttributeSet.put adding a new key into a 4-entry set. Measures linear-scan dedup check + arena dupe for key and value.",
+      "entry_point": "benchmarks/micro/main.zig",
+      "command_template": "zig build bench-micro -Doptimize=ReleaseFast -- --filter micro_attr_put_new --output {output_path}",
+      "ops_per_iteration_default": 10000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "alloc_bytes", "throughput_ops_per_sec"],
+      "zero_alloc_expected": false,
+      "zero_alloc_probe_plan": null,
+      "pass_criteria": {
+        "max_regression_pct": -3.0,
+        "noise_gate_formula": "max(3.0, 3.0 * baseline_stddev_pct)",
+        "note": "Informational; does not gate CI."
+      },
+      "comparison_pairs": null,
+      "dependencies": []
+    },
+    {
+      "id": "micro_attr_put_update",
+      "layer": "micro",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "AttributeSet.put overwriting an existing key in a pre-seeded 4-entry set. Exercises the in-place update path (entries[i].value = owned_value).",
+      "entry_point": "benchmarks/micro/main.zig",
+      "command_template": "zig build bench-micro -Doptimize=ReleaseFast -- --filter micro_attr_put_update --output {output_path}",
+      "ops_per_iteration_default": 10000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "alloc_bytes", "throughput_ops_per_sec"],
+      "zero_alloc_expected": false,
+      "zero_alloc_probe_plan": null,
+      "pass_criteria": {
+        "max_regression_pct": -3.0,
+        "noise_gate_formula": "max(3.0, 3.0 * baseline_stddev_pct)",
+        "note": "Informational; does not gate CI."
+      },
+      "comparison_pairs": null,
+      "dependencies": []
+    },
+    {
+      "id": "micro_attr_put_near_limit",
+      "layer": "micro",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "AttributeSet.put when the set is at 127 of 128 max entries. Exercises both the full linear scan (128 items) and the near-drop path.",
+      "entry_point": "benchmarks/micro/main.zig",
+      "command_template": "zig build bench-micro -Doptimize=ReleaseFast -- --filter micro_attr_put_near_limit --output {output_path}",
+      "ops_per_iteration_default": 5000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "alloc_bytes", "throughput_ops_per_sec"],
+      "zero_alloc_expected": false,
+      "zero_alloc_probe_plan": null,
+      "pass_criteria": {
+        "max_regression_pct": -3.0,
+        "noise_gate_formula": "max(3.0, 3.0 * baseline_stddev_pct)",
+        "note": "Informational; does not gate CI."
+      },
+      "comparison_pairs": null,
+      "dependencies": []
+    },
+    {
+      "id": "micro_next_trace_id",
+      "layer": "micro",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "id.Random.nextTraceId. Measures Xoroshiro128+ PRNG cost for 16 bytes. Looping until non-zero adds < 1 iteration in expectation.",
+      "entry_point": "benchmarks/micro/main.zig",
+      "command_template": "zig build bench-micro -Doptimize=ReleaseFast -- --filter micro_next_trace_id --output {output_path}",
+      "ops_per_iteration_default": 100000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "throughput_ops_per_sec"],
+      "zero_alloc_expected": true,
+      "zero_alloc_probe_plan": "TrackingAllocator wraps the bench allocator; assert alloc_count == 0 after all sample iterations.",
+      "pass_criteria": {
+        "max_regression_pct": -3.0,
+        "noise_gate_formula": "max(3.0, 3.0 * baseline_stddev_pct)",
+        "alloc_count_max": 0,
+        "note": "Informational; does not gate CI."
+      },
+      "comparison_pairs": null,
+      "dependencies": []
+    },
+    {
+      "id": "micro_next_span_id",
+      "layer": "micro",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "id.Random.nextSpanId. Same PRNG as trace ID but 8 bytes.",
+      "entry_point": "benchmarks/micro/main.zig",
+      "command_template": "zig build bench-micro -Doptimize=ReleaseFast -- --filter micro_next_span_id --output {output_path}",
+      "ops_per_iteration_default": 100000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "throughput_ops_per_sec"],
+      "zero_alloc_expected": true,
+      "zero_alloc_probe_plan": "TrackingAllocator; assert alloc_count == 0.",
+      "pass_criteria": {
+        "max_regression_pct": -3.0,
+        "noise_gate_formula": "max(3.0, 3.0 * baseline_stddev_pct)",
+        "alloc_count_max": 0,
+        "note": "Informational; does not gate CI."
+      },
+      "comparison_pairs": null,
+      "dependencies": []
+    },
+    {
+      "id": "micro_clock_unix_nano",
+      "layer": "micro",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "clock.unixNanoNow. Measures clock_gettime(CLOCK_REALTIME) cost; expected to be vDSO on modern Linux kernels (20-40 ns).",
+      "entry_point": "benchmarks/micro/main.zig",
+      "command_template": "zig build bench-micro -Doptimize=ReleaseFast -- --filter micro_clock_unix_nano --output {output_path}",
+      "ops_per_iteration_default": 100000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "throughput_ops_per_sec"],
+      "zero_alloc_expected": true,
+      "zero_alloc_probe_plan": "TrackingAllocator; assert alloc_count == 0.",
+      "pass_criteria": {
+        "max_regression_pct": -3.0,
+        "noise_gate_formula": "max(3.0, 3.0 * baseline_stddev_pct)",
+        "alloc_count_max": 0,
+        "note": "Informational; does not gate CI."
+      },
+      "comparison_pairs": null,
+      "dependencies": []
+    },
+    {
+      "id": "micro_redact_is_sensitive_miss",
+      "layer": "micro",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "redact.isSensitive on a non-sensitive key (\"http.method\"). Measures the full normalize+scan loop on a miss.",
+      "entry_point": "benchmarks/micro/main.zig",
+      "command_template": "zig build bench-micro -Doptimize=ReleaseFast -- --filter micro_redact_is_sensitive_miss --output {output_path}",
+      "ops_per_iteration_default": 100000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "throughput_ops_per_sec"],
+      "zero_alloc_expected": true,
+      "zero_alloc_probe_plan": "TrackingAllocator; isSensitive uses a stack-local scratch buffer; assert alloc_count == 0.",
+      "pass_criteria": {
+        "max_regression_pct": -3.0,
+        "noise_gate_formula": "max(3.0, 3.0 * baseline_stddev_pct)",
+        "alloc_count_max": 0,
+        "note": "Informational; does not gate CI."
+      },
+      "comparison_pairs": null,
+      "dependencies": []
+    },
+    {
+      "id": "micro_redact_is_sensitive_hit",
+      "layer": "micro",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "redact.isSensitive on a sensitive key (\"authorization\"). Measures cost on a hit (early exit from indexOf loop).",
+      "entry_point": "benchmarks/micro/main.zig",
+      "command_template": "zig build bench-micro -Doptimize=ReleaseFast -- --filter micro_redact_is_sensitive_hit --output {output_path}",
+      "ops_per_iteration_default": 100000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "throughput_ops_per_sec"],
+      "zero_alloc_expected": true,
+      "zero_alloc_probe_plan": "TrackingAllocator; assert alloc_count == 0.",
+      "pass_criteria": {
+        "max_regression_pct": -3.0,
+        "noise_gate_formula": "max(3.0, 3.0 * baseline_stddev_pct)",
+        "alloc_count_max": 0,
+        "note": "Informational; does not gate CI."
+      },
+      "comparison_pairs": null,
+      "dependencies": []
+    },
+    {
+      "id": "micro_json_write_attrs_4",
+      "layer": "micro",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "json_codec.writeAttributes on a 4-entry AttributeSet. Measures sortedEntries allocation + JSON encode for a typical span.",
+      "entry_point": "benchmarks/micro/main.zig",
+      "command_template": "zig build bench-micro -Doptimize=ReleaseFast -- --filter micro_json_write_attrs_4 --output {output_path}",
+      "ops_per_iteration_default": 10000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "alloc_bytes", "throughput_ops_per_sec"],
+      "zero_alloc_expected": false,
+      "zero_alloc_probe_plan": null,
+      "pass_criteria": {
+        "max_regression_pct": -3.0,
+        "noise_gate_formula": "max(3.0, 3.0 * baseline_stddev_pct)",
+        "note": "Informational; does not gate CI."
+      },
+      "comparison_pairs": null,
+      "dependencies": []
+    },
+    {
+      "id": "micro_json_write_attrs_32",
+      "layer": "micro",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "json_codec.writeAttributes on a 32-entry AttributeSet. Measures sort cost growth and encode throughput at medium attribute count.",
+      "entry_point": "benchmarks/micro/main.zig",
+      "command_template": "zig build bench-micro -Doptimize=ReleaseFast -- --filter micro_json_write_attrs_32 --output {output_path}",
+      "ops_per_iteration_default": 5000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "alloc_bytes", "throughput_ops_per_sec"],
+      "zero_alloc_expected": false,
+      "zero_alloc_probe_plan": null,
+      "pass_criteria": {
+        "max_regression_pct": -3.0,
+        "noise_gate_formula": "max(3.0, 3.0 * baseline_stddev_pct)",
+        "note": "Informational; does not gate CI."
+      },
+      "comparison_pairs": null,
+      "dependencies": []
+    },
+    {
+      "id": "micro_noop_vtable_dispatch",
+      "layer": "micro",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "Tracer.startSpan through the noop vtable only (noopStart). The Tracer value is stored opaquely to prevent inlining. Measures vtable dispatch + Span.noop return.",
+      "entry_point": "benchmarks/micro/main.zig",
+      "command_template": "zig build bench-micro -Doptimize=ReleaseFast -- --filter micro_noop_vtable_dispatch --output {output_path}",
+      "ops_per_iteration_default": 1000000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "throughput_ops_per_sec"],
+      "zero_alloc_expected": true,
+      "zero_alloc_probe_plan": "TrackingAllocator; noopStart returns Span.noop which is a comptime constant; assert alloc_count == 0. Implementation must verify via objdump that the call is not elided to a no-op load.",
+      "pass_criteria": {
+        "max_regression_pct": -3.0,
+        "noise_gate_formula": "max(3.0, 3.0 * baseline_stddev_pct)",
+        "alloc_count_max": 0,
+        "note": "Informational; does not gate CI."
+      },
+      "comparison_pairs": null,
+      "dependencies": []
+    },
+
+    {
+      "id": "integ_level3_sync_1span",
+      "layer": "integration",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "End-to-end: TracerProvider (alwaysOn, InMemoryExporter, async_workers=0) + startSpan + 4 string attributes + span.end. 1 span per iteration.",
+      "entry_point": "benchmarks/integration/main.zig",
+      "command_template": "zig build bench-integration -Doptimize=ReleaseFast -- --filter integ_level3_sync_1span --output {output_path}",
+      "ops_per_iteration_default": 1,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "alloc_bytes", "throughput_ops_per_sec"],
+      "zero_alloc_expected": false,
+      "zero_alloc_probe_plan": null,
+      "pass_criteria": {
+        "max_regression_pct": -3.0,
+        "noise_gate_formula": "max(3.0, 3.0 * baseline_stddev_pct)",
+        "note": "Informational; does not gate CI."
+      },
+      "comparison_pairs": null,
+      "dependencies": [],
+      "constraints": "async_workers=0 only. async_workers>0 deferred pending V-4 fix (batchForceFlush busy-poll)."
+    },
+    {
+      "id": "integ_level3_sync_100spans",
+      "layer": "integration",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "End-to-end: TracerProvider (alwaysOn, InMemoryExporter, async_workers=0). 100 spans per iteration, each with 4 string attributes.",
+      "entry_point": "benchmarks/integration/main.zig",
+      "command_template": "zig build bench-integration -Doptimize=ReleaseFast -- --filter integ_level3_sync_100spans --output {output_path}",
+      "ops_per_iteration_default": 100,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "alloc_bytes", "throughput_ops_per_sec"],
+      "zero_alloc_expected": false,
+      "zero_alloc_probe_plan": null,
+      "pass_criteria": {
+        "max_regression_pct": -3.0,
+        "noise_gate_formula": "max(3.0, 3.0 * baseline_stddev_pct)",
+        "note": "Informational; does not gate CI."
+      },
+      "comparison_pairs": null,
+      "dependencies": [],
+      "constraints": "async_workers=0 only."
+    },
+    {
+      "id": "integ_level3_sync_10kspans",
+      "layer": "integration",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "End-to-end: TracerProvider (alwaysOn, InMemoryExporter, async_workers=0). 10 000 spans per iteration with 4 string attributes each. Tests batch processor flush throughput.",
+      "entry_point": "benchmarks/integration/main.zig",
+      "command_template": "zig build bench-integration -Doptimize=ReleaseFast -- --filter integ_level3_sync_10kspans --output {output_path}",
+      "ops_per_iteration_default": 10000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "alloc_bytes", "throughput_ops_per_sec"],
+      "zero_alloc_expected": false,
+      "zero_alloc_probe_plan": null,
+      "pass_criteria": {
+        "max_regression_pct": -3.0,
+        "noise_gate_formula": "max(3.0, 3.0 * baseline_stddev_pct)",
+        "note": "Informational; does not gate CI."
+      },
+      "comparison_pairs": null,
+      "dependencies": [],
+      "constraints": "async_workers=0 only."
+    },
+    {
+      "id": "integ_level4_sync_100spans",
+      "layer": "integration",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "TracerProvider (alwaysOn, InMemoryExporter) + MeterProvider (Counter with 2 attrs, Histogram with 2 attrs, InMemoryExporter). 100 spans + 100 counter increments + 100 histogram records per iteration.",
+      "entry_point": "benchmarks/integration/main.zig",
+      "command_template": "zig build bench-integration -Doptimize=ReleaseFast -- --filter integ_level4_sync_100spans --output {output_path}",
+      "ops_per_iteration_default": 100,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "alloc_bytes", "throughput_ops_per_sec"],
+      "zero_alloc_expected": false,
+      "zero_alloc_probe_plan": null,
+      "pass_criteria": {
+        "max_regression_pct": -3.0,
+        "noise_gate_formula": "max(3.0, 3.0 * baseline_stddev_pct)",
+        "note": "Informational; does not gate CI."
+      },
+      "comparison_pairs": null,
+      "dependencies": [],
+      "constraints": "async_workers=0 only."
+    },
+    {
+      "id": "integ_level5_sync_100spans",
+      "layer": "integration",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "Level-4 + LoggerProvider (InMemoryExporter). 100 spans + 100 counter+histogram increments + 100 log records (3 attrs each) per iteration.",
+      "entry_point": "benchmarks/integration/main.zig",
+      "command_template": "zig build bench-integration -Doptimize=ReleaseFast -- --filter integ_level5_sync_100spans --output {output_path}",
+      "ops_per_iteration_default": 100,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "alloc_bytes", "throughput_ops_per_sec"],
+      "zero_alloc_expected": false,
+      "zero_alloc_probe_plan": null,
+      "pass_criteria": {
+        "max_regression_pct": -3.0,
+        "noise_gate_formula": "max(3.0, 3.0 * baseline_stddev_pct)",
+        "note": "Informational; does not gate CI."
+      },
+      "comparison_pairs": null,
+      "dependencies": [],
+      "constraints": "async_workers=0 only."
+    },
+    {
+      "id": "integ_level6_otlp_loopback_100spans",
+      "layer": "integration",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "Level-5 with OtlpHttpExporter targeting a std.net.Server loopback discard server (in-process thread, TCP, no real network). 100 spans + 100 metrics + 100 logs per iteration. Measures full encode+send+discard round-trip.",
+      "entry_point": "benchmarks/integration/main.zig",
+      "command_template": "zig build bench-integration -Doptimize=ReleaseFast -- --filter integ_level6_otlp_loopback_100spans --output {output_path}",
+      "ops_per_iteration_default": 100,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "alloc_bytes", "throughput_ops_per_sec"],
+      "zero_alloc_expected": false,
+      "zero_alloc_probe_plan": null,
+      "pass_criteria": {
+        "max_regression_pct": -3.0,
+        "noise_gate_formula": "max(3.0, 3.0 * baseline_stddev_pct)",
+        "note": "Informational; does not gate CI."
+      },
+      "comparison_pairs": null,
+      "dependencies": [],
+      "constraints": "In-process loopback discard server (Decision D-3). async_workers=0 only. May be excluded from bench-smoke (Decision D-4)."
+    },
+
+    {
+      "id": "baseline-no-call",
+      "layer": "comparison",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "Control scenario. Caller body is a counter increment only; no OTel API call whatsoever. Establishes the minimum measurable iteration cost.",
+      "entry_point": "benchmarks/compare.zig",
+      "command_template": "zig build bench-ab -Doptimize=ReleaseFast -Dotel_disabled=false -- --filter baseline-no-call --output {output_path}",
+      "ops_per_iteration_default": 10000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "throughput_ops_per_sec", "ns_per_op_median"],
+      "zero_alloc_expected": true,
+      "zero_alloc_probe_plan": "TrackingAllocator; assert alloc_count == 0.",
+      "pass_criteria": {
+        "role": "control",
+        "alloc_count_max": 0,
+        "note": "Not compared against itself; used as reference for all other comparison scenarios."
+      },
+      "comparison_pairs": null,
+      "dependencies": []
+    },
+    {
+      "id": "noop-tracer-startend",
+      "layer": "comparison",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "API-layer noop tracer (no SDK provider initialized). Caller writes tracer.startSpan(ctx, 'x', .{}); span.end(null). Measures vtable dispatch through noopStart.",
+      "entry_point": "benchmarks/compare.zig",
+      "command_template": "zig build bench-ab -Doptimize=ReleaseFast -Dotel_disabled=false -- --filter noop-tracer-startend --output {output_path}",
+      "ops_per_iteration_default": 10000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "throughput_ops_per_sec", "ns_per_op_median"],
+      "zero_alloc_expected": true,
+      "zero_alloc_probe_plan": "TrackingAllocator; noopStart returns Span.noop (comptime constant); span.end on null state is a branch-taken-immediately no-op; assert alloc_count == 0.",
+      "pass_criteria": {
+        "vs_control": "baseline-no-call",
+        "ns_per_op_median_delta_max_ns": 5,
+        "alloc_count_max": 0,
+        "note": "Hard budget: ns_per_op_median delta vs baseline-no-call must be <= 5 ns AND alloc_count == 0. Validates runtime-noop is essentially free."
+      },
+      "comparison_pairs": [
+        {
+          "ref_a_scenario": "baseline-no-call",
+          "ref_b_scenario": "noop-tracer-startend",
+          "expected_delta_type": "negligible",
+          "hard_criterion": true,
+          "hard_criterion_rule": "abs(ns_per_op_median_b - ns_per_op_median_a) <= 5 AND alloc_count_b == 0"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "runtime-disabled-alwaysOff",
+      "layer": "comparison",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "SDK linked and initialized with Sampler.alwaysOff(). Worst-case for the 'disabled but SDK linked' path: ID generation (sdk/trace.zig:224-225) still runs but SpanState is not allocated (drop path at line 235-237).",
+      "entry_point": "benchmarks/compare.zig",
+      "command_template": "zig build bench-ab -Doptimize=ReleaseFast -Dotel_disabled=false -- --filter runtime-disabled-alwaysOff --output {output_path}",
+      "ops_per_iteration_default": 10000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "throughput_ops_per_sec", "ns_per_op_median"],
+      "zero_alloc_expected": true,
+      "zero_alloc_probe_plan": "TrackingAllocator; SpanState.init is NOT called on drop path; PRNG generates IDs on stack only; assert alloc_count == 0.",
+      "pass_criteria": {
+        "vs_control": "baseline-no-call",
+        "alloc_count_max": 0,
+        "note": "alloc_count must be 0. ns_per_op_median delta vs baseline-no-call is recorded as the 'ID generation overhead when disabled'; no hard upper bound but expected < 50 ns on a modern CPU."
+      },
+      "comparison_pairs": [
+        {
+          "ref_a_scenario": "baseline-no-call",
+          "ref_b_scenario": "runtime-disabled-alwaysOff",
+          "expected_delta_type": "small_positive",
+          "hard_criterion": false
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "fully-enabled-alwaysOn-inmemory",
+      "layer": "comparison",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "SDK with Sampler.alwaysOn() and InMemoryExporter. 1 span with 4 string attributes per op. Reference for what 'fully enabled' costs.",
+      "entry_point": "benchmarks/compare.zig",
+      "command_template": "zig build bench-ab -Doptimize=ReleaseFast -Dotel_disabled=false -- --filter fully-enabled-alwaysOn-inmemory --output {output_path}",
+      "ops_per_iteration_default": 1000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "alloc_bytes", "throughput_ops_per_sec", "ns_per_op_median"],
+      "zero_alloc_expected": false,
+      "zero_alloc_probe_plan": null,
+      "pass_criteria": {
+        "role": "reference",
+        "note": "Not gated. Recorded as the upper bound of the cost ladder."
+      },
+      "comparison_pairs": null,
+      "dependencies": []
+    },
+    {
+      "id": "comptime-disabled",
+      "layer": "comparison",
+      "language": "zig",
+      "variant": "otel_disabled=true",
+      "description": "Binary built with -Dotel_disabled=true. Caller still writes tracer.startSpan(...); span.end(null). Expected outcome: the optimizer dead-code-eliminates all OTel code paths; ns_per_op indistinguishable from baseline-no-call.",
+      "entry_point": "benchmarks/compare.zig",
+      "command_template": "zig build bench-ab -Doptimize=ReleaseFast -Dotel_disabled=true -- --filter comptime-disabled --output {output_path}",
+      "ops_per_iteration_default": 10000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "throughput_ops_per_sec", "ns_per_op_median"],
+      "zero_alloc_expected": true,
+      "zero_alloc_probe_plan": "TrackingAllocator; with otel_disabled=true all method bodies are comptime-empty; assert alloc_count == 0. Implementation phase must also verify via 'zig build bench-ab -Dotel_disabled=true' + objdump that the startSpan call site contains no call instruction.",
+      "pass_criteria": {
+        "vs_control": "baseline-no-call",
+        "ns_per_op_median_delta_max_ns": 2,
+        "alloc_count_max": 0,
+        "hard_criterion": true,
+        "hard_criterion_rule": "abs(ns_per_op_median_b - ns_per_op_median_a) <= 2 AND alloc_count_b == 0",
+        "note": "PRIMARY HEADLINE CRITERION. Checked by dedicated step in bench-ci AFTER bench-compare exits."
+      },
+      "comparison_pairs": [
+        {
+          "ref_a_scenario": "baseline-no-call",
+          "ref_b_scenario": "comptime-disabled",
+          "expected_delta_type": "zero",
+          "hard_criterion": true,
+          "hard_criterion_rule": "abs(ns_per_op_median_b - ns_per_op_median_a) <= 2 AND alloc_count_b == 0"
+        },
+        {
+          "ref_a_scenario": "runtime-disabled-noop",
+          "ref_b_scenario": "comptime-disabled",
+          "expected_delta_type": "comptime_is_better_or_equal",
+          "hard_criterion": false,
+          "note": "comptime-disabled should be <= runtime-disabled-noop in ns_per_op_median. Any positive delta here is signal that DCE is not firing."
+        }
+      ],
+      "dependencies": [
+        "Requires -Dotel_disabled build option in build.zig (Follow-up F-1). The implement phase must wire this before this scenario can be run."
+      ]
+    },
+    {
+      "id": "runtime-disabled-noop",
+      "layer": "comparison",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "Binary built with -Dotel_disabled=false. Caller writes tracer.startSpan(...); span.end(null) against API-layer noop. Axis B pairing partner for comptime-disabled.",
+      "entry_point": "benchmarks/compare.zig",
+      "command_template": "zig build bench-ab -Doptimize=ReleaseFast -Dotel_disabled=false -- --filter runtime-disabled-noop --output {output_path}",
+      "ops_per_iteration_default": 10000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "throughput_ops_per_sec", "ns_per_op_median"],
+      "zero_alloc_expected": true,
+      "zero_alloc_probe_plan": "TrackingAllocator; assert alloc_count == 0.",
+      "pass_criteria": {
+        "alloc_count_max": 0,
+        "note": "Axis B control for comptime-disabled. Not independently gated."
+      },
+      "comparison_pairs": [
+        {
+          "ref_a_scenario": "comptime-disabled",
+          "ref_b_scenario": "runtime-disabled-noop",
+          "expected_delta_type": "informational",
+          "hard_criterion": false
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "level-0-disabled",
+      "layer": "comparison",
+      "language": "zig",
+      "variant": "otel_disabled=true",
+      "description": "Level ladder entry 0. Binary built with -Dotel_disabled=true. Same call site as comptime-disabled. Alias for the level-graded cost report.",
+      "entry_point": "benchmarks/compare.zig",
+      "command_template": "zig build bench-ab -Doptimize=ReleaseFast -Dotel_disabled=true -- --filter level-0-disabled --output {output_path}",
+      "ops_per_iteration_default": 10000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "throughput_ops_per_sec", "ns_per_op_median"],
+      "zero_alloc_expected": true,
+      "zero_alloc_probe_plan": "Same as comptime-disabled; assert alloc_count == 0.",
+      "pass_criteria": {
+        "alloc_count_max": 0,
+        "note": "Level ladder anchor. Not independently gated."
+      },
+      "comparison_pairs": [
+        { "ref_a_scenario": "level-0-disabled", "ref_b_scenario": "level-1-tracer-noop", "expected_delta_type": "incremental_cost", "hard_criterion": false },
+        { "ref_a_scenario": "level-0-disabled", "ref_b_scenario": "level-2-tracer-alwaysoff", "expected_delta_type": "incremental_cost", "hard_criterion": false },
+        { "ref_a_scenario": "level-0-disabled", "ref_b_scenario": "level-3-tracing-only", "expected_delta_type": "incremental_cost", "hard_criterion": false }
+      ],
+      "dependencies": [
+        "Requires -Dotel_disabled build option (Follow-up F-1)."
+      ],
+      "unit_of_work": "1 span with 4 string attributes, 1 Counter.add with 2 attrs, 1 Histogram.record with 2 attrs, 1 Logger.emit with 3 attrs per op (inactive components skipped at this level)"
+    },
+    {
+      "id": "level-1-tracer-noop",
+      "layer": "comparison",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "Level ladder entry 1. API-layer noop tracer only. Same unit of work shape as all level scenarios (inactive signals skipped).",
+      "entry_point": "benchmarks/compare.zig",
+      "command_template": "zig build bench-ab -Doptimize=ReleaseFast -Dotel_disabled=false -- --filter level-1-tracer-noop --output {output_path}",
+      "ops_per_iteration_default": 10000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "throughput_ops_per_sec", "ns_per_op_median"],
+      "zero_alloc_expected": true,
+      "zero_alloc_probe_plan": "TrackingAllocator; assert alloc_count == 0.",
+      "pass_criteria": {
+        "vs_control": "level-0-disabled",
+        "ns_per_op_median_delta_max_ns": 5,
+        "alloc_count_max": 0,
+        "hard_criterion": true,
+        "hard_criterion_rule": "abs(ns_per_op_median_b - ns_per_op_median_a) <= 5 AND alloc_count_b == 0",
+        "note": "Budget: delta vs level-0 must be <= 5 ns AND alloc_count == 0. Validates runtime-noop is essentially free."
+      },
+      "comparison_pairs": [
+        { "ref_a_scenario": "level-0-disabled", "ref_b_scenario": "level-1-tracer-noop", "expected_delta_type": "near_zero", "hard_criterion": true, "hard_criterion_rule": "abs(ns_per_op_median_b - ns_per_op_median_a) <= 5 AND alloc_count_b == 0" }
+      ],
+      "dependencies": [],
+      "unit_of_work": "1 span with 4 string attributes (noop path, no recording), 1 Counter.add with 2 attrs (noop), 1 Histogram.record with 2 attrs (noop), 1 Logger.emit with 3 attrs (noop) per op"
+    },
+    {
+      "id": "level-2-tracer-alwaysoff",
+      "layer": "comparison",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "Level ladder entry 2. SDK TracerProvider + alwaysOff sampler. ID generation runs (sdk/trace.zig:224-225) but SpanState not allocated.",
+      "entry_point": "benchmarks/compare.zig",
+      "command_template": "zig build bench-ab -Doptimize=ReleaseFast -Dotel_disabled=false -- --filter level-2-tracer-alwaysoff --output {output_path}",
+      "ops_per_iteration_default": 10000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "throughput_ops_per_sec", "ns_per_op_median"],
+      "zero_alloc_expected": true,
+      "zero_alloc_probe_plan": "TrackingAllocator; SpanState not allocated on drop path; assert alloc_count == 0.",
+      "pass_criteria": {
+        "note": "Delta vs level-1 recorded as cost of SDK initialization + PRNG. No upper bound; informational."
+      },
+      "comparison_pairs": [
+        { "ref_a_scenario": "level-1-tracer-noop", "ref_b_scenario": "level-2-tracer-alwaysoff", "expected_delta_type": "incremental_cost", "hard_criterion": false }
+      ],
+      "dependencies": [],
+      "unit_of_work": "Same shape as level-1. SDK tracer initialized with alwaysOff sampler."
+    },
+    {
+      "id": "level-3-tracing-only",
+      "layer": "comparison",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "Level ladder entry 3. SDK TracerProvider + alwaysOn + InMemoryExporter. 1 span with 4 string attributes recorded and exported per op.",
+      "entry_point": "benchmarks/compare.zig",
+      "command_template": "zig build bench-ab -Doptimize=ReleaseFast -Dotel_disabled=false -- --filter level-3-tracing-only --output {output_path}",
+      "ops_per_iteration_default": 1000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "alloc_bytes", "throughput_ops_per_sec", "ns_per_op_median"],
+      "zero_alloc_expected": false,
+      "zero_alloc_probe_plan": null,
+      "pass_criteria": {
+        "note": "Delta vs level-2 recorded as cost of span recording + export. No upper bound; informational."
+      },
+      "comparison_pairs": [
+        { "ref_a_scenario": "level-2-tracer-alwaysoff", "ref_b_scenario": "level-3-tracing-only", "expected_delta_type": "incremental_cost", "hard_criterion": false }
+      ],
+      "dependencies": [],
+      "unit_of_work": "1 span with 4 string attributes (keys: 'http.method', 'http.status_code', 'net.host.name', 'db.system'; values: fixed short strings) per op"
+    },
+    {
+      "id": "level-4-tracing-metrics",
+      "layer": "comparison",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "Level ladder entry 4. Level-3 + MeterProvider + Counter (2 attrs) + Histogram (2 attrs) + InMemoryExporter for metrics.",
+      "entry_point": "benchmarks/compare.zig",
+      "command_template": "zig build bench-ab -Doptimize=ReleaseFast -Dotel_disabled=false -- --filter level-4-tracing-metrics --output {output_path}",
+      "ops_per_iteration_default": 1000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "alloc_bytes", "throughput_ops_per_sec", "ns_per_op_median"],
+      "zero_alloc_expected": false,
+      "zero_alloc_probe_plan": null,
+      "pass_criteria": {
+        "note": "Delta vs level-3 recorded as marginal cost of metrics. No upper bound; informational."
+      },
+      "comparison_pairs": [
+        { "ref_a_scenario": "level-3-tracing-only", "ref_b_scenario": "level-4-tracing-metrics", "expected_delta_type": "incremental_cost", "hard_criterion": false }
+      ],
+      "dependencies": [],
+      "unit_of_work": "Level-3 unit + Counter.add(1, [{key:'rpc.service',val:'svc'},{key:'rpc.method',val:'get'}]) + Histogram.record(0.5, [{key:'rpc.service',val:'svc'},{key:'rpc.method',val:'get'}]) per op"
+    },
+    {
+      "id": "level-5-tracing-metrics-logs",
+      "layer": "comparison",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "Level ladder entry 5. Level-4 + LoggerProvider + InMemoryExporter for logs. 1 LogRecord with 3 attributes per op.",
+      "entry_point": "benchmarks/compare.zig",
+      "command_template": "zig build bench-ab -Doptimize=ReleaseFast -Dotel_disabled=false -- --filter level-5-tracing-metrics-logs --output {output_path}",
+      "ops_per_iteration_default": 1000,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "alloc_bytes", "throughput_ops_per_sec", "ns_per_op_median"],
+      "zero_alloc_expected": false,
+      "zero_alloc_probe_plan": null,
+      "pass_criteria": {
+        "note": "Delta vs level-4 recorded as marginal cost of logs. No upper bound; informational."
+      },
+      "comparison_pairs": [
+        { "ref_a_scenario": "level-4-tracing-metrics", "ref_b_scenario": "level-5-tracing-metrics-logs", "expected_delta_type": "incremental_cost", "hard_criterion": false }
+      ],
+      "dependencies": [],
+      "unit_of_work": "Level-4 unit + Logger.emit(LogRecord{severity:info, body:'bench log', attrs:[{key:'log.source',val:'bench'},{key:'env',val:'test'},{key:'version',val:'1'}]}) per op"
+    },
+    {
+      "id": "level-6-full-otlp-http-loopback",
+      "layer": "comparison",
+      "language": "zig",
+      "variant": "otel_disabled=false",
+      "description": "Level ladder entry 6. Level-5 + OtlpHttpExporter pointing at an in-process std.net.Server loopback discard server (separate thread, no real network). Measures full encode + TCP send + drain round-trip.",
+      "entry_point": "benchmarks/compare.zig",
+      "command_template": "zig build bench-ab -Doptimize=ReleaseFast -Dotel_disabled=false -- --filter level-6-full-otlp-http-loopback --output {output_path}",
+      "ops_per_iteration_default": 100,
+      "metrics_emitted": ["wall_ns_p50", "wall_ns_p95", "wall_ns_stddev", "alloc_count", "alloc_bytes", "throughput_ops_per_sec", "ns_per_op_median"],
+      "zero_alloc_expected": false,
+      "zero_alloc_probe_plan": null,
+      "pass_criteria": {
+        "note": "Delta vs level-5 recorded as cost of OTLP encode + loopback TCP. No upper bound; informational."
+      },
+      "comparison_pairs": [
+        { "ref_a_scenario": "level-5-tracing-metrics-logs", "ref_b_scenario": "level-6-full-otlp-http-loopback", "expected_delta_type": "incremental_cost", "hard_criterion": false }
+      ],
+      "dependencies": [
+        "Decision D-3: in-process loopback discard server. Decision D-4: may be excluded from bench-smoke."
+      ],
+      "constraints": "async_workers=0 only. The OtlpHttpExporter transport is fakeTransport-equivalent (loopback discards bytes); no TLS dependency."
+    }
+  ],
+
+  "commands": {
+    "bench-ci": "zig build bench-ci",
+    "bench-micro": "zig build bench-micro",
+    "bench-integration": "zig build bench-integration",
+    "bench-ab": "bash scripts/bench_ab_runner.sh --ref-a 4de1b11 --ref-b HEAD",
+    "bench-compare": "zig build bench-compare -- --baseline docs/performance/2026-04-26-zero-overhead-when-disabled/results/ref-a.json --current docs/performance/2026-04-26-zero-overhead-when-disabled/results/ref-b.json --floor 3.0",
+    "bench-smoke": "zig build bench-smoke"
+  },
+
+  "ab_protocol": {
+    "ref_a": "4de1b11",
+    "ref_b": "HEAD",
+    "warmups": 3,
+    "rounds": 20,
+    "stress_multiplier": 20,
+    "variance_gate_multiplier": 3.0,
+    "fixed_floor_pct": 3.0,
+    "target_gain_pct": 5.0,
+    "max_regression_pct": -3.0,
+    "hard_criteria": [
+      {
+        "scenario_id": "comptime-disabled",
+        "vs": "baseline-no-call",
+        "rule": "abs(ns_per_op_median_comptime_disabled - ns_per_op_median_baseline_no_call) <= 2 AND alloc_count_comptime_disabled == 0",
+        "gate_ci": true
+      },
+      {
+        "scenario_id": "noop-tracer-startend",
+        "vs": "baseline-no-call",
+        "rule": "abs(ns_per_op_median_noop_tracer_startend - ns_per_op_median_baseline_no_call) <= 5 AND alloc_count_noop_tracer_startend == 0",
+        "gate_ci": false,
+        "note": "Advisory hard criterion; failure triggers a warning, not a CI block, in this first round."
+      },
+      {
+        "scenario_id": "level-1-tracer-noop",
+        "vs": "level-0-disabled",
+        "rule": "abs(ns_per_op_median_level1 - ns_per_op_median_level0) <= 5 AND alloc_count_level1 == 0",
+        "gate_ci": false,
+        "note": "Advisory; same logic as noop-tracer-startend."
+      }
+    ],
+    "optimize_mode": "ReleaseFast",
+    "cpu_pin_advisory": "taskset -c 0",
+    "async_workers": 0,
+    "async_workers_note": "async_workers > 0 scenarios deferred pending V-4 fix (batchForceFlush 200us busy-poll in src/sdk/export.zig:406)"
+  },
+
+  "build_step_graph": {
+    "bench-ci": {
+      "depends_on": ["bench-micro", "bench-integration", "bench-compare", "hard_criterion_check"],
+      "stdout_summary_format": "BENCH {date} {git_sha_short} micro={N}pass integ={N}pass compare={N}pass/{M}total hard_criterion=PASS|FAIL"
+    },
+    "bench-micro": {
+      "artifact": "bench_micro_exe",
+      "source": "benchmarks/micro/main.zig",
+      "imports": ["otel", "framework", "build_options"],
+      "build_options_required": ["otel_disabled=false"],
+      "output": "docs/performance/2026-04-26-zero-overhead-when-disabled/results/micro.json"
+    },
+    "bench-integration": {
+      "artifact": "bench_integration_exe",
+      "source": "benchmarks/integration/main.zig",
+      "imports": ["otel", "framework", "build_options"],
+      "build_options_required": ["otel_disabled=false"],
+      "output": "docs/performance/2026-04-26-zero-overhead-when-disabled/results/integ.json"
+    },
+    "bench-ab": {
+      "description": "Shell script builds two variants and runs both. Variant A: zig build bench-ab-default -Dotel_disabled=false. Variant B: zig build bench-ab-disabled -Dotel_disabled=true.",
+      "artifacts": ["bench_ab_exe_default", "bench_ab_exe_disabled"],
+      "source": "benchmarks/compare.zig",
+      "script": "scripts/bench_ab_runner.sh",
+      "output_a": "docs/performance/2026-04-26-zero-overhead-when-disabled/results/ref-a.json",
+      "output_b": "docs/performance/2026-04-26-zero-overhead-when-disabled/results/ref-b.json"
+    },
+    "bench-compare": {
+      "artifact": "compare_bench_exe",
+      "source": "benchmarks/compare.zig",
+      "cli_args": "--baseline {ref_a_json} --current {ref_b_json} --floor 3.0",
+      "exits_nonzero_on_regression": true
+    },
+    "bench-smoke": {
+      "artifact": "bench_smoke_exe",
+      "source": "benchmarks/smoke.zig",
+      "warmups": 1,
+      "rounds": 1,
+      "platform_gate": "allow_failure=true on macOS",
+      "note": "level-6-full-otlp-http-loopback may be excluded (Decision D-4)"
+    },
+    "hard_criterion_check": {
+      "description": "Reads ref-a.json and ref-b.json; applies hard criterion rules for comptime-disabled. Exits non-zero if rule fails.",
+      "source": "benchmarks/check_hard_criteria.zig",
+      "inputs": ["results/ref-a.json", "results/ref-b.json"],
+      "rules": "see ab_protocol.hard_criteria"
+    },
+    "V1_stub_replacement_note": "The existing bench/bench-micro/scale-bench/compare-bench stubs in build.zig (currently aliased to fmt-check) must be replaced with addRunArtifact wiring against the actual executables above. scale-bench becomes an alias for bench-ci for CI catalog compatibility."
+  },
+
+  "follow_up_items": [
+    {
+      "id": "F-1",
+      "title": "Implement -Dotel_disabled=true build option",
+      "scope": "build.zig + src/api/trace.zig + src/api/metrics.zig + src/api/logs.zig + src/sdk/trace.zig + src/sdk/metrics.zig + src/sdk/logs.zig",
+      "required_for_scenarios": ["comptime-disabled", "level-0-disabled"],
+      "priority": "blocking"
+    },
+    {
+      "id": "F-2",
+      "title": "Fix V-2: Config.disabled (OTEL_SDK_DISABLED) is dead code",
+      "scope": "src/sdk/config.zig + TracerProvider.init",
+      "required_for_scenarios": [],
+      "priority": "separate_pr",
+      "note": "Out of scope for this bench branch. Do not conflate with comptime axis."
+    },
+    {
+      "id": "F-3",
+      "title": "Fix V-4: batchForceFlush 200us busy-poll (src/sdk/export.zig:406)",
+      "scope": "src/sdk/export.zig",
+      "required_for_scenarios": ["future async-drain scenarios"],
+      "priority": "follow_up",
+      "note": "Replace clock.sleep(200us) with std.Thread.Condition wait-with-timeout."
+    },
+    {
+      "id": "F-4",
+      "title": "Add async-drain integration scenarios once F-3 is fixed",
+      "scope": "benchmarks/integration/main.zig",
+      "required_for_scenarios": ["integ_level3_async_100spans", "integ_level6_otlp_async_loopback_100spans"],
+      "priority": "future"
+    }
+  ],
+
+  "cross_platform": {
+    "linux_x86_64": {
+      "required": true,
+      "all_scenarios": true,
+      "cpu_pin": "taskset -c 0 (advisory)"
+    },
+    "macos": {
+      "required": false,
+      "allow_failure": true,
+      "scenarios": "bench-smoke only (1 warmup, 1 sample per comparison scenario)",
+      "alloc_assertion_enforced": false,
+      "note": "Validates compile correctness and Darwin clock path. alloc_count==0 assertion not enforced on macOS."
+    },
+    "windows": {
+      "required": false,
+      "suppressed": true,
+      "reason": "clock.unixNanoNow returns 0 on Windows; wall_ns metrics are meaningless."
+    }
+  },
+
+  "evidence_root": "docs/performance/2026-04-26-zero-overhead-when-disabled",
+  "baseline_json": "docs/performance/2026-04-26-zero-overhead-when-disabled/results/ref-a.json",
+  "current_json": "docs/performance/2026-04-26-zero-overhead-when-disabled/results/ref-b.json"
+}

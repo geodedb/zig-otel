@@ -95,6 +95,61 @@ test "MeterProvider.meter returns noop Meter when otel_disabled" {
     try std.testing.expectEqual(@as(usize, 0), snap.len);
 }
 
+test "TracerProvider.tracer returns noop Tracer when config.disabled (runtime kill-switch)" {
+    var resource = try otel.sdk.resource.defaultResource(std.testing.allocator);
+    defer resource.deinit();
+    var rec = otel.exporters.in_memory.Recorder.init(std.testing.allocator);
+    defer rec.deinit();
+    var tp = try otel.sdk.trace.TracerProvider.init(std.testing.allocator, .{
+        .resource = &resource,
+        .default_exporter = rec.spanExporter(),
+        .disabled = true,
+    });
+    defer tp.deinit();
+    const tracer = tp.tracer(.{ .name = "test" });
+    const span = try tracer.startSpan(.empty(), "x", .{});
+    span.end(null);
+    // Provider was disabled at runtime — recorder must stay empty.
+    try std.testing.expectEqual(@as(usize, 0), rec.spans.items.len);
+}
+
+test "MeterProvider.meter returns noop Meter when config.disabled (runtime kill-switch)" {
+    if (build_options.otel_disabled) return error.SkipZigTest;
+    var resource = try otel.sdk.resource.defaultResource(std.testing.allocator);
+    defer resource.deinit();
+    var mp = try otel.sdk.metrics.MeterProvider.init(std.testing.allocator, .{
+        .resource = &resource,
+        .disabled = true,
+    });
+    defer mp.deinit();
+    const m = mp.meter(.{ .name = "test" });
+    const c = try m.counter(.{ .name = "x", .kind = .counter });
+    c.add(42, &.{});
+    const snap = try otel.sdk.metrics.collect(&mp, std.testing.allocator);
+    defer {
+        for (snap) |s| std.testing.allocator.free(s.points);
+        std.testing.allocator.free(snap);
+    }
+    // Disabled MeterProvider returns a noop Meter — no instruments registered.
+    try std.testing.expectEqual(@as(usize, 0), snap.len);
+}
+
+test "LoggerProvider.logger returns noop Logger when config.disabled (runtime kill-switch)" {
+    var resource = try otel.sdk.resource.defaultResource(std.testing.allocator);
+    defer resource.deinit();
+    var rec = otel.exporters.in_memory.Recorder.init(std.testing.allocator);
+    defer rec.deinit();
+    var lp = try otel.sdk.logs.LoggerProvider.init(std.testing.allocator, .{
+        .resource = &resource,
+        .default_exporter = rec.logExporter(),
+        .disabled = true,
+    });
+    defer lp.deinit();
+    const lg = lp.logger(.{ .name = "test" });
+    lg.emit(.{ .severity = .info, .body = .{ .string = "hello" } });
+    try std.testing.expectEqual(@as(usize, 0), rec.logs.items.len);
+}
+
 test "LoggerProvider.logger returns noop Logger when otel_disabled" {
     if (!build_options.otel_disabled) return error.SkipZigTest;
     var resource = try otel.sdk.resource.defaultResource(std.testing.allocator);

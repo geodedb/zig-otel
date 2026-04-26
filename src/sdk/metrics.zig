@@ -33,6 +33,12 @@ pub const MetricsConfig = struct {
     clock: clock_mod.Clock = clock_mod.default,
     readers: []const MetricReader = &.{},
     backend: Backend = .in_repo,
+    /// Runtime kill-switch. When `true`, `meter()` returns an API-layer
+    /// noop Meter so every `counter`/`histogram`/`gauge` call collapses
+    /// to a no-op without touching the aggregation pipeline. Mirrors the
+    /// comptime `-Dotel_disabled=true` flag at runtime; the comptime
+    /// flag still wins when set.
+    disabled: bool = false,
 };
 
 pub const MetricReader = struct {
@@ -186,6 +192,7 @@ pub const MeterProvider = struct {
 
     pub fn meter(self: *MeterProvider, scope: trace_api.InstrumentationScope) metrics_api.Meter {
         if (comptime build_options.otel_disabled) return .{ .scope = scope };
+        if (self.config.disabled) return .{ .scope = scope };
         return .{
             .ctx = self,
             .scope = scope,

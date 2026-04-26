@@ -15,6 +15,12 @@ pub const LogsConfig = struct {
     resource: ?*Resource = null,
     processors: []const exp.LogProcessor = &.{},
     default_exporter: ?exp.LogExporter = null,
+    /// Runtime kill-switch. When `true`, `logger()` returns an API-layer
+    /// noop Logger so every `emit` call collapses to a no-op without
+    /// hitting the processor chain. Mirrors the comptime
+    /// `-Dotel_disabled=true` flag at runtime; the comptime flag still
+    /// wins when set.
+    disabled: bool = false,
 };
 
 pub const SimpleLogProcessor = struct {
@@ -108,6 +114,7 @@ pub const LoggerProvider = struct {
 
     pub fn logger(self: *LoggerProvider, scope: trace_api.InstrumentationScope) logs_api.Logger {
         if (comptime @import("build_options").otel_disabled) return .{ .scope = scope };
+        if (self.config.disabled) return .{ .scope = scope };
         return .{
             .ctx = self,
             .scope = scope,

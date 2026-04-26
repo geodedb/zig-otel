@@ -116,6 +116,13 @@ pub const TraceConfig = struct {
     /// provider wraps it in a SimpleSpanProcessor.
     default_exporter: ?exp.SpanExporter = null,
     max_attributes: usize = attrs_mod.max_attributes,
+    /// Runtime kill-switch. When `true`, `tracer()` returns an API-layer
+    /// noop tracer so every `startSpan` call collapses to `Span.noop`
+    /// without touching the SDK pipeline. Mirrors the behaviour of the
+    /// comptime `-Dotel_disabled=true` build flag, but at runtime so
+    /// callers can wire it from `OTEL_SDK_DISABLED` (`Config.disabled`)
+    /// or any other policy. The comptime flag still wins when set.
+    disabled: bool = false,
 };
 
 pub const TracerProvider = struct {
@@ -209,6 +216,7 @@ pub const TracerProvider = struct {
 
     pub fn tracer(self: *TracerProvider, scope: trace_api.InstrumentationScope) trace_api.Tracer {
         if (comptime @import("build_options").otel_disabled) return .{ .scope = scope };
+        if (self.config.disabled) return .{ .scope = scope };
         return .{
             .ctx = self,
             .scope = scope,

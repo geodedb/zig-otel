@@ -1,18 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 DevNW
 
-//! Micro-benchmark entry point. Isolated hot paths with deterministic
-//! inputs and zero-alloc assertions where applicable. Real scenarios
-//! land in Phase 4 of the zero-overhead-when-disabled plan; this stub
-//! exists so the build graph is wired and `zig build bench-micro` runs
-//! cleanly today.
+//! Micro-benchmark suite for the zero-overhead-when-disabled bench
+//! system. Each scenario isolates one hot path; zero-alloc scenarios
+//! assert their contract via `framework.Scenario.zero_alloc_expected`.
 //!
 //! See docs/performance/2026-04-26-zero-overhead-when-disabled/plan.json
-//! for the scenario catalog.
+//! for the full scenario catalog and intent.
 
 const std = @import("std");
 const Io = std.Io;
+const otel = @import("otel");
 const framework = @import("framework");
+
+const attrs = otel.internal.attributes;
+const id_mod = otel.internal.id;
+const clock_mod = otel.internal.clock;
+const redact = otel.internal.redact;
+const json_codec = otel.internal.json_codec;
+const trace_api = otel.api.trace;
 
 pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(init.gpa);
@@ -23,11 +29,175 @@ pub fn main(init: std.process.Init) !void {
     var stderr_writer = Io.File.stderr().writer(init.io, &stderr_buf);
     const stderr = &stderr_writer.interface;
 
-    const scenarios: []const framework.Scenario = &.{};
+    const scenarios = [_]framework.Scenario{
+        .{ .name = "micro_attr_put_new", .layer = .micro, .ops_per_iteration = 100, .run = benchAttrPutNew },
+        .{ .name = "micro_attr_put_update", .layer = .micro, .ops_per_iteration = 10_000, .run = benchAttrPutUpdate },
+        .{ .name = "micro_attr_put_near_limit", .layer = .micro, .ops_per_iteration = 5_000, .run = benchAttrPutNearLimit },
+        .{ .name = "micro_next_trace_id", .layer = .micro, .ops_per_iteration = 100_000, .zero_alloc_expected = true, .run = benchNextTraceId },
+        .{ .name = "micro_next_span_id", .layer = .micro, .ops_per_iteration = 100_000, .zero_alloc_expected = true, .run = benchNextSpanId },
+        .{ .name = "micro_clock_unix_nano", .layer = .micro, .ops_per_iteration = 100_000, .zero_alloc_expected = true, .run = benchClockUnixNano },
+        .{ .name = "micro_redact_is_sensitive_miss", .layer = .micro, .ops_per_iteration = 100_000, .zero_alloc_expected = true, .run = benchRedactMiss },
+        .{ .name = "micro_redact_is_sensitive_hit", .layer = .micro, .ops_per_iteration = 100_000, .zero_alloc_expected = true, .run = benchRedactHit },
+        .{ .name = "micro_json_write_attrs_4", .layer = .micro, .ops_per_iteration = 10_000, .run = benchJsonWriteAttrs4 },
+        .{ .name = "micro_json_write_attrs_32", .layer = .micro, .ops_per_iteration = 5_000, .run = benchJsonWriteAttrs32 },
+        .{ .name = "micro_noop_vtable_dispatch", .layer = .micro, .ops_per_iteration = 1_000_000, .zero_alloc_expected = true, .run = benchNoopVtable },
+    };
 
     switch (try framework.parseArgs(allocator, init.minimal.args)) {
         .help_only => try framework.printHelp(stderr, "bench-micro"),
-        .list_only => try framework.printScenarios(stderr, scenarios),
-        .run => |opts| try framework.runScenarios(allocator, init.io, scenarios, opts),
+        .list_only => try framework.printScenarios(stderr, &scenarios),
+        .run => |opts| try framework.runScenarios(allocator, init.io, &scenarios, opts),
+    }
+}
+
+// ----------------------------------------------------------------------------
+// AttributeSet
+// ----------------------------------------------------------------------------
+
+fn benchAttrPutNew(ctx: *framework.Context) anyerror!void {
+    // Each op inserts one unique key into a fresh set. Measures the
+    // (init + put + deinit) cost of a single new-key insertion.
+    var i: u64 = 0;
+    while (i < ctx.scenario.ops_per_iteration) : (i += 1) {
+        var set = attrs.AttributeSet.init(ctx.allocator);
+        defer set.deinit();
+        var key_buf: [16]u8 = undefined;
+        const key = std.fmt.bufPrint(&key_buf, "k{d}", .{i}) catch unreachable;
+        try set.put(key, .{ .int = @intCast(i) });
+        std.mem.doNotOptimizeAway(set.entries.items.len);
+    }
+}
+
+fn benchAttrPutUpdate(ctx: *framework.Context) anyerror!void {
+    // Same key written `ops` times into one set. First put inserts;
+    // subsequent puts walk the linear scan and arena-dup the new value.
+    var set = attrs.AttributeSet.init(ctx.allocator);
+    defer set.deinit();
+    var i: u64 = 0;
+    while (i < ctx.scenario.ops_per_iteration) : (i += 1) {
+        try set.put("k", .{ .int = @intCast(i) });
+    }
+    std.mem.doNotOptimizeAway(set.entries.items.len);
+}
+
+fn benchAttrPutNearLimit(ctx: *framework.Context) anyerror!void {
+    // Pre-fill near `max_attributes` so the linear scan walks ~120
+    // entries on every put. Measures scan cost in the worst case
+    // before drops kick in.
+    var set = attrs.AttributeSet.init(ctx.allocator);
+    defer set.deinit();
+    var pre: u32 = 0;
+    while (pre < 120) : (pre += 1) {
+        var buf: [16]u8 = undefined;
+        const k = std.fmt.bufPrint(&buf, "pre{d}", .{pre}) catch unreachable;
+        try set.put(k, .{ .int = @intCast(pre) });
+    }
+    var i: u64 = 0;
+    while (i < ctx.scenario.ops_per_iteration) : (i += 1) {
+        try set.put("hot", .{ .int = @intCast(i) });
+    }
+    std.mem.doNotOptimizeAway(set.entries.items.len);
+}
+
+// ----------------------------------------------------------------------------
+// ID generation (zero-alloc)
+// ----------------------------------------------------------------------------
+
+fn benchNextTraceId(ctx: *framework.Context) anyerror!void {
+    var random = id_mod.Random.initFromCsprng();
+    const gen = random.generator();
+    var i: u64 = 0;
+    while (i < ctx.scenario.ops_per_iteration) : (i += 1) {
+        const tid = gen.nextTraceId();
+        std.mem.doNotOptimizeAway(tid.bytes[0]);
+    }
+}
+
+fn benchNextSpanId(ctx: *framework.Context) anyerror!void {
+    var random = id_mod.Random.initFromCsprng();
+    const gen = random.generator();
+    var i: u64 = 0;
+    while (i < ctx.scenario.ops_per_iteration) : (i += 1) {
+        const sid = gen.nextSpanId();
+        std.mem.doNotOptimizeAway(sid.bytes[0]);
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Clock (zero-alloc)
+// ----------------------------------------------------------------------------
+
+fn benchClockUnixNano(ctx: *framework.Context) anyerror!void {
+    var i: u64 = 0;
+    while (i < ctx.scenario.ops_per_iteration) : (i += 1) {
+        const t = clock_mod.unixNanoNow();
+        std.mem.doNotOptimizeAway(t);
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Redact (zero-alloc)
+// ----------------------------------------------------------------------------
+
+fn benchRedactMiss(ctx: *framework.Context) anyerror!void {
+    var i: u64 = 0;
+    while (i < ctx.scenario.ops_per_iteration) : (i += 1) {
+        const r = redact.isSensitive("ordinary.attribute.name");
+        std.mem.doNotOptimizeAway(r);
+    }
+}
+
+fn benchRedactHit(ctx: *framework.Context) anyerror!void {
+    var i: u64 = 0;
+    while (i < ctx.scenario.ops_per_iteration) : (i += 1) {
+        const r = redact.isSensitive("X-Authorization-Token");
+        std.mem.doNotOptimizeAway(r);
+    }
+}
+
+// ----------------------------------------------------------------------------
+// JSON codec
+// ----------------------------------------------------------------------------
+
+fn benchJsonWriteAttrs4(ctx: *framework.Context) anyerror!void {
+    return jsonWriteAttrs(ctx, 4);
+}
+
+fn benchJsonWriteAttrs32(ctx: *framework.Context) anyerror!void {
+    return jsonWriteAttrs(ctx, 32);
+}
+
+fn jsonWriteAttrs(ctx: *framework.Context, attr_count: u32) !void {
+    var set = attrs.AttributeSet.init(ctx.allocator);
+    defer set.deinit();
+    var k: u32 = 0;
+    while (k < attr_count) : (k += 1) {
+        var buf: [16]u8 = undefined;
+        const key = try std.fmt.bufPrint(&buf, "k{d}", .{k});
+        try set.putString(key, "value-string-of-modest-length");
+    }
+    var i: u64 = 0;
+    while (i < ctx.scenario.ops_per_iteration) : (i += 1) {
+        var out: std.ArrayList(u8) = .empty;
+        defer out.deinit(ctx.allocator);
+        try json_codec.writeAttributes(ctx.allocator, &out, &set);
+        std.mem.doNotOptimizeAway(out.items.len);
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Noop vtable dispatch (zero-alloc)
+// ----------------------------------------------------------------------------
+
+fn benchNoopVtable(ctx: *framework.Context) anyerror!void {
+    // Construct an API-layer Tracer with the default (noop) vtable.
+    // `startSpan` dispatches through the function pointer to noopStart,
+    // which returns Span.noop. No allocations — exercises the vtable
+    // indirection cost in isolation.
+    const tracer: trace_api.Tracer = .{ .scope = .{ .name = "bench" } };
+    var i: u64 = 0;
+    while (i < ctx.scenario.ops_per_iteration) : (i += 1) {
+        const span = try tracer.startSpan(.empty(), "x", .{});
+        std.mem.doNotOptimizeAway(span.state);
     }
 }

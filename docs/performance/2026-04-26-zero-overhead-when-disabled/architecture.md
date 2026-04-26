@@ -630,31 +630,29 @@ body. Compiled out entirely when `-Dotel_use_devnw_pool=false` (the
 default). Local Linux x86_64 ReleaseFast: 100 spans / 886µs, 10k spans
 / 26.6ms (~376k spans/s).
 
-**Follow-up F-5 — DEFERRED (L6 real loopback).** The current
-`level-6-full-otlp-http-loopback` (in both integration and comparison
-layers) uses a synthetic `fakeTransport` that returns 200 OK without
-networking — measures the OTLP encode pipeline only. To capture real
-TCP I/O cost, the bench needs:
+**Follow-up F-5 — DONE.** Real loopback HTTP for the L6 integration
+bench. `framework.Context` gained an `io: std.Io` field;
+`benchmarks/integration/loopback_server.zig` is a multi-shot
+`std.Io.net.Server` running on a `std.Thread` that drains every
+request body and responds 200 OK / Content-Length: 0. Cancellation
+uses a raw POSIX `socket`+`connect` self-wake (Linux-only, matching
+the existing platform constraint) instead of the naïve "deinit
+listener while accept is parked" pattern, which would panic on
+`errnoBug` (EBADF) under Zig 0.16. `benchLevel6` checks
+`build_options.use_devnw_tls` at runtime and either plumbs
+`OtlpHttpExporter.io = ctx.io` against the loopback server endpoint
+(real path, routes through `httpTransportImpl` → `std.http.Client`)
+or falls back to the encode-only `fakeTransport` (default).
 
-1. Extend `framework.Context` with `io: std.Io` and pass it through
-   from `runScenarios`.
-2. Adapt `test/tls_test_helpers.zig`'s loopback HTTP server into
-   `benchmarks/integration/loopback_server.zig` with a multi-shot
-   accept loop (current is single-shot).
-3. Build the bench with `-Dotel_use_devnw_tls=true` and plumb
-   `OtlpHttpExporter.io = ctx.io`. Leave `transport` at the default
-   `httpTransport` sentinel; `expSpans` then routes through
-   `httpTransportImpl` which uses `self.io` and `std.http.Client`.
-4. Update `benchLevel6` in both `integration/main.zig` and
-   `compare_bench.zig` to start the server, wire the endpoint into the
-   exporter, then stop the server in defer.
+Local Linux x86_64 ReleaseFast, 100 spans/iter:
 
-Estimated cost: ~150 lines, primarily the multi-shot server. Expected
-delta from current encode-only L6 numbers: +10-20µs/span on loopback
-(real socket round-trip). Not a blocker for the headline
-zero-overhead-when-disabled result, since L6 only matters when the
-SDK is enabled — and the current encode-only number is already an
-upper bound on per-call cost in that mode.
+- Encode-only (default): 7000 ns/span
+- Real loopback (`-Dotel_use_devnw_tls=true`): 173400 ns/span
+
+The comparison-layer L6 in `benchmarks/compare_bench.zig`
+intentionally keeps `fakeTransport`: the AB harness measures the
+comptime-elision delta, where encode-only is sufficient. Real-
+network L6 only matters for the integration bench.
 
 ---
 

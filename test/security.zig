@@ -276,6 +276,26 @@ test "L-4: OTLP encoder redacts sensitive resource attribute" {
 }
 
 // -------------------------------------------------------------------------
+// GAP-SEC-M-7: u64 -> u32 narrowing in frame() must be guarded so an
+// oversized payload returns error.MessageTooLarge rather than silently
+// truncating the length prefix.
+// -------------------------------------------------------------------------
+
+test "M-7: frameBoundCheck rejects body larger than u32 max" {
+    try otel.exporters.otlp_grpc.frameBoundCheck(std.math.maxInt(u32));
+    try std.testing.expectError(
+        error.MessageTooLarge,
+        otel.exporters.otlp_grpc.frameBoundCheck(@as(u64, std.math.maxInt(u32)) + 1),
+    );
+}
+
+test "M-7: frame() accepts a small body" {
+    const out = try otel.exporters.otlp_grpc.frame(std.testing.allocator, "hello");
+    defer std.testing.allocator.free(out);
+    try std.testing.expectEqualSlices(u8, "hello", out[5..]);
+}
+
+// -------------------------------------------------------------------------
 // GAP-SEC-M-6: the response-body buffer must only be visible through
 // accessor methods so callers can't read past last_response_body_len
 // and pick up stale bytes from a previous response.

@@ -234,12 +234,27 @@ fn unaryExport(
 /// Exposed for callers that drive a transport other than `grpc-zig`'s
 /// `GrpcClient` (which frames internally). The unit test below pins the
 /// wire shape against the OTLP spec.
+///
+/// GAP-SEC-M-7: refuses bodies larger than `std.math.maxInt(u32)`
+/// (4 GiB - 1) with `error.MessageTooLarge` so the implicit
+/// `@intCast(u32)` can never silently truncate. A truncated length
+/// prefix produces a frame the server interprets as much shorter than
+/// the actual payload, which the receiver then misroutes — at best a
+/// parse error, at worst a smuggling primitive.
 pub fn frame(allocator: std.mem.Allocator, body: []const u8) ![]u8 {
+    if (body.len > std.math.maxInt(u32)) return error.MessageTooLarge;
     const out = try allocator.alloc(u8, body.len + 5);
     out[0] = 0; // compression: none
     std.mem.writeInt(u32, out[1..5], @intCast(body.len), .big);
     @memcpy(out[5..], body);
     return out;
+}
+
+/// Helper for tests — checks the bounds without allocating a 4 GiB
+/// payload. Returns the same `error.MessageTooLarge` the real `frame`
+/// would for an oversized input.
+pub fn frameBoundCheck(body_len: u64) !void {
+    if (body_len > std.math.maxInt(u32)) return error.MessageTooLarge;
 }
 
 test "frame prepends 5-byte length prefix" {

@@ -21,6 +21,15 @@ const Io = std.Io;
 const otel = @import("otel");
 const framework = @import("framework");
 const build_options = @import("build_options");
+const loopback_server = @import("loopback_server.zig");
+
+/// Hoisted outside the timed loop per architect Decision D-3. Started
+/// in `main()` when `-Dotel_use_devnw_tls=true`; consulted by
+/// `benchLevel6` to decide between real-loopback and fakeTransport
+/// modes. Null when the build flag is off, so the default
+/// `zig build bench-integration` continues to measure encode-only L6
+/// cost (current behaviour).
+var g_loopback_server: ?*loopback_server.LoopbackServer = null;
 
 pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(init.gpa);
@@ -53,6 +62,14 @@ pub fn main(init: std.process.Init) !void {
         @memcpy(combined[0..sync_scenarios.len], &sync_scenarios);
         for (async_scenarios, 0..) |s, i| combined[sync_scenarios.len + i] = s;
         break :blk combined[0 .. sync_scenarios.len + async_scenarios.len];
+    };
+
+    if (build_options.use_devnw_tls) {
+        g_loopback_server = try loopback_server.start(init.gpa);
+    }
+    defer if (g_loopback_server) |srv| {
+        srv.stop();
+        g_loopback_server = null;
     };
 
     switch (try framework.parseArgs(allocator, init.minimal.args)) {
@@ -151,16 +168,35 @@ fn benchLevel6(ctx: *framework.Context) anyerror!void {
     var resource = try otel.sdk.resource.defaultResource(ctx.allocator);
     defer resource.deinit();
 
+    // F-5: when the bench is built with -Dotel_use_devnw_tls=true and
+    // the loopback server was started in main(), use the real
+    // std.http.Client transport against the in-process server. When
+    // the flag is off, fall back to the fakeTransport (encode-only)
+    // so the default `zig build bench-integration` numbers stay
+    // comparable across runs.
+    var endpoint_buf: [64]u8 = undefined;
+    const endpoint: []const u8 = if (build_options.use_devnw_tls and g_loopback_server != null)
+        try g_loopback_server.?.endpoint(&endpoint_buf)
+    else
+        "http://localhost:4318";
+
     var otlp_exporter = try otel.exporters.otlp_http.OtlpHttpExporter.init(ctx.allocator, .{
-        .endpoint = "http://localhost:4318",
+        .endpoint = endpoint,
         .protocol = .http_protobuf,
+        .allow_loopback = true,
     });
     defer otlp_exporter.deinit();
-    // Swap the real `httpTransport` (which returns UnsupportedTransport
-    // unless `-Dotel_use_devnw_tls=true`) for a fake that signals 200 OK
-    // without touching the network. Measures the OTLP encode pipeline,
-    // not socket I/O.
-    otlp_exporter.transport = fakeTransport;
+
+    if (build_options.use_devnw_tls and g_loopback_server != null) {
+        // Plumb the std.Io view so httpTransportImpl (sentinel-routed
+        // from expSpans) can drive std.http.Client over the real
+        // socket. Leaving `transport` at the default sentinel value
+        // is the trigger for the real path.
+        otlp_exporter.io = ctx.io;
+    } else {
+        // Encode-only fallback: no network, returns 200 immediately.
+        otlp_exporter.transport = fakeTransport;
+    }
 
     var tp = try otel.sdk.trace.TracerProvider.init(ctx.allocator, .{
         .resource = &resource,

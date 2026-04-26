@@ -448,4 +448,18 @@ pub fn build(b: *std.Build) void {
 
     const compare_bench_step = b.step("compare-bench", "Compare benchmark output to baseline (stub)");
     compare_bench_step.dependOn(&fmt_check.step);
+
+    // Tests for the bench framework itself (universal-schema envelope,
+    // zero-alloc assertion, --ops override). The framework is a
+    // standalone std-only module; testing it does not require any otel
+    // imports, so the build step stays lightweight.
+    const framework_test_module = b.createModule(.{
+        .root_source_file = b.path("benchmarks/framework.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const framework_test = b.addTest(.{ .root_module = framework_test_module });
+    if (tsan) framework_test.root_module.sanitize_thread = true;
+    const framework_test_step = b.step("bench-framework-test", "Run benchmark framework unit tests");
+    framework_test_step.dependOn(&b.addRunArtifact(framework_test).step);
 }

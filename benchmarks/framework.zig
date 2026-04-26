@@ -34,6 +34,8 @@ const Io = std.Io;
 /// are tracked when `RunOptions.track_allocations` is set).
 pub const RunFn = *const fn (ctx: *Context) anyerror!void;
 
+pub const Layer = enum { micro, integration, comparison };
+
 pub const Scenario = struct {
     /// Stable identifier; used to match across runs in `compare`.
     name: []const u8,
@@ -46,6 +48,22 @@ pub const Scenario = struct {
     /// Sample iterations to median over. Defaults to 6 for a 7-run
     /// total. Larger values reduce noise but cost runtime.
     sample_iterations: u32 = 6,
+    /// Universal-schema layer assignment. Drives the bench-ci summary
+    /// line counters and feeds compare.zig regression policy.
+    layer: Layer = .micro,
+    /// A/B variant tag (e.g. `"default"`, `"comptime_disabled"`). Lets
+    /// the comparison driver pair rows from two binaries built from
+    /// distinct `-Dotel_disabled` values without re-keying scenarios.
+    variant: []const u8 = "default",
+    /// When `true`, the runner asserts `alloc_count <=
+    /// alloc_threshold_bytes`. A failure marks the row's
+    /// `counters.alloc_assertion = "fail"` and the runner exits
+    /// non-zero (after writing JSON so CI sees the artifact).
+    zero_alloc_expected: bool = false,
+    /// Bytes-allocated tolerance for `zero_alloc_expected`. Default 0
+    /// means "literally no allocations". Loosen for paths that allocate
+    /// into a stack-bound scratch.
+    alloc_threshold_bytes: u64 = 0,
     /// Optional opaque payload forwarded to `run`.
     user_data: ?*anyopaque = null,
     /// The benchmark body.
@@ -59,7 +77,20 @@ pub const Context = struct {
     user_data: ?*anyopaque,
 };
 
+pub const Counters = struct {
+    /// Total bytes allocated across all sampled rounds. Equal to
+    /// `alloc_bytes` for symmetry with the universal schema.
+    alloc_delta_bytes: u64 = 0,
+    /// Caller-supplied tolerance from `Scenario.alloc_threshold_bytes`.
+    alloc_threshold_bytes: u64 = 0,
+    /// `"pass"`, `"fail"`, or `"na"` (when `zero_alloc_expected=false`).
+    /// Encodes whether the zero-alloc probe succeeded.
+    alloc_assertion: []const u8 = "na",
+};
+
 pub const ResultRow = struct {
+    // Existing fields — preserved verbatim so old baselines and the
+    // current `compare.zig` keep working without changes.
     git_sha: []const u8,
     run_timestamp_unix_s: i64,
     zig_version: []const u8,
@@ -82,6 +113,21 @@ pub const ResultRow = struct {
     peak_live_bytes: u64,
     rss_current_bytes: u64,
     rss_peak_bytes: u64,
+    // Universal-schema envelope (additive). Older baseline JSON without
+    // these fields parses cleanly because every field has a default.
+    layer: []const u8 = "micro",
+    variant: []const u8 = "default",
+    language: []const u8 = "zig",
+    runtime_version: []const u8 = "",
+    command: []const u8 = "",
+    warmups: u32 = 0,
+    /// Per-round raw wall times, in the order sampled (not sorted).
+    /// Lets downstream tools detect tail regressions, distribution
+    /// shape, and run-to-run noise that medians collapse away.
+    wall_ns_samples: []const u64 = &.{},
+    /// Per-round raw alloc-count totals, in the same order.
+    alloc_count_samples: []const u64 = &.{},
+    counters: Counters = .{},
 };
 
 pub const ResultDocument = struct {
@@ -98,12 +144,18 @@ pub const RunOptions = struct {
     warmup_override: ?u32 = null,
     /// Override per-scenario `sample_iterations` when non-null.
     samples_override: ?u32 = null,
+    /// Override per-scenario `ops_per_iteration` when non-null. Useful
+    /// for sweeping operation count without editing scenario tables.
+    ops_override: ?u64 = null,
     /// Wrap the user allocator with a tracking allocator that records
     /// alloc count + bytes per iteration. Adds small overhead; disable
     /// for the tightest hot loops.
     track_allocations: bool = true,
     /// Print one line per run to stderr. Useful for live iteration.
     verbose: bool = true,
+    /// Stamped into every emitted `ResultRow.command`. Caller responsibility
+    /// to set this to the invocation string for traceability.
+    command_label: []const u8 = "",
 };
 
 // ============================================================================
@@ -134,6 +186,9 @@ pub fn parseArgs(allocator: std.mem.Allocator, args: std.process.Args) !ParseRes
         } else if (std.mem.eql(u8, a, "--samples") and idx + 1 < argv.len) {
             opts.samples_override = try std.fmt.parseInt(u32, argv[idx + 1], 10);
             idx += 1;
+        } else if (std.mem.eql(u8, a, "--ops") and idx + 1 < argv.len) {
+            opts.ops_override = try std.fmt.parseInt(u64, argv[idx + 1], 10);
+            idx += 1;
         } else if (std.mem.eql(u8, a, "--no-track")) {
             opts.track_allocations = false;
         } else if (std.mem.eql(u8, a, "--quiet")) {
@@ -163,6 +218,7 @@ pub fn printHelp(out: *Io.Writer, program: []const u8) !void {
         \\  --filter <substr>   Only run scenarios whose name contains <substr>.
         \\  --warmup <N>        Override per-scenario warmup iterations.
         \\  --samples <N>       Override per-scenario sample iterations.
+        \\  --ops <N>           Override per-scenario ops/iteration.
         \\  --no-track          Disable per-iteration allocation tracking.
         \\  --quiet             Suppress per-run progress output.
         \\  --list              List registered scenarios and exit.
@@ -197,7 +253,13 @@ pub fn runScenarios(
     options: RunOptions,
 ) !void {
     var rows: std.ArrayList(ResultRow) = .empty;
-    defer rows.deinit(allocator);
+    defer {
+        for (rows.items) |r| {
+            allocator.free(@constCast(r.wall_ns_samples));
+            allocator.free(@constCast(r.alloc_count_samples));
+        }
+        rows.deinit(allocator);
+    }
 
     var stderr_buf: [4096]u8 = undefined;
     var stderr_writer = Io.File.stderr().writer(io, &stderr_buf);
@@ -206,25 +268,30 @@ pub fn runScenarios(
     const env = try captureEnv(allocator, io);
     defer env.deinit(allocator);
 
+    var any_alloc_failure = false;
+
     for (scenarios) |scenario| {
         if (options.filter) |needle| {
             if (std.mem.indexOf(u8, scenario.name, needle) == null) continue;
         }
         const warmup = options.warmup_override orelse scenario.warmup_iterations;
         const samples = options.samples_override orelse scenario.sample_iterations;
+        const ops_per_iter = options.ops_override orelse scenario.ops_per_iteration;
         if (samples == 0) return error.SamplesMustBePositive;
 
         if (options.verbose) {
             try stderr.print(
-                "running {s}: warmup={d} samples={d} ops/iter={d}\n",
-                .{ scenario.name, warmup, samples, scenario.ops_per_iteration },
+                "running {s}: layer={s} variant={s} warmup={d} samples={d} ops/iter={d}\n",
+                .{ scenario.name, @tagName(scenario.layer), scenario.variant, warmup, samples, ops_per_iter },
             );
             try stderr.flush();
         }
 
+        // Per-round arrays are owned by `allocator` and embedded in the
+        // emitted row. The deferred cleanup at the top of this function
+        // frees them after JSON serialization.
         const wall_samples = try allocator.alloc(u64, samples);
-        defer allocator.free(wall_samples);
-        var alloc_count_total: u64 = 0;
+        const alloc_count_samples = try allocator.alloc(u64, samples);
         var alloc_bytes_total: u64 = 0;
         var peak_live_total: u64 = 0;
 
@@ -238,9 +305,12 @@ pub fn runScenarios(
                 null;
             const iter_allocator = if (tracker) |*t| t.allocator() else allocator;
 
+            var iter_scenario = scenario;
+            iter_scenario.ops_per_iteration = ops_per_iter;
+
             var ctx = Context{
                 .allocator = iter_allocator,
-                .scenario = &scenario,
+                .scenario = &iter_scenario,
                 .iteration_index = iter,
                 .user_data = scenario.user_data,
             };
@@ -250,20 +320,23 @@ pub fn runScenarios(
             const wall_ns = nowNs(io) - start_ns;
 
             if (!is_warmup) {
-                wall_samples[iter - warmup] = wall_ns;
+                const idx = iter - warmup;
+                wall_samples[idx] = wall_ns;
                 if (tracker) |t| {
-                    alloc_count_total += t.alloc_count;
+                    alloc_count_samples[idx] = t.alloc_count;
                     alloc_bytes_total += t.alloc_bytes;
                     if (t.peak_live > peak_live_total) peak_live_total = t.peak_live;
+                } else {
+                    alloc_count_samples[idx] = 0;
                 }
                 if (options.verbose) {
                     try stderr.print(
                         "  sample {d}/{d}: {d} ns ({d:.2} ops/s)\n",
                         .{
-                            iter - warmup + 1,
+                            idx + 1,
                             samples,
                             wall_ns,
-                            opsPerSec(scenario.ops_per_iteration, wall_ns),
+                            opsPerSec(ops_per_iter, wall_ns),
                         },
                     );
                     try stderr.flush();
@@ -271,17 +344,49 @@ pub fn runScenarios(
             }
         }
 
-        std.sort.heap(u64, wall_samples, {}, comptime std.sort.asc(u64));
-        const stats = summarize(wall_samples);
-        const throughput_samples = try allocator.alloc(f64, wall_samples.len);
+        // Sort a copy for percentile stats; preserve the raw per-round
+        // ordering in `wall_samples` for the emitted row.
+        const sorted = try allocator.dupe(u64, wall_samples);
+        defer allocator.free(sorted);
+        std.sort.heap(u64, sorted, {}, comptime std.sort.asc(u64));
+        const stats = summarize(sorted);
+        const throughput_samples = try allocator.alloc(f64, sorted.len);
         defer allocator.free(throughput_samples);
-        for (wall_samples, 0..) |w, i| {
-            throughput_samples[i] = opsPerSec(scenario.ops_per_iteration, w);
+        for (sorted, 0..) |w, i| {
+            throughput_samples[i] = opsPerSec(ops_per_iter, w);
         }
-        const tput_median = opsPerSec(scenario.ops_per_iteration, stats.p50_ns);
+        const tput_median = opsPerSec(ops_per_iter, stats.p50_ns);
         const tput_stddev = stddevF64(throughput_samples, tput_median);
 
         const sample_count_div = @as(u64, samples);
+        var alloc_count_total: u64 = 0;
+        for (alloc_count_samples) |c| alloc_count_total += c;
+        const alloc_count_avg = alloc_count_total / sample_count_div;
+
+        // Zero-alloc assertion: encoded into `counters` and propagated
+        // via a deferred non-zero exit. The JSON is still written so
+        // CI artifacts capture the failure context.
+        var counters: Counters = .{
+            .alloc_delta_bytes = alloc_bytes_total / sample_count_div,
+            .alloc_threshold_bytes = scenario.alloc_threshold_bytes,
+            .alloc_assertion = "na",
+        };
+        if (scenario.zero_alloc_expected) {
+            const failed = if (scenario.alloc_threshold_bytes == 0)
+                alloc_count_avg > 0
+            else
+                counters.alloc_delta_bytes > scenario.alloc_threshold_bytes;
+            counters.alloc_assertion = if (failed) "fail" else "pass";
+            if (failed) {
+                any_alloc_failure = true;
+                try stderr.print(
+                    "  ZERO-ALLOC ASSERTION FAILED: {s} avg_alloc_count={d} avg_alloc_bytes={d} (threshold={d})\n",
+                    .{ scenario.name, alloc_count_avg, counters.alloc_delta_bytes, scenario.alloc_threshold_bytes },
+                );
+                try stderr.flush();
+            }
+        }
+
         const row = ResultRow{
             .git_sha = env.git_sha,
             .run_timestamp_unix_s = unixTimestampS(io),
@@ -290,7 +395,7 @@ pub fn runScenarios(
             .arch = env.arch,
             .cpu = env.cpu,
             .scenario_name = scenario.name,
-            .ops_per_iteration = scenario.ops_per_iteration,
+            .ops_per_iteration = ops_per_iter,
             .sample_count = samples,
             .wall_ns_min = stats.min_ns,
             .wall_ns_p50 = stats.p50_ns,
@@ -300,11 +405,20 @@ pub fn runScenarios(
             .wall_ns_stddev = stats.stddev_ns,
             .throughput_ops_per_sec = tput_median,
             .throughput_stddev_ops_per_sec = tput_stddev,
-            .alloc_count = alloc_count_total / sample_count_div,
+            .alloc_count = alloc_count_avg,
             .alloc_bytes = alloc_bytes_total / sample_count_div,
             .peak_live_bytes = peak_live_total,
             .rss_current_bytes = readRssCurrent(),
             .rss_peak_bytes = readRssPeak(),
+            .layer = @tagName(scenario.layer),
+            .variant = scenario.variant,
+            .language = "zig",
+            .runtime_version = env.zig_version,
+            .command = options.command_label,
+            .warmups = warmup,
+            .wall_ns_samples = wall_samples,
+            .alloc_count_samples = alloc_count_samples,
+            .counters = counters,
         };
         try rows.append(allocator, row);
     }
@@ -320,6 +434,8 @@ pub fn runScenarios(
             try stderr.flush();
         }
     }
+
+    if (any_alloc_failure) return error.ZeroAllocAssertionFailed;
 }
 
 // ============================================================================
@@ -610,4 +726,172 @@ fn readRssField(comptime field: []const u8) ?u64 {
     const num = it.next() orelse return null;
     const kb = std.fmt.parseInt(u64, num, 10) catch return null;
     return kb * 1024;
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+test "ResultRow has universal-schema envelope defaults" {
+    const row: ResultRow = .{
+        .git_sha = "abc",
+        .run_timestamp_unix_s = 0,
+        .zig_version = "0.16.0",
+        .os = "linux",
+        .arch = "x86_64",
+        .cpu = "test",
+        .scenario_name = "x",
+        .ops_per_iteration = 1,
+        .sample_count = 0,
+        .wall_ns_min = 0,
+        .wall_ns_p50 = 0,
+        .wall_ns_p95 = 0,
+        .wall_ns_p99 = 0,
+        .wall_ns_max = 0,
+        .wall_ns_stddev = 0,
+        .throughput_ops_per_sec = 0,
+        .throughput_stddev_ops_per_sec = 0,
+        .alloc_count = 0,
+        .alloc_bytes = 0,
+        .peak_live_bytes = 0,
+        .rss_current_bytes = 0,
+        .rss_peak_bytes = 0,
+    };
+    try std.testing.expectEqualStrings("micro", row.layer);
+    try std.testing.expectEqualStrings("default", row.variant);
+    try std.testing.expectEqualStrings("zig", row.language);
+    try std.testing.expectEqualStrings("na", row.counters.alloc_assertion);
+    try std.testing.expectEqual(@as(u32, 0), row.warmups);
+}
+
+test "old baseline JSON parses cleanly via additive defaults" {
+    // Mimics a pre-Phase-2 baseline file: every existing field present,
+    // none of the universal-envelope fields. The parser must accept it
+    // because every new field has a default.
+    const json_bytes =
+        \\{
+        \\  "generated_at_unix_s": 0,
+        \\  "rows": [
+        \\    {
+        \\      "git_sha": "deadbeef",
+        \\      "run_timestamp_unix_s": 1700000000,
+        \\      "zig_version": "0.16.0",
+        \\      "os": "linux",
+        \\      "arch": "x86_64",
+        \\      "cpu": "test",
+        \\      "scenario_name": "demo",
+        \\      "ops_per_iteration": 1000,
+        \\      "sample_count": 6,
+        \\      "wall_ns_min": 1000,
+        \\      "wall_ns_p50": 1100,
+        \\      "wall_ns_p95": 1200,
+        \\      "wall_ns_p99": 1250,
+        \\      "wall_ns_max": 1300,
+        \\      "wall_ns_stddev": 50.0,
+        \\      "throughput_ops_per_sec": 909090.0,
+        \\      "throughput_stddev_ops_per_sec": 1000.0,
+        \\      "alloc_count": 0,
+        \\      "alloc_bytes": 0,
+        \\      "peak_live_bytes": 0,
+        \\      "rss_current_bytes": 1024,
+        \\      "rss_peak_bytes": 2048
+        \\    }
+        \\  ]
+        \\}
+    ;
+    const parsed = try std.json.parseFromSlice(ResultDocument, std.testing.allocator, json_bytes, .{});
+    defer parsed.deinit();
+    try std.testing.expectEqual(@as(usize, 1), parsed.value.rows.len);
+    const r = parsed.value.rows[0];
+    try std.testing.expectEqualStrings("demo", r.scenario_name);
+    // Defaults filled in for absent universal-envelope fields:
+    try std.testing.expectEqualStrings("micro", r.layer);
+    try std.testing.expectEqualStrings("default", r.variant);
+    try std.testing.expectEqualStrings("na", r.counters.alloc_assertion);
+}
+
+test "zero-alloc assertion fails when scenario allocates" {
+    var threaded = std.Io.Threaded.init(std.testing.allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    const Body = struct {
+        fn run(ctx: *Context) anyerror!void {
+            // Allocate to deliberately trip the assertion.
+            const x = try ctx.allocator.alloc(u8, 16);
+            defer ctx.allocator.free(x);
+        }
+    };
+    const scenarios = [_]Scenario{.{
+        .name = "alloc_should_fail",
+        .ops_per_iteration = 1,
+        .warmup_iterations = 0,
+        .sample_iterations = 2,
+        .layer = .micro,
+        .zero_alloc_expected = true,
+        .alloc_threshold_bytes = 0,
+        .run = Body.run,
+    }};
+
+    const result = runScenarios(std.testing.allocator, io, &scenarios, .{
+        .verbose = false,
+        .track_allocations = true,
+    });
+    try std.testing.expectError(error.ZeroAllocAssertionFailed, result);
+}
+
+test "zero-alloc assertion passes when scenario does not allocate" {
+    var threaded = std.Io.Threaded.init(std.testing.allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    const Body = struct {
+        fn run(ctx: *Context) anyerror!void {
+            // No allocation; just touch ops_per_iteration to keep the
+            // optimizer honest.
+            std.mem.doNotOptimizeAway(ctx.scenario.ops_per_iteration);
+        }
+    };
+    const scenarios = [_]Scenario{.{
+        .name = "alloc_should_pass",
+        .ops_per_iteration = 1,
+        .warmup_iterations = 0,
+        .sample_iterations = 2,
+        .layer = .micro,
+        .zero_alloc_expected = true,
+        .run = Body.run,
+    }};
+
+    try runScenarios(std.testing.allocator, io, &scenarios, .{
+        .verbose = false,
+        .track_allocations = true,
+    });
+}
+
+test "ops_override applies to scenario at run time" {
+    var threaded = std.Io.Threaded.init(std.testing.allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    const Captured = struct {
+        var observed: u64 = 0;
+        fn run(ctx: *Context) anyerror!void {
+            observed = ctx.scenario.ops_per_iteration;
+        }
+    };
+    Captured.observed = 0;
+
+    const scenarios = [_]Scenario{.{
+        .name = "ops_capture",
+        .ops_per_iteration = 1,
+        .warmup_iterations = 0,
+        .sample_iterations = 1,
+        .run = Captured.run,
+    }};
+
+    try runScenarios(std.testing.allocator, io, &scenarios, .{
+        .verbose = false,
+        .ops_override = 4242,
+    });
+    try std.testing.expectEqual(@as(u64, 4242), Captured.observed);
 }

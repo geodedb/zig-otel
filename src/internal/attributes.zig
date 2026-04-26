@@ -103,10 +103,23 @@ pub const AttributeSet = struct {
 
     /// Owns nothing about `value` — copies via the arena. `value`'s slice
     /// memory may be freed by the caller after the call returns.
+    ///
+    /// GAP-SEC-L-2: array-typed values are refused with
+    /// `error.UnsupportedAttributeKind`. The OTLP encoder and the
+    /// Prometheus exporter both currently emit arrays as a `<array>`
+    /// placeholder string, which (a) hides data loss from the caller
+    /// and (b) collides with any literal user value of `<array>`.
+    /// Refusing at the API surface forces callers to either flatten
+    /// the array client-side or wait for proper array support to
+    /// land on every codec.
     pub fn put(self: *AttributeSet, key: []const u8, value: Value) !void {
         if (key.len == 0 or key.len > max_key_bytes) {
             self.dropped +%= 1;
             return;
+        }
+        switch (value) {
+            .string_array, .bool_array, .int_array, .double_array => return error.UnsupportedAttributeKind,
+            else => {},
         }
         const arena_alloc = self.arena.allocator();
         const owned_key = try arena_alloc.dupe(u8, key);

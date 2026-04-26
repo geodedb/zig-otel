@@ -276,6 +276,39 @@ test "L-4: OTLP encoder redacts sensitive resource attribute" {
 }
 
 // -------------------------------------------------------------------------
+// GAP-SEC-L-2: array-typed attributes were silently dropped (or
+// rendered as the literal "<array>" in Prometheus). Refuse them at the
+// API surface so callers get an actionable error.
+// -------------------------------------------------------------------------
+
+test "L-2: AttributeSet.put rejects string_array" {
+    var as = otel.internal.attributes.AttributeSet.init(std.testing.allocator);
+    defer as.deinit();
+    const arr: []const []const u8 = &.{ "a", "b" };
+    try std.testing.expectError(
+        error.UnsupportedAttributeKind,
+        as.put("k", .{ .string_array = arr }),
+    );
+}
+
+test "L-2: AttributeSet.put rejects int_array" {
+    var as = otel.internal.attributes.AttributeSet.init(std.testing.allocator);
+    defer as.deinit();
+    const arr: []const i64 = &.{ 1, 2, 3 };
+    try std.testing.expectError(
+        error.UnsupportedAttributeKind,
+        as.put("k", .{ .int_array = arr }),
+    );
+}
+
+test "L-2: AttributeSet.put accepts a regular string" {
+    var as = otel.internal.attributes.AttributeSet.init(std.testing.allocator);
+    defer as.deinit();
+    try as.put("k", .{ .string = "v" });
+    try std.testing.expectEqualStrings("v", as.getString("k").?);
+}
+
+// -------------------------------------------------------------------------
 // GAP-SEC-M-1: the gRPC loopback test-server module no longer ships a
 // hardcoded "loopback-secret" token; it generates a fresh CSPRNG-backed
 // hex string per init. This grep test is the easiest way to express the

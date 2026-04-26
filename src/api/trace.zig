@@ -243,6 +243,7 @@ pub const Tracer = struct {
     startSpanFn: *const fn (?*anyopaque, Context, []const u8, SpanOptions) anyerror!Span = noopStart,
 
     pub fn startSpan(self: Tracer, ctx: Context, name: []const u8, opts: SpanOptions) !Span {
+        if (comptime build_options.otel_disabled) return Span.noop;
         return try self.startSpanFn(self.ctx, ctx, name, opts);
     }
 };

@@ -5,6 +5,7 @@ const std = @import("std");
 const otel = @import("otel");
 
 test "logger correlates with active span" {
+    if (@import("build_options").otel_disabled) return error.SkipZigTest;
     var resource = try otel.sdk.resource.defaultResource(std.testing.allocator);
     defer resource.deinit();
     var rec = otel.exporters.in_memory.Recorder.init(std.testing.allocator);

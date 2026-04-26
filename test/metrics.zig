@@ -5,6 +5,7 @@ const std = @import("std");
 const otel = @import("otel");
 
 test "counter aggregates additions" {
+    if (@import("build_options").otel_disabled) return error.SkipZigTest;
     var resource = try otel.sdk.resource.defaultResource(std.testing.allocator);
     defer resource.deinit();
     var mp = try otel.sdk.metrics.MeterProvider.init(std.testing.allocator, .{ .resource = &resource });
@@ -25,6 +26,7 @@ test "counter aggregates additions" {
 }
 
 test "histogram bucket layout" {
+    if (@import("build_options").otel_disabled) return error.SkipZigTest;
     var resource = try otel.sdk.resource.defaultResource(std.testing.allocator);
     defer resource.deinit();
     var mp = try otel.sdk.metrics.MeterProvider.init(std.testing.allocator, .{ .resource = &resource });
@@ -51,6 +53,7 @@ test "histogram bucket layout" {
 }
 
 test "delta vs cumulative descriptor preserved" {
+    if (@import("build_options").otel_disabled) return error.SkipZigTest;
     var resource = try otel.sdk.resource.defaultResource(std.testing.allocator);
     defer resource.deinit();
     var mp = try otel.sdk.metrics.MeterProvider.init(std.testing.allocator, .{ .resource = &resource });

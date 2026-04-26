@@ -8,6 +8,7 @@ const std = @import("std");
 const attrs = @import("../internal/attributes.zig");
 const id = @import("../internal/id.zig");
 const InstrumentationScope = @import("trace.zig").InstrumentationScope;
+const build_options = @import("build_options");
 
 pub const Severity = enum(u8) {
     unspecified = 0,
@@ -78,6 +79,7 @@ pub const Logger = struct {
     emitFn: *const fn (?*anyopaque, LogRecord) void = noopEmit,
 
     pub fn emit(self: Logger, record: LogRecord) void {
+        if (comptime build_options.otel_disabled) return;
         var r = record;
         if (r.scope.name.len == 0) r.scope = self.scope;
         self.emitFn(self.ctx, r);

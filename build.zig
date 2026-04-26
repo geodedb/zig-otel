@@ -26,6 +26,12 @@ pub fn build(b: *std.Build) void {
     // `-Dotel_grpc_test_server=false` strips it back out.
     const grpc_test_server_default = use_devnw_grpc;
     const grpc_test_server = b.option(bool, "otel_grpc_test_server", "Include the loopback gRPC test server in the library") orelse grpc_test_server_default;
+    // Phase 1 of the zero-overhead-when-disabled bench system. When ON,
+    // every API call site (Tracer.startSpan, Counter.add, etc.) collapses
+    // to a comptime-known no-op so the optimizer can fully dead-code-
+    // eliminate the disabled path.
+    // See docs/performance/2026-04-26-zero-overhead-when-disabled/.
+    const otel_disabled = b.option(bool, "otel_disabled", "Compile every API call site to a comptime-known no-op (zero-overhead disabled mode)") orelse false;
 
     const opts = b.addOptions();
     opts.addOption(bool, "otel_profiles", otel_profiles);
@@ -39,6 +45,7 @@ pub fn build(b: *std.Build) void {
     opts.addOption(bool, "use_devnw_grpc", use_devnw_grpc);
     opts.addOption(bool, "use_devnw_pool", use_devnw_pool);
     opts.addOption(bool, "grpc_test_server", grpc_test_server);
+    opts.addOption(bool, "otel_disabled", otel_disabled);
     opts.addOption([]const u8, "version", "0.1.0");
     const build_options_module = opts.createModule();
 
@@ -225,6 +232,7 @@ pub fn build(b: *std.Build) void {
         "test/otlp_wire_parity.zig",
         "test/tls_loopback.zig",
         "test/batch_async.zig",
+        "test/comptime_disabled.zig",
     };
     for (test_files) |path| {
         const m = b.createModule(.{

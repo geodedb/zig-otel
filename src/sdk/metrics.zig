@@ -185,6 +185,7 @@ pub const MeterProvider = struct {
     }
 
     pub fn meter(self: *MeterProvider, scope: trace_api.InstrumentationScope) metrics_api.Meter {
+        if (comptime build_options.otel_disabled) return .{ .scope = scope };
         return .{
             .ctx = self,
             .scope = scope,

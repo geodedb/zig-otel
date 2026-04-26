@@ -7,6 +7,7 @@
 const std = @import("std");
 const attrs = @import("../internal/attributes.zig");
 const InstrumentationScope = @import("trace.zig").InstrumentationScope;
+const build_options = @import("build_options");
 
 pub const Temporality = enum { cumulative, delta };
 
@@ -39,6 +40,7 @@ pub const Counter = struct {
     addFn: *const fn (?*anyopaque, u64, []const attrs.Entry) void = noopAdd,
 
     pub fn add(self: Counter, value: u64, attributes: []const attrs.Entry) void {
+        if (comptime build_options.otel_disabled) return;
         self.addFn(self.ctx, value, attributes);
     }
 };
@@ -49,6 +51,7 @@ pub const UpDownCounter = struct {
     addFn: *const fn (?*anyopaque, i64, []const attrs.Entry) void = noopAddSigned,
 
     pub fn add(self: UpDownCounter, value: i64, attributes: []const attrs.Entry) void {
+        if (comptime build_options.otel_disabled) return;
         self.addFn(self.ctx, value, attributes);
     }
 };
@@ -59,6 +62,7 @@ pub const Histogram = struct {
     recordFn: *const fn (?*anyopaque, f64, []const attrs.Entry) void = noopRecord,
 
     pub fn record(self: Histogram, value: f64, attributes: []const attrs.Entry) void {
+        if (comptime build_options.otel_disabled) return;
         self.recordFn(self.ctx, value, attributes);
     }
 };
@@ -69,6 +73,7 @@ pub const Gauge = struct {
     setFn: *const fn (?*anyopaque, f64, []const attrs.Entry) void = noopRecord,
 
     pub fn set(self: Gauge, value: f64, attributes: []const attrs.Entry) void {
+        if (comptime build_options.otel_disabled) return;
         self.setFn(self.ctx, value, attributes);
     }
 };
@@ -84,10 +89,12 @@ pub const Observer = struct {
     observeDoubleFn: *const fn (?*anyopaque, f64, []const attrs.Entry) void = noopRecord,
 
     pub fn observeInt(self: Observer, value: i64, attributes: []const attrs.Entry) void {
+        if (comptime build_options.otel_disabled) return;
         self.observeIntFn(self.ctx, value, attributes);
     }
 
     pub fn observeDouble(self: Observer, value: f64, attributes: []const attrs.Entry) void {
+        if (comptime build_options.otel_disabled) return;
         self.observeDoubleFn(self.ctx, value, attributes);
     }
 };

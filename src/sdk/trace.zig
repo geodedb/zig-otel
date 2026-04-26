@@ -208,6 +208,7 @@ pub const TracerProvider = struct {
     }
 
     pub fn tracer(self: *TracerProvider, scope: trace_api.InstrumentationScope) trace_api.Tracer {
+        if (comptime @import("build_options").otel_disabled) return .{ .scope = scope };
         return .{
             .ctx = self,
             .scope = scope,

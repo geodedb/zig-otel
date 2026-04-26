@@ -107,6 +107,7 @@ pub const LoggerProvider = struct {
     }
 
     pub fn logger(self: *LoggerProvider, scope: trace_api.InstrumentationScope) logs_api.Logger {
+        if (comptime @import("build_options").otel_disabled) return .{ .scope = scope };
         return .{
             .ctx = self,
             .scope = scope,

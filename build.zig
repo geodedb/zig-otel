@@ -19,6 +19,13 @@ pub fn build(b: *std.Build) void {
     const use_devnw_tls = b.option(bool, "otel_use_devnw_tls", "Use DevNW tls for HTTPS in OTLP/HTTP transport") orelse false;
     const use_devnw_grpc = b.option(bool, "otel_use_devnw_grpc", "Use DevNW grpc-zig for OTLP/gRPC transport") orelse false;
     const use_devnw_pool = b.option(bool, "otel_use_devnw_pool", "Use DevNW thread-pool for BatchSpanProcessor worker") orelse false;
+    // GAP-SEC-M-1: gate the loopback gRPC test server behind an explicit
+    // build flag so production builds never include the test harness.
+    // Defaults to `use_devnw_grpc` because the existing gRPC-test wiring
+    // already implies the harness should be available; explicit
+    // `-Dotel_grpc_test_server=false` strips it back out.
+    const grpc_test_server_default = use_devnw_grpc;
+    const grpc_test_server = b.option(bool, "otel_grpc_test_server", "Include the loopback gRPC test server in the library") orelse grpc_test_server_default;
 
     const opts = b.addOptions();
     opts.addOption(bool, "otel_profiles", otel_profiles);
@@ -31,6 +38,7 @@ pub fn build(b: *std.Build) void {
     opts.addOption(bool, "use_devnw_tls", use_devnw_tls);
     opts.addOption(bool, "use_devnw_grpc", use_devnw_grpc);
     opts.addOption(bool, "use_devnw_pool", use_devnw_pool);
+    opts.addOption(bool, "grpc_test_server", grpc_test_server);
     opts.addOption([]const u8, "version", "0.1.0");
     const build_options_module = opts.createModule();
 

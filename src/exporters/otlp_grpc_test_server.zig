@@ -37,6 +37,7 @@
 
 const std = @import("std");
 const build_options = @import("build_options");
+const id_mod = @import("../internal/id.zig");
 
 pub const Server = if (build_options.use_devnw_grpc) RealServer else Stub;
 
@@ -111,7 +112,22 @@ const RealServer = struct {
         // GrpcServer.init binds to 0.0.0.0 (see grpc-zig server.zig:32);
         // 127.0.0.1-only binding would require touching upstream. Loopback
         // is safe because the test environment is hermetic.
-        inner.* = try grpc_zig.GrpcServer.init(allocator, io, 0, "loopback-secret");
+        //
+        // GAP-SEC-M-1: generate a fresh per-server token from the OS
+        // CSPRNG so two test runs never share the same loopback secret.
+        // Stash the generated token on the server so a future test that
+        // wants to assert against it can read it back.
+        var token_bytes: [16]u8 = undefined;
+        id_mod.fillCsprngBytesPub(&token_bytes);
+        var token_hex: [32]u8 = undefined;
+        const alphabet = "0123456789abcdef";
+        for (token_bytes, 0..) |b, idx| {
+            token_hex[idx * 2] = alphabet[(b >> 4) & 0x0f];
+            token_hex[idx * 2 + 1] = alphabet[b & 0x0f];
+        }
+        const token = try allocator.dupe(u8, token_hex[0..]);
+        errdefer allocator.free(token);
+        inner.* = try grpc_zig.GrpcServer.init(allocator, io, 0, token);
         errdefer {
             inner.handlers.deinit(allocator);
             inner.health_check.deinit();

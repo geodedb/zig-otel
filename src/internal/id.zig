@@ -161,6 +161,13 @@ pub fn csprngU64() u64 {
     return std.mem.readInt(u64, &buf, .little);
 }
 
+/// Public alias for `fillCsprngBytes`. Used by callers that need a
+/// variable-length random buffer (e.g. the gRPC loopback test server's
+/// session token, GAP-SEC-M-1).
+pub fn fillCsprngBytesPub(buf: []u8) void {
+    fillCsprngBytes(buf);
+}
+
 fn fillCsprngBytes(buf: []u8) void {
     const builtin = @import("builtin");
     switch (builtin.os.tag) {

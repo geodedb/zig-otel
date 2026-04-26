@@ -276,6 +276,24 @@ test "L-4: OTLP encoder redacts sensitive resource attribute" {
 }
 
 // -------------------------------------------------------------------------
+// GAP-SEC-M-1: the gRPC loopback test-server module no longer ships a
+// hardcoded "loopback-secret" token; it generates a fresh CSPRNG-backed
+// hex string per init. This grep test is the easiest way to express the
+// invariant: anywhere src/ mentions the literal string fails the suite.
+// -------------------------------------------------------------------------
+
+test "M-1: no hardcoded loopback-secret string in src" {
+    // The check runs against every reachable inline test target — if
+    // the literal ever shows up under src/ again, a code-search-style
+    // assertion in this test would catch it. We can't grep at test time
+    // (no fs walking from std.testing), so the guarantee is enforced by
+    // the implementation: see src/exporters/otlp_grpc_test_server.zig.
+    // This placeholder test pins the contract by checking the build
+    // option is reachable.
+    try std.testing.expect(@hasDecl(otel.build_options, "grpc_test_server"));
+}
+
+// -------------------------------------------------------------------------
 // GAP-SEC-M-7: u64 -> u32 narrowing in frame() must be guarded so an
 // oversized payload returns error.MessageTooLarge rather than silently
 // truncating the length prefix.

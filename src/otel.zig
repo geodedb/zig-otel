@@ -74,7 +74,29 @@ pub const exporters = struct {
     /// same source file (e.g. grpc-zig's `proto/service.zig`) belonging
     /// to two distinct modules in the same compilation. See the file's
     /// doc comment for the full rationale.
-    pub const otlp_grpc_test_server = @import("exporters/otlp_grpc_test_server.zig");
+    ///
+    /// GAP-SEC-M-1: gated on `-Dotel_grpc_test_server=true` so the
+    /// harness never ships in a production build. The off-branch
+    /// resolves to a minimal stub that returns `error.SkipZigTest`
+    /// from `startLoopbackGrpc` so consumers compile in either
+    /// configuration.
+    pub const otlp_grpc_test_server = if (build_options.grpc_test_server)
+        @import("exporters/otlp_grpc_test_server.zig")
+    else
+        struct {
+            pub const Server = struct {
+                pub fn endpoint(_: *Server, _: []u8) ![]const u8 {
+                    return error.SkipZigTest;
+                }
+                pub fn requestCount(_: *const Server) usize {
+                    return 0;
+                }
+                pub fn shutdown(_: *Server) void {}
+            };
+            pub fn startLoopbackGrpc(_: anytype) !*Server {
+                return error.SkipZigTest;
+            }
+        };
 };
 
 pub const instrumentation = struct {

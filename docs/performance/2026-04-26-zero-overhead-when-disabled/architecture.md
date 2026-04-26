@@ -593,43 +593,68 @@ as `smoke: false` in the plan if needed.
 
 These items are out of scope for the current design but must be tracked:
 
-**Follow-up F-1 (Axis B implementation):** The `-Dotel_disabled=true`
-build option does not yet exist. The implement phase (`/native-benchmarks:implement`)
-must:
+**Follow-up F-1 — DONE (commit 4acbda5).** `-Dotel_disabled=true`
+build option is wired through `build_options` and threaded into every
+API call site (`Tracer.startSpan`, `Counter.add`, `Histogram.record`,
+`Gauge.set`, `UpDownCounter.add`, `Logger.emit`, `Observer.observe*`,
+plus `TracerProvider.tracer()`/`MeterProvider.meter()`/
+`LoggerProvider.logger()`). 10 dedicated tests in
+`test/comptime_disabled.zig`; existing test suite passes in both modes
+(SDK-pipeline tests skip-guarded when the flag is on).
 
-1. Add `b.option(bool, "otel_disabled", ...)` to `build.zig`.
-2. Add `opts.addOption(bool, "otel_disabled", otel_disabled)` to the options block.
-3. In `src/api/trace.zig`, `src/api/metrics.zig`, `src/api/logs.zig`: add
+**Follow-up F-2 — DONE (commit 9a3fc5f).** `Config.disabled`
+(`OTEL_SDK_DISABLED` env var) was parsed but never consulted. Fixed by
+adding a `disabled: bool` field to each provider's config struct
+(`TraceConfig`, `MetricsConfig`, `LogsConfig`); the corresponding
+factory methods short-circuit to API-layer noop handles when the flag
+is set. Precedence: comptime `build_options.otel_disabled` > runtime
+`config.disabled` > default. Three new tests in
+`test/comptime_disabled.zig` confirm each provider drops records when
+constructed with `.disabled=true`.
 
-   `comptime` branches on `build_options.otel_disabled` that replace method
-   bodies with empty returns or zero-value handle returns.
+**Follow-up F-3 — DONE (commit 01a57c7).** Replaced the 200µs
+`clock.sleep` busy-poll in `batchForceFlush` (`src/sdk/export.zig:406`)
+with `tp.sync.Condition` (the thread_pool sync primitive that wraps
+`std.Io.Mutex` futex semantics — Zig 0.16 dropped `std.Thread.Condition`).
+Workers broadcast the cond at the tail of every drain via a new
+`drainCompleted` helper; `batchForceFlush` waits on it against the
+remaining timeout budget. Wake-up latency: futex round-trip (low µs on
+Linux) vs the legacy 200µs floor. Existing `test/batch_async.zig`
+passes under `-Dotel_use_devnw_pool=true`.
 
-4. In `src/sdk/trace.zig`, `src/sdk/metrics.zig`, `src/sdk/logs.zig`:
+**Follow-up F-4 — DONE (commit 395ab06).** Added two async-drain
+integration scenarios — `integ_level3_async_100spans` and
+`integ_level3_async_10kspans` — with `async_workers=2`,
+`max_export_batch_size=256`, and `forceFlush(5_000)` inside the timed
+body. Compiled out entirely when `-Dotel_use_devnw_pool=false` (the
+default). Local Linux x86_64 ReleaseFast: 100 spans / 886µs, 10k spans
+/ 26.6ms (~376k spans/s).
 
-   `init` and the provider `tracer()`/`meter()`/`logger()` methods return
-   the same noop handles unconditionally when `otel_disabled == true`.
+**Follow-up F-5 — DEFERRED (L6 real loopback).** The current
+`level-6-full-otlp-http-loopback` (in both integration and comparison
+layers) uses a synthetic `fakeTransport` that returns 200 OK without
+networking — measures the OTLP encode pipeline only. To capture real
+TCP I/O cost, the bench needs:
 
-5. Verify dead-code elimination with `zig objdump`.
+1. Extend `framework.Context` with `io: std.Io` and pass it through
+   from `runScenarios`.
+2. Adapt `test/tls_test_helpers.zig`'s loopback HTTP server into
+   `benchmarks/integration/loopback_server.zig` with a multi-shot
+   accept loop (current is single-shot).
+3. Build the bench with `-Dotel_use_devnw_tls=true` and plumb
+   `OtlpHttpExporter.io = ctx.io`. Leave `transport` at the default
+   `httpTransport` sentinel; `expSpans` then routes through
+   `httpTransportImpl` which uses `self.io` and `std.http.Client`.
+4. Update `benchLevel6` in both `integration/main.zig` and
+   `compare_bench.zig` to start the server, wire the endpoint into the
+   exporter, then stop the server in defer.
 
-**Follow-up F-2 (V-2 — `Config.disabled` dead code):** `OTEL_SDK_DISABLED`
-is parsed in `src/sdk/config.zig` but the resulting `disabled` field is
-never consulted by `TracerProvider.init`. This is a separate bug from the
-comptime axis. It should be fixed in a follow-up PR, not in the bench
-branch, to keep the diff reviewable. A test asserting that
-`Config{.disabled=true}` causes spans to be non-recording should be added
-alongside the fix.
-
-**Follow-up F-3 (V-4 — `batchForceFlush` busy-poll):** Replace the
-200 µs `clock.sleep` in `src/sdk/export.zig:406` with a condition variable
-(`std.Thread.Condition`) wait-with-timeout so async-drain benches can
-measure actual flush latency. Until this lands, `async_workers > 0`
-integration scenarios remain deferred.
-
-**Follow-up F-4 (async-drain bench suite):** Once F-3 lands, add
-integration scenarios for `integ_level3_async_100spans` and
-`integ_level6_otlp_async_loopback_100spans` with `async_workers=1` and
-`async_workers=4` concurrency sweeps. These are explicitly excluded from
-the current plan.
+Estimated cost: ~150 lines, primarily the multi-shot server. Expected
+delta from current encode-only L6 numbers: +10-20µs/span on loopback
+(real socket round-trip). Not a blocker for the headline
+zero-overhead-when-disabled result, since L6 only matters when the
+SDK is enabled — and the current encode-only number is already an
+upper bound on per-call cost in that mode.
 
 ---
 

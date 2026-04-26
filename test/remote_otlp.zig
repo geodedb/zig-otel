@@ -20,11 +20,12 @@
 //   OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <token>" \
 //   zig build test-remote-otlp -Dotel_use_devnw_tls=true
 //
-// Authentication, if required by the collector, is read from the
-// `OTEL_EXPORTER_OTLP_HEADERS` env var via `OtlpConfig.headers` and
-// folded into the request. The exporter retries on transport errors
-// per the existing retry policy; a 200/202/204 from the collector is
-// treated as success.
+// The HTTPS test sends a fresh trace (a parent span with several
+// children) using the current wall-clock timestamp so the trace falls
+// inside the backend's retention window. It then prints the trace_id
+// hex and the collector's HTTP response (status + body) so the
+// operator can search the dashboard for the exact ID and inspect any
+// `ExportTracePartialSuccess` messages from the collector.
 
 const std = @import("std");
 const otel = @import("otel");
@@ -53,23 +54,21 @@ fn envInto(buf: []u8, name: []const u8) ?[]const u8 {
     return buf[0..value.len];
 }
 
-fn buildSpan(resource: *const otel.sdk.resource.Resource, attrs: *const otel.internal.attributes.AttributeSet) otel.sdk.exporter.SpanData {
-    return .{
-        .name = "remote-otlp-integration",
-        .span_context = .{
-            .trace_id = .{ .bytes = .{ 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89 } },
-            .span_id = .{ .bytes = .{ 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10 } },
-            .flags = .{ .sampled = true },
-        },
-        .kind = .client,
-        .start_unix_nano = 1_000_000,
-        .end_unix_nano = 2_000_000,
-        .attributes = attrs,
-        .events = &.{},
-        .links = &.{},
-        .instrumentation_scope = .{ .name = "otel-zig.integration", .version = "0.1.0" },
-        .resource = resource,
-    };
+/// Pretty-print a hex-encoded byte slice into a 64-byte stack buffer.
+fn hex(out: []u8, in: []const u8) []const u8 {
+    const alphabet = "0123456789abcdef";
+    var n: usize = 0;
+    for (in) |b| {
+        if (n + 2 > out.len) break;
+        out[n] = alphabet[(b >> 4) & 0x0f];
+        out[n + 1] = alphabet[b & 0x0f];
+        n += 2;
+    }
+    return out[0..n];
+}
+
+fn nowNanos() u64 {
+    return otel.internal.clock.unixNanoNow();
 }
 
 test "OTLP/HTTPS live export to remote collector" {
@@ -84,11 +83,15 @@ test "OTLP/HTTPS live export to remote collector" {
     var resource = try otel.sdk.resource.defaultResource(allocator);
     defer resource.deinit();
     try resource.attributes.putString(otel.semconv.service_name, "otel-zig-integration");
+    try resource.attributes.putString("service.namespace", "devnw.zig");
+    try resource.attributes.putString("service.version", otel.version);
+    try resource.attributes.putString("deployment.environment", "ci-or-local");
 
     var attr_set = otel.internal.attributes.AttributeSet.init(allocator);
     defer attr_set.deinit();
     try attr_set.putString("test.suite", "remote-otlp");
     try attr_set.putString("test.transport", "https");
+    try attr_set.putString("test.run_id", "remote-otlp-live");
 
     var headers_buf: [4096]u8 = undefined;
     const headers = envInto(&headers_buf, "OTEL_EXPORTER_OTLP_HEADERS");
@@ -102,13 +105,122 @@ test "OTLP/HTTPS live export to remote collector" {
     defer exporter.deinit();
     exporter.io = threaded.io();
 
-    const span = buildSpan(&resource, &attr_set);
-    const result = try exporter.spanExporter().exportSpans(&[_]otel.sdk.exporter.SpanData{span});
-    // 200/202/204 → .success. 207 (PartialSuccess) is also acceptable —
-    // the collector accepted the batch even if it dropped some spans.
+    // Build a fresh trace_id from the current wall-clock nanos + a
+    // fixed marker so each run is uniquely searchable. Span ids derive
+    // from the same timestamp.
+    const now = nowNanos();
+    var trace_id_bytes: [16]u8 = undefined;
+    std.mem.writeInt(u64, trace_id_bytes[0..8], now, .big);
+    std.mem.writeInt(u64, trace_id_bytes[8..16], 0xDE_AD_BE_EF_FE_ED_CA_FE, .big);
+    var parent_span_id_bytes: [8]u8 = undefined;
+    std.mem.writeInt(u64, &parent_span_id_bytes, now ^ 0xA5A5_A5A5_A5A5_A5A5, .big);
+
+    // Print the IDs to stderr so the operator can search the dashboard
+    // for this exact emission. `std.testing` swallows stdout but lets
+    // stderr through, so this surfaces in `zig build test --summary all`.
+    var hex_buf: [64]u8 = undefined;
+    std.debug.print("\n=== otel-zig live OTLP/HTTPS emission ===\n", .{});
+    std.debug.print("  endpoint   = {s}\n", .{endpoint});
+    std.debug.print("  trace_id   = {s}\n", .{hex(&hex_buf, trace_id_bytes[0..])});
+    std.debug.print("  parent_id  = {s}\n", .{hex(hex_buf[16..], parent_span_id_bytes[0..])});
+    std.debug.print("  service    = otel-zig-integration\n", .{});
+    std.debug.print("  start_nano = {d}\n", .{now});
+
+    // Build a parent span + 4 children. Real wall-clock timestamps put
+    // the trace inside Tempo's retention window — older spans (e.g.
+    // unix nanos = 1000) get silently dropped by the backend.
+    const parent_start = now;
+    const parent_end = now + 50 * std.time.ns_per_ms;
+    const parent: otel.sdk.exporter.SpanData = .{
+        .name = "remote-otlp-integration.parent",
+        .span_context = .{
+            .trace_id = .{ .bytes = trace_id_bytes },
+            .span_id = .{ .bytes = parent_span_id_bytes },
+            .flags = .{ .sampled = true },
+        },
+        .kind = .server,
+        .start_unix_nano = parent_start,
+        .end_unix_nano = parent_end,
+        .attributes = &attr_set,
+        .events = &.{},
+        .links = &.{},
+        .instrumentation_scope = .{ .name = "otel-zig.integration", .version = "0.1.0" },
+        .resource = &resource,
+    };
+
+    var children: [4]otel.sdk.exporter.SpanData = undefined;
+    var child_attrs: [4]otel.internal.attributes.AttributeSet = undefined;
+    for (&child_attrs, 0..) |*a, i| {
+        a.* = otel.internal.attributes.AttributeSet.init(allocator);
+        try a.putString("test.suite", "remote-otlp");
+        try a.putString("test.transport", "https");
+        try a.putInt("child.index", @intCast(i));
+    }
+    defer for (&child_attrs) |*a| a.deinit();
+
+    inline for (.{ "fetch", "decode", "validate", "persist" }, 0..) |op, i| {
+        var child_id: [8]u8 = undefined;
+        std.mem.writeInt(u64, &child_id, now ^ (0x1111_2222_3333_4444 *% (i + 1)), .big);
+        const child_start = parent_start + @as(u64, i) * 5 * std.time.ns_per_ms;
+        children[i] = .{
+            .name = "remote-otlp-integration." ++ op,
+            .span_context = .{
+                .trace_id = .{ .bytes = trace_id_bytes },
+                .span_id = .{ .bytes = child_id },
+                .flags = .{ .sampled = true },
+            },
+            .parent_span_id = .{ .bytes = parent_span_id_bytes },
+            .kind = .internal,
+            .start_unix_nano = child_start,
+            .end_unix_nano = child_start + 4 * std.time.ns_per_ms,
+            .attributes = &child_attrs[i],
+            .events = &.{},
+            .links = &.{},
+            .instrumentation_scope = .{ .name = "otel-zig.integration", .version = "0.1.0" },
+            .resource = &resource,
+        };
+    }
+
+    var batch: [5]otel.sdk.exporter.SpanData = undefined;
+    batch[0] = parent;
+    @memcpy(batch[1..], children[0..]);
+
+    const result = try exporter.spanExporter().exportSpans(batch[0..]);
+
+    std.debug.print("  http.status = {d}\n", .{exporter.last_response_status});
+    std.debug.print("  resp.bytes  = {d}\n", .{exporter.last_response_body_len});
+    if (exporter.last_response_body_len > 0) {
+        const resp = exporter.last_response_body[0..exporter.last_response_body_len];
+        // Print as both raw hex (binary OTLP partial-success proto) and
+        // best-effort text so the operator can spot ASCII error messages.
+        std.debug.print("  resp.hex    = ", .{});
+        for (resp) |b| std.debug.print("{x:0>2}", .{b});
+        std.debug.print("\n  resp.text   = ", .{});
+        for (resp) |b| {
+            if (b >= 0x20 and b <= 0x7e) {
+                std.debug.print("{c}", .{b});
+            } else {
+                std.debug.print(".", .{});
+            }
+        }
+        std.debug.print("\n", .{});
+    }
+    std.debug.print("=== /otel-zig live OTLP/HTTPS emission ===\n\n", .{});
+
     if (result != .success and result != .partial_success) {
         std.debug.print("unexpected export result: {s}\n", .{@tagName(result)});
         return error.UnexpectedExportResult;
+    }
+
+    // Light verification: the collector returns an
+    // `ExportTraceServiceResponse` whose body is empty (`0a 00`) when
+    // no spans were rejected, OR includes a populated
+    // `partial_success` submessage when some were rejected. Anything
+    // longer than ~32 bytes likely contains a rejection reason — fail
+    // the test so CI surfaces it.
+    if (exporter.last_response_body_len > 32) {
+        std.debug.print("collector returned a long response body — likely a partial-success rejection. See body above.\n", .{});
+        return error.PartialSuccessReported;
     }
 }
 

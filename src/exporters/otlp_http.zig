@@ -32,6 +32,15 @@ pub const OtlpHttpExporter = struct {
     io: ?std.Io = null,
     prng: std.Random.DefaultPrng,
     closed: bool = false,
+    /// Last response surface — populated by `httpTransportImpl` after
+    /// every real fetch. Useful when debugging "we got 200 but the
+    /// trace never appeared in the backend" situations: the body
+    /// often contains an OTLP `ExportTracePartialSuccess` with a
+    /// non-zero `rejected_spans` count and a free-form error message.
+    /// Stored in a fixed buffer so no allocation lifetime to track.
+    last_response_status: u16 = 0,
+    last_response_body: [1024]u8 = undefined,
+    last_response_body_len: usize = 0,
 
     pub fn init(allocator: std.mem.Allocator, config: OtlpConfig) !OtlpHttpExporter {
         if (config.endpoint.len == 0) return error.InvalidEndpoint;
@@ -129,14 +138,28 @@ fn httpTransportImpl(self: *OtlpHttpExporter, allocator: std.mem.Allocator, path
     var client: std.http.Client = .{ .allocator = allocator, .io = io };
     defer client.deinit();
 
+    // Capture the response body so callers can introspect partial-success
+    // info and collector-side error messages without re-issuing the call.
+    // Sized to the OtlpHttpExporter's stash so we never copy more than
+    // the caller can hold; over-large payloads are truncated.
+    var resp_writer: std.Io.Writer.Allocating = .init(allocator);
+    defer resp_writer.deinit();
+
     const result = try client.fetch(.{
         .location = .{ .url = full_url },
         .method = .POST,
         .payload = body,
         .extra_headers = headers_list.items,
+        .response_writer = &resp_writer.writer,
     });
 
-    return .{ .status = @intFromEnum(result.status), .body = "" };
+    const written = resp_writer.written();
+    const stash_len = @min(written.len, self.last_response_body.len);
+    @memcpy(self.last_response_body[0..stash_len], written[0..stash_len]);
+    self.last_response_body_len = stash_len;
+    self.last_response_status = @intFromEnum(result.status);
+
+    return .{ .status = @intFromEnum(result.status), .body = self.last_response_body[0..self.last_response_body_len] };
 }
 
 fn doShutdown(ctx: ?*anyopaque) void {

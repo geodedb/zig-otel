@@ -165,6 +165,14 @@ const QueueMutex = if (build_options.use_devnw_pool) tp.sync.Mutex else struct {
     pub fn unlock(_: *@This()) void {}
 };
 
+/// Flush-completion condition variable. `batchForceFlush` waits on it
+/// instead of busy-polling; workers broadcast when they decrement
+/// `pending_tasks`. Reduces wake-up latency from the legacy 200µs poll
+/// floor (F-3) to whatever the OS futex round-trip costs (low µs on
+/// Linux). Compiles to an empty stub when the async pool is off, since
+/// the synchronous-drain path doesn't need to wait on workers.
+const FlushCond = if (build_options.use_devnw_pool) tp.sync.Condition else struct {};
+
 pub const BatchSpanProcessor = struct {
     allocator: std.mem.Allocator,
     exporter: SpanExporter,
@@ -184,9 +192,15 @@ pub const BatchSpanProcessor = struct {
     /// configurations and only guards the cross-thread fan-out case.
     export_mutex: QueueMutex = .{},
     /// In-flight drain tasks. Incremented on submit, decremented at the
-    /// tail of every worker drain. `forceFlush` busy-polls this and the
-    /// queue length until both reach zero (bounded by the timeout).
+    /// tail of every worker drain. `forceFlush` waits on `flush_cond`
+    /// (signaled by every drain completion) until both this counter and
+    /// the queue reach zero, bounded by the timeout.
     pending_tasks: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
+    /// Broadcast by every worker as it decrements `pending_tasks`.
+    /// Replaces the F-3 busy-poll: `batchForceFlush` waits on this
+    /// against the remaining timeout budget instead of sleeping
+    /// 200µs and re-checking.
+    flush_cond: FlushCond = .{},
     dropped: u32 = 0,
     /// Active iff `build_options.use_devnw_pool` *and*
     /// `options.async_workers > 0`. Owned and torn down by `deinit`.
@@ -303,23 +317,33 @@ pub const BatchSpanProcessor = struct {
 /// (Zig 0.16's lazy evaluation of comptime-conditional branches keeps
 /// the typed pool API out of the no-pool build graph).
 const async_pool = if (build_options.use_devnw_pool) struct {
+    /// Decrement the pending-tasks counter and wake any thread blocked
+    /// in `batchForceFlush`. The `acq_rel` ordering on `fetchSub`
+    /// publishes the worker's writes (queue mutations) to the waiter
+    /// before the broadcast lets it observe the updated counter.
+    fn drainCompleted(self: *BatchSpanProcessor) void {
+        _ = self.pending_tasks.fetchSub(1, .acq_rel);
+        self.flush_cond.broadcast();
+    }
+
     fn drainTask(ctx: *anyopaque, _: *tp.TaskContext) void {
         const self: *BatchSpanProcessor = @ptrCast(@alignCast(ctx));
         self.mutex.lock();
         const batch = self.drainLocked() catch {
             self.mutex.unlock();
-            _ = self.pending_tasks.fetchSub(1, .acq_rel);
+            drainCompleted(self);
             return;
         };
         self.mutex.unlock();
         self.exportBatch(batch);
-        _ = self.pending_tasks.fetchSub(1, .acq_rel);
+        drainCompleted(self);
     }
 
     /// Submit a drain task. The pending-counter bump and decrement are
     /// always paired: bump here on the producer side, decrement at the
     /// tail of `drainTask` (or in the inline-fallback branch when
-    /// `submit` fails).
+    /// `submit` fails). Both decrement paths route through
+    /// `drainCompleted` so the flush waiter is always woken.
     fn submitDrain(self: *BatchSpanProcessor) void {
         const pool = self.pool orelse return;
         _ = self.pending_tasks.fetchAdd(1, .acq_rel);
@@ -330,12 +354,12 @@ const async_pool = if (build_options.use_devnw_pool) struct {
             self.mutex.lock();
             const batch = self.drainLocked() catch {
                 self.mutex.unlock();
-                _ = self.pending_tasks.fetchSub(1, .acq_rel);
+                drainCompleted(self);
                 return;
             };
             self.mutex.unlock();
             self.exportBatch(batch);
-            _ = self.pending_tasks.fetchSub(1, .acq_rel);
+            drainCompleted(self);
         };
     }
 } else struct {};
@@ -382,31 +406,47 @@ fn batchForceFlush(ctx: ?*anyopaque, timeout_ms: u64) anyerror!void {
 
     if (build_options.use_devnw_pool) {
         if (self.pool != null) {
-            // Drain whatever is queued by submitting tasks, then poll
-            // until both the queue and the in-flight task counter reach
-            // zero. Inner `pool.submit` uses `.block` backpressure
-            // (configured at init), so submission itself doesn't spin.
-            // Clock + sleep both come from `tp.clock`: 0.16.0 dropped
-            // `std.time.nanoTimestamp` and `std.Thread.sleep`, and
-            // thread-pool already wraps the replacements with the
-            // legacy zero-arg signatures.
+            // Drain whatever is queued by submitting tasks, then sleep
+            // on `flush_cond` until both the queue and the in-flight
+            // task counter reach zero. Workers broadcast the cond at
+            // the tail of every drain (see `drainCompleted`), so this
+            // wakes within one futex round-trip of completion rather
+            // than the legacy 200µs poll floor (F-3). Inner
+            // `pool.submit` uses `.block` backpressure so submission
+            // itself doesn't spin.
             const deadline_ns: i128 = @as(i128, timeout_ms) * std.time.ns_per_ms;
             const start: i128 = tp.clock.nanoTimestamp();
+
+            self.mutex.lock();
             while (true) {
-                self.mutex.lock();
-                const remaining = self.queue.items.len;
-                self.mutex.unlock();
+                const remaining_in_queue = self.queue.items.len;
+                const pending = self.pending_tasks.load(.acquire);
+                if (remaining_in_queue == 0 and pending == 0) break;
 
-                if (remaining == 0 and self.pending_tasks.load(.acquire) == 0) break;
+                if (remaining_in_queue > 0) {
+                    // Submit drain off-lock — `submitDrain` reacquires
+                    // `self.mutex` internally on the inline-fallback
+                    // path, which would deadlock if we still held it.
+                    self.mutex.unlock();
+                    async_pool.submitDrain(self);
+                    self.mutex.lock();
+                    continue;
+                }
 
-                if (remaining > 0) async_pool.submitDrain(self);
-
-                // Cooperative wait. 200µs balances responsiveness
-                // against CPU burn on a 1-second timeout budget.
-                tp.clock.sleep(200 * std.time.ns_per_us);
-                const elapsed: i128 = @as(i128, tp.clock.nanoTimestamp()) - start;
-                if (elapsed >= deadline_ns) return error.ExportTimeout;
+                const elapsed: i128 = tp.clock.nanoTimestamp() - start;
+                const remaining_ns: i128 = deadline_ns - elapsed;
+                if (remaining_ns <= 0) {
+                    self.mutex.unlock();
+                    return error.ExportTimeout;
+                }
+                self.flush_cond.timedWait(&self.mutex, @intCast(remaining_ns)) catch |e| {
+                    self.mutex.unlock();
+                    switch (e) {
+                        error.Timeout => return error.ExportTimeout,
+                    }
+                };
             }
+            self.mutex.unlock();
             try self.exporter.forceFlush(timeout_ms);
             return;
         }

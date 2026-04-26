@@ -40,13 +40,77 @@ test "DevNW yaml parser handles nested mappings" {
     ;
     var cfg: otel.sdk.config.Config = .{};
     try otel.sdk.config.applyYamlStringDevnw(&cfg, std.testing.allocator, src);
-    // The DevNW loader allocates new buffers for string fields; release
-    // them so leak detection stays clean.
-    defer {
-        std.testing.allocator.free(cfg.file_format);
-        std.testing.allocator.free(cfg.traces.otlp.endpoint);
-    }
+    defer cfg.deinit(std.testing.allocator);
     try std.testing.expectEqual(otel.sdk.config.ExporterKind.otlp_http, cfg.traces.exporter);
     try std.testing.expectEqualStrings("http://collector:4318", cfg.traces.otlp.endpoint);
     try std.testing.expectEqual(otel.sdk.config.Protocol.http_protobuf, cfg.traces.otlp.protocol);
+}
+
+// -------------------------------------------------------------------------
+// GAP-SEC-C-1 / GAP-SEC-M-4: Config string ownership.
+//
+// Historical bug: applyEnv borrowed slices from a single threadlocal
+// scratch buffer, so reading any later env var corrupted earlier slots.
+// The in-repo YAML loader had a sibling defect — values were borrowed
+// from the source buffer that callers were free to release immediately.
+// Both are fixed by the new ownership contract: every string field on
+// Config is allocator-owned, and Config.deinit must free them all.
+// -------------------------------------------------------------------------
+
+test "C-1: env headers survive a subsequent env read" {
+    // Set both env vars before applying, then assert the headers slice
+    // does not get clobbered by the later lookup.
+    var env_map = otel.sdk.config.EnvMap.init(std.testing.allocator);
+    defer env_map.deinit();
+    try env_map.put("OTEL_EXPORTER_OTLP_HEADERS", "Authorization=Bearer aaaaaaaaaaaaaaaa");
+    try env_map.put("OTEL_SERVICE_NAME", "service-with-a-long-name-that-overlaps");
+
+    var cfg: otel.sdk.config.Config = .{};
+    try otel.sdk.config.applyEnvFromMap(&cfg, std.testing.allocator, &env_map);
+    defer cfg.deinit(std.testing.allocator);
+
+    try std.testing.expectEqualStrings("Authorization=Bearer aaaaaaaaaaaaaaaa", cfg.traces.otlp.headers.?);
+    try std.testing.expectEqualStrings("Authorization=Bearer aaaaaaaaaaaaaaaa", cfg.metrics.otlp.headers.?);
+    try std.testing.expectEqualStrings("Authorization=Bearer aaaaaaaaaaaaaaaa", cfg.logs.otlp.headers.?);
+    try std.testing.expectEqualStrings("service-with-a-long-name-that-overlaps", cfg.service_name);
+}
+
+test "C-1: applyEnvFromMap + deinit leaks nothing under testing allocator" {
+    // The testing allocator panics on leak; this test passes only if
+    // every field set by env is freed by Config.deinit.
+    var env_map = otel.sdk.config.EnvMap.init(std.testing.allocator);
+    defer env_map.deinit();
+    try env_map.put("OTEL_SERVICE_NAME", "leak-canary-service");
+    try env_map.put("OTEL_RESOURCE_ATTRIBUTES", "k=v,k2=v2");
+    try env_map.put("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector.example.com:4318");
+    try env_map.put("OTEL_EXPORTER_OTLP_HEADERS", "Authorization=Bearer abcd");
+    try env_map.put("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://traces.example.com:4318");
+
+    var cfg: otel.sdk.config.Config = .{};
+    try otel.sdk.config.applyEnvFromMap(&cfg, std.testing.allocator, &env_map);
+    cfg.deinit(std.testing.allocator);
+}
+
+test "M-4: applyYamlString values survive source buffer free" {
+    // Allocate a YAML source on the heap, copy it into another buffer,
+    // free the original, then assert Config still holds the right strings.
+    const source =
+        \\file_format: 1.0.0
+        \\tracer_provider:
+        \\  exporter: otlp
+        \\  endpoint: "http://collector:4318"
+        \\  protocol: http/protobuf
+    ;
+    const buf = try std.testing.allocator.dupe(u8, source);
+
+    var cfg: otel.sdk.config.Config = .{};
+    try otel.sdk.config.applyYamlString(&cfg, std.testing.allocator, buf);
+
+    // Free the source immediately. If the loader borrowed slices from
+    // it, the next read of cfg.traces.otlp.endpoint will be a UAF.
+    std.testing.allocator.free(buf);
+    defer cfg.deinit(std.testing.allocator);
+
+    try std.testing.expectEqualStrings("1.0.0", cfg.file_format);
+    try std.testing.expectEqualStrings("http://collector:4318", cfg.traces.otlp.endpoint);
 }

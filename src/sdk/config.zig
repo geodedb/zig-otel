@@ -54,6 +54,11 @@ pub const OtlpConfig = struct {
     /// When true, skip TLS verification. Default is false; the spec says
     /// HTTPS validation is on by default.
     skip_tls_verify: bool = false,
+    /// Internal: marks endpoint as allocator-owned (set by env/YAML loaders
+    /// after duping). Defaults remain static literals.
+    endpoint_owned: bool = false,
+    /// Internal: marks headers as allocator-owned.
+    headers_owned: bool = false,
 };
 
 pub const TraceProviderConfig = struct {
@@ -86,85 +91,169 @@ pub const Config = struct {
     metrics: MetricProviderConfig = .{},
     logs: LogProviderConfig = .{},
 
+    // Ownership bookkeeping — set by loaders that duped from env / YAML.
+    // Default Config{} uses static literals everywhere so the defaults
+    // remain copy-free; only loaders that actually allocate flip these.
+    file_format_owned: bool = false,
+    service_name_owned: bool = false,
+    resource_attributes_owned: bool = false,
+
     pub fn validate(self: *const Config) !void {
         if (self.file_format.len == 0) return error.InvalidConfig;
         if (self.traces.sampler_arg < 0 or self.traces.sampler_arg > 1.0) return error.InvalidConfig;
         if (self.traces.otlp.endpoint.len == 0) return error.InvalidEndpoint;
     }
+
+    /// Frees every string field that a loader (env / YAML) allocated. Safe
+    /// to call on a default Config{} (no-op because every `*_owned` flag is
+    /// false). Idempotent: clears the flags as it goes so a double-free
+    /// never happens.
+    pub fn deinit(self: *Config, allocator: std.mem.Allocator) void {
+        if (self.file_format_owned) {
+            allocator.free(self.file_format);
+            self.file_format = "";
+            self.file_format_owned = false;
+        }
+        if (self.service_name_owned) {
+            allocator.free(self.service_name);
+            self.service_name = "";
+            self.service_name_owned = false;
+        }
+        if (self.resource_attributes_owned) {
+            allocator.free(self.resource_attributes);
+            self.resource_attributes = "";
+            self.resource_attributes_owned = false;
+        }
+        deinitOtlp(&self.traces.otlp, allocator);
+        deinitOtlp(&self.metrics.otlp, allocator);
+        deinitOtlp(&self.logs.otlp, allocator);
+    }
 };
 
+fn deinitOtlp(o: *OtlpConfig, allocator: std.mem.Allocator) void {
+    if (o.endpoint_owned) {
+        allocator.free(o.endpoint);
+        o.endpoint = "";
+        o.endpoint_owned = false;
+    }
+    if (o.headers_owned) {
+        if (o.headers) |h| allocator.free(h);
+        o.headers = null;
+        o.headers_owned = false;
+    }
+}
+
+/// Free `dst`'s current value (if owned) and replace it with an
+/// allocator-owned copy of `value`. Use whenever a loader writes a
+/// string that may have been previously set by an earlier layer.
+fn setOwnedString(dst: *[]const u8, owned_flag: *bool, allocator: std.mem.Allocator, value: []const u8) !void {
+    const dup = try allocator.dupe(u8, value);
+    if (owned_flag.*) allocator.free(dst.*);
+    dst.* = dup;
+    owned_flag.* = true;
+}
+
+fn setOwnedOptionalString(dst: *?[]const u8, owned_flag: *bool, allocator: std.mem.Allocator, value: []const u8) !void {
+    const dup = try allocator.dupe(u8, value);
+    if (owned_flag.* and dst.* != null) allocator.free(dst.*.?);
+    dst.* = dup;
+    owned_flag.* = true;
+}
+
+fn setOwnedEndpoint(otlp: *OtlpConfig, allocator: std.mem.Allocator, value: []const u8) !void {
+    try setOwnedString(&otlp.endpoint, &otlp.endpoint_owned, allocator, value);
+}
+
+fn setOwnedHeaders(otlp: *OtlpConfig, allocator: std.mem.Allocator, value: []const u8) !void {
+    try setOwnedOptionalString(&otlp.headers, &otlp.headers_owned, allocator, value);
+}
+
+/// Re-export of the process environment map type. Zig 0.16 publishes it
+/// as `std.process.Environ.Map`; we alias here so tests and callers can
+/// reference `otel.sdk.config.EnvMap` without coupling to that path.
+pub const EnvMap = std.process.Environ.Map;
+
 /// Build a Config by layering: defaults → env → YAML file → caller overrides.
+///
+/// Ownership: every string field that env or YAML populates becomes
+/// allocator-owned. Callers MUST call `cfg.deinit(allocator)` to free.
 pub fn resolve(allocator: std.mem.Allocator, user_overrides: ?Config) !Config {
     var cfg: Config = .{};
+    errdefer cfg.deinit(allocator);
 
-    applyEnv(&cfg) catch |err| return err;
+    var env_map = try captureEnvironment(allocator);
+    defer env_map.deinit();
+    try applyEnvFromMap(&cfg, allocator, &env_map);
 
-    if (std.process.getEnvVarOwned(allocator, "OTEL_CONFIG_FILE")) |path| {
-        defer allocator.free(path);
+    if (env_map.get("OTEL_CONFIG_FILE")) |path| {
         const data = try std.fs.cwd().readFileAlloc(allocator, path, 1 << 20);
         defer allocator.free(data);
         if (build_options.use_devnw_config) {
             try applyYamlStringDevnw(&cfg, allocator, data);
         } else {
-            try applyYamlString(&cfg, data);
+            try applyYamlString(&cfg, allocator, data);
         }
-    } else |err| switch (err) {
-        error.EnvironmentVariableNotFound => {},
-        else => return err,
     }
 
-    if (user_overrides) |o| applyOverrides(&cfg, o);
+    if (user_overrides) |o| try applyOverrides(&cfg, allocator, o);
 
     try cfg.validate();
     return cfg;
 }
 
-fn applyEnv(cfg: *Config) !void {
-    if (envOrNull("OTEL_SDK_DISABLED")) |v| {
+/// Snapshot the current process environment into an owned `EnvMap`.
+/// Wraps `std.process.Environ.createMap` against the global block, so
+/// callers stay agnostic to host OS (POSIX / Windows / WASI).
+fn captureEnvironment(allocator: std.mem.Allocator) !EnvMap {
+    return std.process.Environ.createMap(.{ .block = std.process.Environ.Block.global }, allocator);
+}
+
+/// Populate `cfg` from a process EnvMap. Every string slice stored on
+/// `cfg` is duped from the map and tracked as allocator-owned, so a
+/// subsequent map mutation or free leaves `cfg` intact.
+///
+/// Test-friendly: callers that don't want the live process environment
+/// can pass a synthetic `EnvMap`.
+pub fn applyEnvFromMap(cfg: *Config, allocator: std.mem.Allocator, env_map: *const EnvMap) !void {
+    if (env_map.get("OTEL_SDK_DISABLED")) |v| {
         cfg.disabled = parseBool(v) orelse cfg.disabled;
     }
-    if (envOrNull("OTEL_LOG_LEVEL")) |v| {
-        if (std.mem.eql(u8, v, "trace")) cfg.log_level = .trace;
-        if (std.mem.eql(u8, v, "debug")) cfg.log_level = .debug;
-        if (std.mem.eql(u8, v, "info")) cfg.log_level = .info;
-        if (std.mem.eql(u8, v, "warn")) cfg.log_level = .warn;
-        if (std.mem.eql(u8, v, "error")) cfg.log_level = .err;
-    }
-    if (envOrNull("OTEL_TRACES_SAMPLER")) |v| {
+    if (env_map.get("OTEL_LOG_LEVEL")) |v| applyLogLevel(cfg, v);
+    if (env_map.get("OTEL_TRACES_SAMPLER")) |v| {
         if (std.mem.eql(u8, v, "always_on")) cfg.traces.sampler = .always_on;
         if (std.mem.eql(u8, v, "always_off")) cfg.traces.sampler = .always_off;
         if (std.mem.eql(u8, v, "parentbased_always_on") or std.mem.eql(u8, v, "parentbased_always_off")) cfg.traces.sampler = .parent_based;
         if (std.mem.eql(u8, v, "traceidratio") or std.mem.eql(u8, v, "parentbased_traceidratio")) cfg.traces.sampler = .traceidratio;
     }
-    if (envOrNull("OTEL_TRACES_SAMPLER_ARG")) |v| {
+    if (env_map.get("OTEL_TRACES_SAMPLER_ARG")) |v| {
         cfg.traces.sampler_arg = std.fmt.parseFloat(f64, v) catch cfg.traces.sampler_arg;
     }
-    if (envOrNull("OTEL_TRACES_EXPORTER")) |v| {
+    if (env_map.get("OTEL_TRACES_EXPORTER")) |v| {
         cfg.traces.exporter = ExporterKind.fromString(v);
     }
-    if (envOrNull("OTEL_METRICS_EXPORTER")) |v| {
+    if (env_map.get("OTEL_METRICS_EXPORTER")) |v| {
         cfg.metrics.exporter = ExporterKind.fromString(v);
     }
-    if (envOrNull("OTEL_LOGS_EXPORTER")) |v| {
+    if (env_map.get("OTEL_LOGS_EXPORTER")) |v| {
         cfg.logs.exporter = ExporterKind.fromString(v);
     }
-    if (envOrNull("OTEL_EXPORTER_OTLP_ENDPOINT")) |v| {
-        cfg.traces.otlp.endpoint = v;
-        cfg.metrics.otlp.endpoint = v;
-        cfg.logs.otlp.endpoint = v;
+    if (env_map.get("OTEL_EXPORTER_OTLP_ENDPOINT")) |v| {
+        try setOwnedEndpoint(&cfg.traces.otlp, allocator, v);
+        try setOwnedEndpoint(&cfg.metrics.otlp, allocator, v);
+        try setOwnedEndpoint(&cfg.logs.otlp, allocator, v);
     }
-    if (envOrNull("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")) |v| cfg.traces.otlp.endpoint = v;
-    if (envOrNull("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT")) |v| cfg.metrics.otlp.endpoint = v;
-    if (envOrNull("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT")) |v| cfg.logs.otlp.endpoint = v;
+    if (env_map.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")) |v| try setOwnedEndpoint(&cfg.traces.otlp, allocator, v);
+    if (env_map.get("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT")) |v| try setOwnedEndpoint(&cfg.metrics.otlp, allocator, v);
+    if (env_map.get("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT")) |v| try setOwnedEndpoint(&cfg.logs.otlp, allocator, v);
 
-    if (envOrNull("OTEL_EXPORTER_OTLP_PROTOCOL")) |v| {
+    if (env_map.get("OTEL_EXPORTER_OTLP_PROTOCOL")) |v| {
         if (Protocol.fromString(v)) |p| {
             cfg.traces.otlp.protocol = p;
             cfg.metrics.otlp.protocol = p;
             cfg.logs.otlp.protocol = p;
         }
     }
-    if (envOrNull("OTEL_EXPORTER_OTLP_TIMEOUT")) |v| {
+    if (env_map.get("OTEL_EXPORTER_OTLP_TIMEOUT")) |v| {
         const ms = std.fmt.parseInt(u64, v, 10) catch null;
         if (ms) |m| {
             cfg.traces.otlp.timeout_ms = m;
@@ -172,14 +261,18 @@ fn applyEnv(cfg: *Config) !void {
             cfg.logs.otlp.timeout_ms = m;
         }
     }
-    if (envOrNull("OTEL_EXPORTER_OTLP_HEADERS")) |v| {
-        cfg.traces.otlp.headers = v;
-        cfg.metrics.otlp.headers = v;
-        cfg.logs.otlp.headers = v;
+    if (env_map.get("OTEL_EXPORTER_OTLP_HEADERS")) |v| {
+        try setOwnedHeaders(&cfg.traces.otlp, allocator, v);
+        try setOwnedHeaders(&cfg.metrics.otlp, allocator, v);
+        try setOwnedHeaders(&cfg.logs.otlp, allocator, v);
     }
-    if (envOrNull("OTEL_SERVICE_NAME")) |v| cfg.service_name = v;
-    if (envOrNull("OTEL_RESOURCE_ATTRIBUTES")) |v| cfg.resource_attributes = v;
-    if (envOrNull("OTEL_PROPAGATORS")) |v| {
+    if (env_map.get("OTEL_SERVICE_NAME")) |v| {
+        try setOwnedString(&cfg.service_name, &cfg.service_name_owned, allocator, v);
+    }
+    if (env_map.get("OTEL_RESOURCE_ATTRIBUTES")) |v| {
+        try setOwnedString(&cfg.resource_attributes, &cfg.resource_attributes_owned, allocator, v);
+    }
+    if (env_map.get("OTEL_PROPAGATORS")) |v| {
         if (std.mem.eql(u8, v, "tracecontext")) cfg.propagator = .tracecontext;
         if (std.mem.eql(u8, v, "baggage")) cfg.propagator = .baggage;
         if (std.mem.eql(u8, v, "b3")) cfg.propagator = .b3;
@@ -195,31 +288,14 @@ fn parseBool(v: []const u8) ?bool {
     return null;
 }
 
-threadlocal var env_buf: [1024]u8 = undefined;
-threadlocal var env_len: usize = 0;
-
-/// Returns a slice borrowed from a thread-local scratch buffer for the
-/// lifetime of the next env lookup. Suitable only inside `applyEnv` which
-/// copies anything it stores. The buffer caps at 1 KiB; longer values are
-/// truncated and treated as missing to avoid silent corruption.
-fn envOrNull(name: []const u8) ?[]const u8 {
-    var buf: [256]u8 = undefined;
-    if (name.len >= buf.len) return null;
-    @memcpy(buf[0..name.len], name);
-    buf[name.len] = 0;
-    const c_name: [*:0]const u8 = @ptrCast(buf[0..name.len :0]);
-    const raw = std.posix.getenv(std.mem.span(c_name)) orelse return null;
-    if (raw.len == 0) return null;
-    if (raw.len > env_buf.len) return null;
-    @memcpy(env_buf[0..raw.len], raw);
-    env_len = raw.len;
-    return env_buf[0..raw.len];
-}
-
 /// Minimal YAML subset: top-level mapping plus one level of nesting.
 /// Sufficient for the OpenTelemetry declarative config schema's shallow
 /// scenarios. Documented as a strict subset in docs/SPEC_COMPLIANCE.md.
-pub fn applyYamlString(cfg: *Config, source: []const u8) !void {
+///
+/// Ownership: every string field copied into `cfg` is duped with
+/// `allocator`. The `source` slice may be freed immediately after this
+/// returns; `Config.deinit(allocator)` releases the duped strings.
+pub fn applyYamlString(cfg: *Config, allocator: std.mem.Allocator, source: []const u8) !void {
     var lines = std.mem.splitScalar(u8, source, '\n');
     var current_section: []const u8 = "";
     while (lines.next()) |raw_line| {
@@ -233,19 +309,19 @@ pub fn applyYamlString(cfg: *Config, source: []const u8) !void {
             current_section = std.mem.trim(u8, trimmed[0..colon], " \t");
             const value = std.mem.trim(u8, trimmed[colon + 1 ..], " \t");
             if (value.len > 0) {
-                try applyKv(cfg, current_section, "", value);
+                try applyKv(cfg, allocator, current_section, "", value);
                 current_section = "";
             }
         } else {
             const colon = std.mem.indexOfScalar(u8, trimmed, ':') orelse return error.InvalidConfig;
             const key = std.mem.trim(u8, trimmed[0..colon], " \t");
             const value = std.mem.trim(u8, trimmed[colon + 1 ..], " \t");
-            try applyKv(cfg, current_section, key, value);
+            try applyKv(cfg, allocator, current_section, key, value);
         }
     }
 }
 
-fn applyKv(cfg: *Config, section: []const u8, key: []const u8, value: []const u8) !void {
+fn applyKv(cfg: *Config, allocator: std.mem.Allocator, section: []const u8, key: []const u8, value: []const u8) !void {
     if (section.len == 0) {
         if (std.mem.eql(u8, key, "")) {
             // Top-level scalar in line `disabled: true`-style pre-processed.
@@ -260,33 +336,33 @@ fn applyKv(cfg: *Config, section: []const u8, key: []const u8, value: []const u8
         return;
     }
     if (std.mem.eql(u8, section, "log_level")) {
-        if (std.mem.eql(u8, value, "trace")) cfg.log_level = .trace;
-        if (std.mem.eql(u8, value, "debug")) cfg.log_level = .debug;
-        if (std.mem.eql(u8, value, "info")) cfg.log_level = .info;
-        if (std.mem.eql(u8, value, "warn")) cfg.log_level = .warn;
-        if (std.mem.eql(u8, value, "error")) cfg.log_level = .err;
+        applyLogLevel(cfg, value);
         return;
     }
     if (std.mem.eql(u8, section, "file_format")) {
-        cfg.file_format = unquote(value);
+        try setOwnedString(&cfg.file_format, &cfg.file_format_owned, allocator, unquote(value));
+        return;
+    }
+    if (std.mem.eql(u8, section, "service_name")) {
+        try setOwnedString(&cfg.service_name, &cfg.service_name_owned, allocator, unquote(value));
         return;
     }
 
     if (std.mem.eql(u8, section, "tracer_provider") or std.mem.eql(u8, section, "traces")) {
-        try applyTraceKey(cfg, key, value);
+        try applyTraceKey(cfg, allocator, key, value);
         return;
     }
     if (std.mem.eql(u8, section, "meter_provider") or std.mem.eql(u8, section, "metrics")) {
-        try applyMetricKey(cfg, key, value);
+        try applyMetricKey(cfg, allocator, key, value);
         return;
     }
     if (std.mem.eql(u8, section, "logger_provider") or std.mem.eql(u8, section, "logs")) {
-        try applyLogKey(cfg, key, value);
+        try applyLogKey(cfg, allocator, key, value);
         return;
     }
 }
 
-fn applyTraceKey(cfg: *Config, key: []const u8, value: []const u8) !void {
+fn applyTraceKey(cfg: *Config, allocator: std.mem.Allocator, key: []const u8, value: []const u8) !void {
     if (std.mem.eql(u8, key, "sampler")) {
         const v = unquote(value);
         if (std.mem.eql(u8, v, "always_on")) cfg.traces.sampler = .always_on;
@@ -298,7 +374,7 @@ fn applyTraceKey(cfg: *Config, key: []const u8, value: []const u8) !void {
     } else if (std.mem.eql(u8, key, "exporter")) {
         cfg.traces.exporter = ExporterKind.fromString(unquote(value));
     } else if (std.mem.eql(u8, key, "endpoint")) {
-        cfg.traces.otlp.endpoint = unquote(value);
+        try setOwnedEndpoint(&cfg.traces.otlp, allocator, unquote(value));
     } else if (std.mem.eql(u8, key, "protocol")) {
         if (Protocol.fromString(unquote(value))) |p| cfg.traces.otlp.protocol = p;
     } else if (std.mem.eql(u8, key, "timeout")) {
@@ -306,33 +382,38 @@ fn applyTraceKey(cfg: *Config, key: []const u8, value: []const u8) !void {
     }
 }
 
-fn applyMetricKey(cfg: *Config, key: []const u8, value: []const u8) !void {
+fn applyMetricKey(cfg: *Config, allocator: std.mem.Allocator, key: []const u8, value: []const u8) !void {
     if (std.mem.eql(u8, key, "exporter")) {
         cfg.metrics.exporter = ExporterKind.fromString(unquote(value));
     } else if (std.mem.eql(u8, key, "interval")) {
         if (std.fmt.parseInt(u64, value, 10)) |ms| cfg.metrics.interval_ms = ms else |_| {}
     } else if (std.mem.eql(u8, key, "endpoint")) {
-        cfg.metrics.otlp.endpoint = unquote(value);
+        try setOwnedEndpoint(&cfg.metrics.otlp, allocator, unquote(value));
     }
 }
 
-fn applyLogKey(cfg: *Config, key: []const u8, value: []const u8) !void {
+fn applyLogKey(cfg: *Config, allocator: std.mem.Allocator, key: []const u8, value: []const u8) !void {
     if (std.mem.eql(u8, key, "exporter")) {
         cfg.logs.exporter = ExporterKind.fromString(unquote(value));
     } else if (std.mem.eql(u8, key, "endpoint")) {
-        cfg.logs.otlp.endpoint = unquote(value);
+        try setOwnedEndpoint(&cfg.logs.otlp, allocator, unquote(value));
     }
 }
 
-fn applyOverrides(cfg: *Config, o: Config) void {
+fn applyOverrides(cfg: *Config, allocator: std.mem.Allocator, o: Config) !void {
     // Code-supplied overrides are total: any field set to a non-default
     // value wins. We treat empty strings/zero as "not set" for the
-    // ergonomically common cases.
+    // ergonomically common cases. The override slices belong to the
+    // caller; we always dupe so `Config.deinit` can free uniformly.
     if (o.disabled) cfg.disabled = true;
-    if (o.service_name.len > 0) cfg.service_name = o.service_name;
-    if (o.resource_attributes.len > 0) cfg.resource_attributes = o.resource_attributes;
+    if (o.service_name.len > 0) {
+        try setOwnedString(&cfg.service_name, &cfg.service_name_owned, allocator, o.service_name);
+    }
+    if (o.resource_attributes.len > 0) {
+        try setOwnedString(&cfg.resource_attributes, &cfg.resource_attributes_owned, allocator, o.resource_attributes);
+    }
     if (o.traces.otlp.endpoint.len > 0 and !std.mem.eql(u8, o.traces.otlp.endpoint, "http://localhost:4318")) {
-        cfg.traces.otlp.endpoint = o.traces.otlp.endpoint;
+        try setOwnedEndpoint(&cfg.traces.otlp, allocator, o.traces.otlp.endpoint);
     }
     if (o.traces.exporter != .stdout) cfg.traces.exporter = o.traces.exporter;
     if (o.metrics.exporter != .stdout) cfg.metrics.exporter = o.metrics.exporter;
@@ -408,13 +489,13 @@ const devnw_loader = if (build_options.use_devnw_config) struct {
 
         const top = mapOf(root) orelse return;
 
-        if (lookupString(top, "file_format")) |s| cfg.file_format = try allocator.dupe(u8, s);
+        if (lookupString(top, "file_format")) |s| try setOwnedString(&cfg.file_format, &cfg.file_format_owned, allocator, s);
         if (lookupBool(top, "disabled")) |b| cfg.disabled = b;
         if (lookupString(top, "log_level")) |s| applyLogLevel(cfg, s);
 
         if (lookupTable(top, "tracer_provider") orelse lookupTable(top, "traces")) |t| {
             if (lookupString(t, "exporter")) |s| cfg.traces.exporter = ExporterKind.fromString(s);
-            if (lookupString(t, "endpoint")) |s| cfg.traces.otlp.endpoint = try allocator.dupe(u8, s);
+            if (lookupString(t, "endpoint")) |s| try setOwnedEndpoint(&cfg.traces.otlp, allocator, s);
             if (lookupString(t, "protocol")) |s| {
                 if (Protocol.fromString(s)) |p| cfg.traces.otlp.protocol = p;
             }
@@ -422,12 +503,12 @@ const devnw_loader = if (build_options.use_devnw_config) struct {
         }
         if (lookupTable(top, "meter_provider") orelse lookupTable(top, "metrics")) |t| {
             if (lookupString(t, "exporter")) |s| cfg.metrics.exporter = ExporterKind.fromString(s);
-            if (lookupString(t, "endpoint")) |s| cfg.metrics.otlp.endpoint = try allocator.dupe(u8, s);
+            if (lookupString(t, "endpoint")) |s| try setOwnedEndpoint(&cfg.metrics.otlp, allocator, s);
             if (lookupInt(t, "interval")) |ms| cfg.metrics.interval_ms = @intCast(ms);
         }
         if (lookupTable(top, "logger_provider") orelse lookupTable(top, "logs")) |t| {
             if (lookupString(t, "exporter")) |s| cfg.logs.exporter = ExporterKind.fromString(s);
-            if (lookupString(t, "endpoint")) |s| cfg.logs.otlp.endpoint = try allocator.dupe(u8, s);
+            if (lookupString(t, "endpoint")) |s| try setOwnedEndpoint(&cfg.logs.otlp, allocator, s);
         }
     }
 
@@ -493,6 +574,7 @@ test "validate rejects empty endpoint" {
 
 test "applyYamlString parses basic mapping" {
     var cfg: Config = .{};
+    defer cfg.deinit(std.testing.allocator);
     const src =
         \\disabled: false
         \\log_level: warn
@@ -501,7 +583,7 @@ test "applyYamlString parses basic mapping" {
         \\  endpoint: "http://collector:4318"
         \\  protocol: http/protobuf
     ;
-    try applyYamlString(&cfg, src);
+    try applyYamlString(&cfg, std.testing.allocator, src);
     try std.testing.expectEqual(@as(@TypeOf(cfg.log_level), .warn), cfg.log_level);
     try std.testing.expectEqual(ExporterKind.otlp_http, cfg.traces.exporter);
     try std.testing.expectEqualStrings("http://collector:4318", cfg.traces.otlp.endpoint);

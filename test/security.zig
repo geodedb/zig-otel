@@ -276,6 +276,21 @@ test "L-4: OTLP encoder redacts sensitive resource attribute" {
 }
 
 // -------------------------------------------------------------------------
+// GAP-SEC-M-6: the response-body buffer must only be visible through
+// accessor methods so callers can't read past last_response_body_len
+// and pick up stale bytes from a previous response.
+// -------------------------------------------------------------------------
+
+test "M-6: lastResponseBody returns empty slice on a fresh exporter" {
+    var ex = try otel.exporters.otlp_http.OtlpHttpExporter.init(std.testing.allocator, .{
+        .endpoint = "http://127.0.0.1:4318",
+    });
+    defer ex.deinit();
+    try std.testing.expectEqual(@as(usize, 0), ex.lastResponseBody().len);
+    try std.testing.expectEqual(@as(u16, 0), ex.lastResponseStatus());
+}
+
+// -------------------------------------------------------------------------
 // GAP-SEC-H-5 / GAP-SEC-L-5: PRNG seeding for trace IDs and exporter
 // backoff jitter must be CSPRNG-backed at construction time, not a
 // hardcoded constant. Otherwise:

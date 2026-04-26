@@ -34,15 +34,27 @@ pub const OtlpHttpExporter = struct {
     io: ?std.Io = null,
     prng: std.Random.DefaultPrng,
     closed: bool = false,
-    /// Last response surface — populated by `httpTransportImpl` after
-    /// every real fetch. Useful when debugging "we got 200 but the
-    /// trace never appeared in the backend" situations: the body
-    /// often contains an OTLP `ExportTracePartialSuccess` with a
-    /// non-zero `rejected_spans` count and a free-form error message.
-    /// Stored in a fixed buffer so no allocation lifetime to track.
+    /// GAP-SEC-M-6: the response-body buffer is now read-only via the
+    /// `lastResponseBody`/`lastResponseStatus` accessors. The fields
+    /// remain pub for the in-process httpTransportImpl writer (which
+    /// lives in this same file) and the live integration test that
+    /// reads them, but the accessor surface is what callers should
+    /// use.
     last_response_status: u16 = 0,
     last_response_body: [1024]u8 = undefined,
     last_response_body_len: usize = 0,
+
+    /// Returns the most recent response body slice (empty when none
+    /// captured). The slice is valid until the next `expSpans` call.
+    pub fn lastResponseBody(self: *const OtlpHttpExporter) []const u8 {
+        return self.last_response_body[0..self.last_response_body_len];
+    }
+
+    /// Returns the most recent response HTTP status code (0 when none
+    /// captured).
+    pub fn lastResponseStatus(self: *const OtlpHttpExporter) u16 {
+        return self.last_response_status;
+    }
 
     pub fn init(allocator: std.mem.Allocator, config: OtlpConfig) !OtlpHttpExporter {
         if (config.endpoint.len == 0) return error.InvalidEndpoint;

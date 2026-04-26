@@ -223,16 +223,17 @@ test "OTLP/HTTPS live export to remote collector" {
 
     const result = try exporter.spanExporter().exportSpans(batch[0..]);
 
-    std.debug.print("  http.status = {d}\n", .{exporter.last_response_status});
-    std.debug.print("  resp.bytes  = {d}\n", .{exporter.last_response_body_len});
+    std.debug.print("  http.status = {d}\n", .{exporter.lastResponseStatus()});
+    const resp_full = exporter.lastResponseBody();
+    std.debug.print("  resp.bytes  = {d}\n", .{resp_full.len});
     // GAP-SEC-H-7: only dump the response body when the export *failed*
     // (the success path's body is always empty for OTLP/HTTPS), and
     // even then suppress it if it looks like it might contain
     // credentials. This prevents Authorization headers (which some
     // collectors echo on HTTP errors) from leaking into CI logs.
     const success = result == .success or result == .partial_success;
-    if (!success and exporter.last_response_body_len > 0) {
-        const resp = exporter.last_response_body[0..exporter.last_response_body_len];
+    if (!success and resp_full.len > 0) {
+        const resp = resp_full;
         if (scrubCredentials(resp)) {
             std.debug.print("  resp.body   = (suppressed: credential pattern detected)\n", .{});
         } else {
@@ -259,7 +260,7 @@ test "OTLP/HTTPS live export to remote collector" {
     // `partial_success` submessage when some were rejected. Anything
     // longer than ~32 bytes likely contains a rejection reason — fail
     // the test so CI surfaces it.
-    if (exporter.last_response_body_len > 32) {
+    if (exporter.lastResponseBody().len > 32) {
         std.debug.print("collector returned a long response body — likely a partial-success rejection. See body above.\n", .{});
         return error.PartialSuccessReported;
     }

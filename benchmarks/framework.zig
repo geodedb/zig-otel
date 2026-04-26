@@ -72,6 +72,10 @@ pub const Scenario = struct {
 
 pub const Context = struct {
     allocator: std.mem.Allocator,
+    /// The std.Io view threaded through from `runScenarios`. Scenarios
+    /// that need to do networking (e.g. spawning a loopback server)
+    /// read this; pure-CPU scenarios can ignore it.
+    io: Io,
     scenario: *const Scenario,
     iteration_index: u32,
     user_data: ?*anyopaque,
@@ -310,6 +314,7 @@ pub fn runScenarios(
 
             var ctx = Context{
                 .allocator = iter_allocator,
+                .io = io,
                 .scenario = &iter_scenario,
                 .iteration_index = iter,
                 .user_data = scenario.user_data,

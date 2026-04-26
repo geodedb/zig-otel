@@ -140,9 +140,13 @@ fn runMulti(self: *LoopbackServer) void {
             return;
         };
         defer stream.close(self.io);
-
-        if (self.shutdown_requested.load(.acquire)) return;
-
+        // Always handle the request to completion, even if shutdown
+        // was signaled between `accept()` returning and now. Closing
+        // the stream mid-handshake leaves the wake-up client (or any
+        // in-flight real client) blocked forever waiting for the HTTP
+        // response head — `std.http.Client.fetch` does not surface
+        // peer-close on the head read as an error in Zig 0.16.
+        // Cancellation happens at the top of the loop instead.
         handleOne(self, &stream) catch |err| {
             if (self.err == null) self.err = err;
             // Continue accepting; one bad request shouldn't kill the
@@ -180,24 +184,35 @@ fn handleOne(self: *LoopbackServer, stream: *std.Io.net.Stream) !void {
     });
 }
 
-/// Send a sentinel HTTP request to ourselves so the parked
-/// `accept()` returns cleanly. Best-effort — if any step fails the
-/// server thread will eventually time out or notice the flag on its
-/// next iteration, but this is the fast path. Uses a fresh
-/// `std.Io.Threaded` so it doesn't collide with the server's own
-/// io view that's parked in accept.
+/// Wake the parked `accept()` by opening a raw TCP connection to
+/// our own port and immediately closing it. Linux-only — that
+/// matches the bench's required platform per the audit (`benchmarks
+/// /framework.zig` already restricts RSS reading to Linux).
+///
+/// Uses raw `std.os.linux` syscalls instead of `std.http.Client.fetch`
+/// because fetch blocks on the HTTP response head read, which races
+/// with the server thread's shutdown-flag check: if the server
+/// already exited at its loop top before our fetch issues, no one
+/// will ever respond and fetch deadlocks. A bare `connect` returns
+/// as soon as the kernel finishes the 3-way handshake (microseconds
+/// on loopback, or `ECONNREFUSED` once the listener is closed),
+/// never waits on an HTTP response, and never hangs.
 fn wake(self: *LoopbackServer) void {
-    var threaded = std.Io.Threaded.init(self.allocator, .{});
-    defer threaded.deinit();
-    var client: std.http.Client = .{ .allocator = self.allocator, .io = threaded.io() };
-    defer client.deinit();
-    var ep_buf: [64]u8 = undefined;
-    const ep = self.endpoint(&ep_buf) catch return;
-    _ = client.fetch(.{
-        .location = .{ .url = ep },
-        .method = .POST,
-        .payload = "",
-    }) catch {};
+    const linux = std.os.linux;
+    const sock_rc = linux.socket(linux.AF.INET, linux.SOCK.STREAM | linux.SOCK.CLOEXEC, 0);
+    if (std.posix.errno(sock_rc) != .SUCCESS) return;
+    const sock: i32 = @intCast(sock_rc);
+    defer _ = linux.close(sock);
+
+    const addr_in: linux.sockaddr.in = .{
+        .port = std.mem.nativeToBig(u16, self.bound_port),
+        .addr = std.mem.nativeToBig(u32, 0x7F000001), // 127.0.0.1
+    };
+    _ = linux.connect(sock, @ptrCast(&addr_in), @sizeOf(linux.sockaddr.in));
+    // Best-effort. Result ignored: if the connection succeeds the
+    // server's accept returns and processes (or skips) the half-
+    // open stream; if it fails (e.g. listener already closed by a
+    // racing stop()), the server thread is already on its way out.
 }
 
 // ----------------------------------------------------------------------------

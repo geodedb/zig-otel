@@ -33,15 +33,22 @@ pub const Entry = struct {
 /// Strings are duplicated into `arena` so callers can free their inputs.
 /// Iteration order matches insertion order; later writes to the same key
 /// overwrite the earlier value in place (counted as one slot).
+///
+/// Lookup uses an O(1) hash index built over the arena-owned keys, so
+/// `put`/`getString` cost stays constant even at the 128-entry limit.
+/// The index keys alias the entry keys (same arena bytes), so there is
+/// only one duplication per inserted key.
 pub const AttributeSet = struct {
     arena: std.heap.ArenaAllocator,
     entries: std.ArrayList(Entry),
+    index: std.StringHashMapUnmanaged(u32),
     dropped: u32,
 
     pub fn init(allocator: std.mem.Allocator) AttributeSet {
         return .{
             .arena = std.heap.ArenaAllocator.init(allocator),
             .entries = .empty,
+            .index = .empty,
             .dropped = 0,
         };
     }
@@ -49,6 +56,7 @@ pub const AttributeSet = struct {
     pub fn deinit(self: *AttributeSet) void {
         const child = self.arena.child_allocator;
         self.entries.deinit(child);
+        self.index.deinit(child);
         self.arena.deinit();
     }
 
@@ -57,13 +65,11 @@ pub const AttributeSet = struct {
     }
 
     pub fn getString(self: *const AttributeSet, key: []const u8) ?[]const u8 {
-        for (self.entries.items) |e| {
-            if (std.mem.eql(u8, e.key, key)) {
-                return switch (e.value) {
-                    .string => |s| s,
-                    else => null,
-                };
-            }
+        if (self.index.get(key)) |idx| {
+            return switch (self.entries.items[idx].value) {
+                .string => |s| s,
+                else => null,
+            };
         }
         return null;
     }
@@ -122,21 +128,26 @@ pub const AttributeSet = struct {
             else => {},
         }
         const arena_alloc = self.arena.allocator();
-        const owned_key = try arena_alloc.dupe(u8, key);
-        const owned_value = try dupValue(arena_alloc, value);
 
-        for (self.entries.items, 0..) |e, i| {
-            if (std.mem.eql(u8, e.key, key)) {
-                self.entries.items[i].value = owned_value;
-                return;
-            }
+        // Look up first so the overwrite path never duplicates the key
+        // into the arena. Without this the previous implementation
+        // dropped a key-dupe per overwrite, eventually saturating the
+        // arena for long-lived spans (P0-1 / P1-7).
+        if (self.index.get(key)) |idx| {
+            self.entries.items[idx].value = try dupValue(arena_alloc, value);
+            return;
         }
 
         if (self.entries.items.len >= max_attributes) {
             self.dropped +%= 1;
             return;
         }
-        try self.entries.append(self.arena.child_allocator, .{ .key = owned_key, .value = owned_value });
+
+        const owned_key = try arena_alloc.dupe(u8, key);
+        const owned_value = try dupValue(arena_alloc, value);
+        const child = self.arena.child_allocator;
+        try self.entries.append(child, .{ .key = owned_key, .value = owned_value });
+        try self.index.put(child, owned_key, @intCast(self.entries.items.len - 1));
     }
 
     fn dupValue(arena: std.mem.Allocator, value: Value) !Value {

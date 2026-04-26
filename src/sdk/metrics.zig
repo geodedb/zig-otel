@@ -57,6 +57,11 @@ const InstrumentBackend = struct {
     scope: trace_api.InstrumentationScope,
     /// Stable since this slice is owned by the provider's arena.
     points: std.ArrayList(AggregatedPoint),
+    /// Hot-path lookup: fingerprint of the canonical (sorted) attribute
+    /// set -> index into `points`. Built lazily on the first miss for
+    /// each unique attribute combination. Hit-path lookup is O(1) and
+    /// does not allocate. See `attrFingerprint`.
+    points_index: std.AutoHashMapUnmanaged(u64, u32) = .empty,
     is_monotonic: bool = true,
     /// Back-pointer so instrument operations can route through the
     /// provider without a threadlocal.
@@ -76,6 +81,7 @@ const InstrumentBackend = struct {
     pub fn deinit(self: *InstrumentBackend, allocator: std.mem.Allocator) void {
         for (self.points.items) |*pt| pt.deinit(allocator);
         self.points.deinit(allocator);
+        self.points_index.deinit(allocator);
         if (self.devnw_name) |n| allocator.free(n);
     }
 };
@@ -260,13 +266,16 @@ pub const MeterProvider = struct {
     }
 
     fn pointFor(self: *MeterProvider, inst: *InstrumentBackend, attributes: []const attrs_mod.Entry, now: u64) !*AggregatedPoint {
-        const key = try attributeKey(self.allocator, attributes);
-        for (inst.points.items) |*pt| {
-            if (std.mem.eql(u8, pt.attribute_key, key)) {
-                self.allocator.free(key);
-                return pt;
-            }
+        // Hit path: zero-alloc canonical fingerprint -> O(1) index lookup.
+        const fp = attrFingerprint(attributes);
+        if (inst.points_index.get(fp)) |idx| {
+            return &inst.points.items[idx];
         }
+        // Miss path: build the formatted key for storage and append a
+        // new point. attribute_key remains useful for stable
+        // diagnostics and Prometheus exposition; only this path pays
+        // the allocation cost.
+        const key = try attributeKey(self.allocator, attributes);
         var attr_set = attrs_mod.AttributeSet.init(self.allocator);
         for (attributes) |entry| try attr_set.put(entry.key, entry.value);
         const pt: AggregatedPoint = .{
@@ -289,7 +298,9 @@ pub const MeterProvider = struct {
             },
         };
         try inst.points.append(self.allocator, pt);
-        return &inst.points.items[inst.points.items.len - 1];
+        const idx: u32 = @intCast(inst.points.items.len - 1);
+        try inst.points_index.put(self.allocator, fp, idx);
+        return &inst.points.items[idx];
     }
 };
 
@@ -317,6 +328,79 @@ fn sanitizeMetricName(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
         out[off + i] = if (ok) c else '_';
     }
     return out;
+}
+
+/// Compute a 64-bit canonical fingerprint of an attribute set without
+/// allocating. The fingerprint is order-independent: the entries are
+/// hashed in key-sorted order, so two equal sets in different
+/// insertion orders produce the same value. Keys are case-sensitive,
+/// and value bytes are mixed in via `Wyhash.update`. With ≤1024
+/// distinct points per instrument the birthday-collision probability
+/// is < 2^-44; we accept this as the bound on the hit-path's fast
+/// integer lookup. The expensive verification (deep `attribute_key`
+/// equality) is deliberately skipped on the hit path.
+fn attrFingerprint(entries: []const attrs_mod.Entry) u64 {
+    if (entries.len == 0) return 0;
+    var idx_buf: [attrs_mod.max_attributes]u8 = undefined;
+    const n = @min(entries.len, attrs_mod.max_attributes);
+    for (idx_buf[0..n], 0..) |*slot, i| slot.* = @intCast(i);
+    const Less = struct {
+        e: []const attrs_mod.Entry,
+        pub fn lt(ctx: @This(), a: u8, b: u8) bool {
+            return std.mem.order(u8, ctx.e[a].key, ctx.e[b].key) == .lt;
+        }
+    };
+    std.sort.pdq(u8, idx_buf[0..n], Less{ .e = entries }, Less.lt);
+
+    var hasher = std.hash.Wyhash.init(0xC0FFEE);
+    for (idx_buf[0..n]) |i| {
+        const e = entries[i];
+        hasher.update(e.key);
+        hasher.update("=");
+        hashValue(&hasher, e.value);
+        hasher.update("|");
+    }
+    return hasher.final();
+}
+
+fn hashValue(h: *std.hash.Wyhash, v: attrs_mod.Value) void {
+    switch (v) {
+        .string => |s| {
+            h.update("s:");
+            h.update(s);
+        },
+        .bool => |b| {
+            h.update("b:");
+            h.update(if (b) "1" else "0");
+        },
+        .int => |i| {
+            h.update("i:");
+            h.update(std.mem.asBytes(&i));
+        },
+        .double => |d| {
+            h.update("d:");
+            h.update(std.mem.asBytes(&d));
+        },
+        .string_array => |arr| {
+            h.update("S:");
+            for (arr) |s| {
+                h.update(s);
+                h.update(",");
+            }
+        },
+        .bool_array => |arr| {
+            h.update("B:");
+            for (arr) |b| h.update(if (b) "1" else "0");
+        },
+        .int_array => |arr| {
+            h.update("I:");
+            h.update(std.mem.sliceAsBytes(arr));
+        },
+        .double_array => |arr| {
+            h.update("D:");
+            h.update(std.mem.sliceAsBytes(arr));
+        },
+    }
 }
 
 fn attributeKey(allocator: std.mem.Allocator, entries: []const attrs_mod.Entry) ![]u8 {

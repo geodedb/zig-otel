@@ -33,6 +33,9 @@ pub fn main(init: std.process.Init) !void {
         .{ .name = "micro_attr_put_new", .layer = .micro, .ops_per_iteration = 100, .run = benchAttrPutNew },
         .{ .name = "micro_attr_put_update", .layer = .micro, .ops_per_iteration = 10_000, .run = benchAttrPutUpdate },
         .{ .name = "micro_attr_put_near_limit", .layer = .micro, .ops_per_iteration = 5_000, .run = benchAttrPutNearLimit },
+        .{ .name = "micro_counter_add_no_attrs", .layer = .micro, .ops_per_iteration = 10_000, .run = benchCounterAddNoAttrs },
+        .{ .name = "micro_counter_add_4_attrs_hit", .layer = .micro, .ops_per_iteration = 10_000, .run = benchCounterAdd4AttrsHit },
+        .{ .name = "micro_histogram_record_4_attrs_hit", .layer = .micro, .ops_per_iteration = 10_000, .run = benchHistogramRecord4AttrsHit },
         .{ .name = "micro_next_trace_id", .layer = .micro, .ops_per_iteration = 100_000, .zero_alloc_expected = true, .run = benchNextTraceId },
         .{ .name = "micro_next_span_id", .layer = .micro, .ops_per_iteration = 100_000, .zero_alloc_expected = true, .run = benchNextSpanId },
         .{ .name = "micro_clock_unix_nano", .layer = .micro, .ops_per_iteration = 100_000, .zero_alloc_expected = true, .run = benchClockUnixNano },
@@ -97,6 +100,67 @@ fn benchAttrPutNearLimit(ctx: *framework.Context) anyerror!void {
         try set.put("hot", .{ .int = @intCast(i) });
     }
     std.mem.doNotOptimizeAway(set.entries.items.len);
+}
+
+// ----------------------------------------------------------------------------
+// Metrics — pointFor hit path
+// ----------------------------------------------------------------------------
+
+fn benchCounterAddNoAttrs(ctx: *framework.Context) anyerror!void {
+    if (@import("build_options").otel_disabled) return;
+    var resource = try otel.sdk.resource.defaultResource(ctx.allocator);
+    defer resource.deinit();
+    var mp = try otel.sdk.metrics.MeterProvider.init(ctx.allocator, .{ .resource = &resource });
+    defer mp.deinit();
+    const m = mp.meter(.{ .name = "bench" });
+    const c = try m.counter(.{ .name = "ops", .kind = .counter });
+    var i: u64 = 0;
+    while (i < ctx.scenario.ops_per_iteration) : (i += 1) {
+        c.add(1, &.{});
+    }
+}
+
+fn benchCounterAdd4AttrsHit(ctx: *framework.Context) anyerror!void {
+    if (@import("build_options").otel_disabled) return;
+    var resource = try otel.sdk.resource.defaultResource(ctx.allocator);
+    defer resource.deinit();
+    var mp = try otel.sdk.metrics.MeterProvider.init(ctx.allocator, .{ .resource = &resource });
+    defer mp.deinit();
+    const m = mp.meter(.{ .name = "bench" });
+    const c = try m.counter(.{ .name = "requests", .kind = .counter });
+    const attributes = [_]attrs.Entry{
+        .{ .key = "http.method", .value = .{ .string = "GET" } },
+        .{ .key = "http.status_code", .value = .{ .int = 200 } },
+        .{ .key = "http.route", .value = .{ .string = "/api/v1/items" } },
+        .{ .key = "service.name", .value = .{ .string = "demo" } },
+    };
+    // Prime the point so we measure the hit path.
+    c.add(1, attributes[0..]);
+    var i: u64 = 0;
+    while (i < ctx.scenario.ops_per_iteration) : (i += 1) {
+        c.add(1, attributes[0..]);
+    }
+}
+
+fn benchHistogramRecord4AttrsHit(ctx: *framework.Context) anyerror!void {
+    if (@import("build_options").otel_disabled) return;
+    var resource = try otel.sdk.resource.defaultResource(ctx.allocator);
+    defer resource.deinit();
+    var mp = try otel.sdk.metrics.MeterProvider.init(ctx.allocator, .{ .resource = &resource });
+    defer mp.deinit();
+    const m = mp.meter(.{ .name = "bench" });
+    const h = try m.histogram(.{ .name = "latency_ms", .kind = .histogram });
+    const attributes = [_]attrs.Entry{
+        .{ .key = "http.method", .value = .{ .string = "GET" } },
+        .{ .key = "http.status_code", .value = .{ .int = 200 } },
+        .{ .key = "http.route", .value = .{ .string = "/api/v1/items" } },
+        .{ .key = "service.name", .value = .{ .string = "demo" } },
+    };
+    h.record(12.5, attributes[0..]);
+    var i: u64 = 0;
+    while (i < ctx.scenario.ops_per_iteration) : (i += 1) {
+        h.record(@floatFromInt(i % 1000), attributes[0..]);
+    }
 }
 
 // ----------------------------------------------------------------------------

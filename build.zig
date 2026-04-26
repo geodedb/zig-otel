@@ -430,35 +430,93 @@ pub fn build(b: *std.Build) void {
     const remote_step = b.step("test-remote-otlp", "Run live OTLP exporter tests against a remote collector (self-skips without env vars)");
     remote_step.dependOn(&remote_test_run.step);
 
-    // The bench/scale-bench/compare-bench jobs in CI are advisory and
-    // gated to default branch / schedule / RUN_BENCH=true. Until the
-    // benchmark/ directory's bench.zig is wired against the current API
-    // (it is template scaffolding from the zig-template), provide
-    // pass-through stubs that succeed without doing anything. The CI
-    // jobs are `allow_failure: true` anyway, but a clean pass keeps
-    // the dashboard green.
-    const bench_step = b.step("bench", "Run benchmark suite (stub — wired in a follow-up)");
-    bench_step.dependOn(&fmt_check.step); // any always-succeed step
+    // ------------------------------------------------------------------
+    // Benchmark artifact graph (zero-overhead-when-disabled bench
+    // system). The framework.zig module is std-only and shared across
+    // every bench artifact. Each artifact takes its own .root_source_file
+    // and imports the otel module + framework module + build_options.
+    //
+    // CI catalog compatibility:
+    //   - `bench` is preserved as an alias for `bench-ci`
+    //   - `scale-bench` is preserved as an alias for `bench-ci`
+    //   - `bench-micro` and `compare-bench` are real steps now (no
+    //     longer fmt_check pass-throughs)
+    // ------------------------------------------------------------------
+    const framework_module = b.createModule(.{
+        .root_source_file = b.path("benchmarks/framework.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
 
-    const bench_micro_step = b.step("bench-micro", "Run micro-benchmarks (stub)");
-    bench_micro_step.dependOn(&fmt_check.step);
+    const BenchArtifact = struct {
+        name: []const u8,
+        root: []const u8,
+        needs_otel: bool = true,
+    };
+    const bench_artifacts = [_]BenchArtifact{
+        .{ .name = "bench-micro-exe", .root = "benchmarks/micro/main.zig" },
+        .{ .name = "bench-integration-exe", .root = "benchmarks/integration/main.zig" },
+        .{ .name = "bench-ab-exe", .root = "benchmarks/compare_bench.zig" },
+        .{ .name = "bench-smoke-exe", .root = "benchmarks/smoke.zig" },
+        .{ .name = "bench-compare-exe", .root = "benchmarks/compare.zig", .needs_otel = false },
+        .{ .name = "bench-hard-criteria-exe", .root = "benchmarks/check_hard_criteria.zig", .needs_otel = false },
+    };
 
-    const scale_bench_step = b.step("scale-bench", "Run scale benchmarks (stub)");
-    scale_bench_step.dependOn(&fmt_check.step);
+    var bench_runs: [bench_artifacts.len]*std.Build.Step.Run = undefined;
+    for (bench_artifacts, 0..) |a, idx| {
+        var imports: std.ArrayList(std.Build.Module.Import) = .empty;
+        imports.append(b.allocator, .{ .name = "framework", .module = framework_module }) catch @panic("OOM");
+        if (a.needs_otel) {
+            imports.append(b.allocator, .{ .name = "otel", .module = otel_module }) catch @panic("OOM");
+            imports.append(b.allocator, .{ .name = "build_options", .module = build_options_module }) catch @panic("OOM");
+        }
+        const m = b.createModule(.{
+            .root_source_file = b.path(a.root),
+            .target = target,
+            .optimize = optimize,
+            .imports = imports.items,
+        });
+        const exe = b.addExecutable(.{ .name = a.name, .root_module = m });
+        const run = b.addRunArtifact(exe);
+        if (b.args) |args| run.addArgs(args);
+        bench_runs[idx] = run;
+    }
 
-    const compare_bench_step = b.step("compare-bench", "Compare benchmark output to baseline (stub)");
-    compare_bench_step.dependOn(&fmt_check.step);
+    const bench_micro_step = b.step("bench-micro", "Run the micro-benchmark suite");
+    bench_micro_step.dependOn(&bench_runs[0].step);
+
+    const bench_integration_step = b.step("bench-integration", "Run the integration-benchmark suite");
+    bench_integration_step.dependOn(&bench_runs[1].step);
+
+    const bench_ab_step = b.step("bench-ab", "Run the comparison-layer A/B harness (use -Dotel_disabled=true|false)");
+    bench_ab_step.dependOn(&bench_runs[2].step);
+
+    const bench_smoke_step = b.step("bench-smoke", "Run a one-round smoke check across all bench artifacts");
+    bench_smoke_step.dependOn(&bench_runs[3].step);
+
+    const compare_bench_step = b.step("compare-bench", "Compare two ResultDocument JSON files for regressions");
+    compare_bench_step.dependOn(&bench_runs[4].step);
+
+    const hard_criterion_step = b.step("hard-criterion-check", "Verify comptime-disabled and level-1 hard pass criteria from two ref JSON files");
+    hard_criterion_step.dependOn(&bench_runs[5].step);
+
+    const bench_ci_step = b.step("bench-ci", "Run the full bench suite (micro + integration) for CI");
+    bench_ci_step.dependOn(bench_micro_step);
+    bench_ci_step.dependOn(bench_integration_step);
+
+    // Preserve historical step names as aliases. The shared GitLab CI
+    // catalog dispatches on these names; renaming would break the
+    // matrix. `bench` and `scale-bench` both fold into bench-ci.
+    const bench_step = b.step("bench", "Alias for bench-ci");
+    bench_step.dependOn(bench_ci_step);
+    const scale_bench_step = b.step("scale-bench", "Alias for bench-ci (CI catalog compat)");
+    scale_bench_step.dependOn(bench_ci_step);
 
     // Tests for the bench framework itself (universal-schema envelope,
     // zero-alloc assertion, --ops override). The framework is a
     // standalone std-only module; testing it does not require any otel
     // imports, so the build step stays lightweight.
-    const framework_test_module = b.createModule(.{
-        .root_source_file = b.path("benchmarks/framework.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const framework_test = b.addTest(.{ .root_module = framework_test_module });
+    const framework_test = b.addTest(.{ .root_module = framework_module });
     if (tsan) framework_test.root_module.sanitize_thread = true;
     const framework_test_step = b.step("bench-framework-test", "Run benchmark framework unit tests");
     framework_test_step.dependOn(&b.addRunArtifact(framework_test).step);

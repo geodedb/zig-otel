@@ -1,7 +1,9 @@
 # Security Gap Analysis — `otel` (Zig 0.16 OpenTelemetry SDK)
 
-**Last updated:** 2026-04-26
-**Source:** `docs/audit/SECURITY_REVIEW.md` (Phase 3 security-reviewer report — 22 confirmed, 3 suspected, 25 total)
+**Last updated:** 2026-04-26 PM
+**Source:** `docs/audit/SECURITY_REVIEW.md` (Phase 3 security-reviewer report — 22 confirmed, 3 suspected, 25 total) + Phase 3 PM re-audit (4 new bench-only findings)
+
+**Verdict (2026-04-26 PM):** 22 actionable code-side findings closed 2026-04-26 AM; Phase 3 PM re-audit found 4 new (1 Low, 3 Info, all bench-only). Production attack surface unchanged. H-7 operator action and M-3 upstream signing remain open.
 **Repository:** `gitlab.com/devnw/zig/otel`
 **Scoring:** Risk Score = Likelihood (1–5) x Impact (1–5).
 **Confidentiality policy:** This document is public. Findings flagged `[CONFIDENTIAL]` are tracked in private GitLab issues; this doc lists their title, status, and issue URL only — no exploit specifics, no PoC strings, no attack scenarios.
@@ -74,10 +76,11 @@ Closed and Won't-Do entries have been moved to `docs/GAP_ANALYSIS_RESOLVED.md` (
 
 These actions are owned by **<benji@codepros.org>**. Items 3 and 4 are satisfied by the 2026-04-26 closure run; items 1 and 2 remain operator action and are tracked here as the only outstanding security work.
 
-1. **Rotate** the `OTEL_INTEGRATION_AUTH_HEADER` GitLab CI/CD variable (H-7). Treat the previous value as compromised. **Status: PENDING — operator action; not a code change.**
-2. **Audit** the last 30 days of GitLab CI logs for the bearer-token leakage pattern (`Bearer eyJ`, `gitlab-o11y.com`). **Status: PENDING — operator action; not a code change.**
+1. **Rotate** the `OTEL_INTEGRATION_AUTH_HEADER` GitLab CI/CD variable (H-7). Treat the previous value as compromised. **Deadline: 2026-05-03 (7 days from 2026-04-26).** **Status: PENDING — operator action; not a code change.**
+2. **Audit** the last 90 days of GitLab CI logs for the bearer-token leakage pattern (`Authorization`, `Bearer<space>`, `5333796.otel.gitlab-o11y.com`) BEFORE rotation completes. **Status: PENDING — operator action; not a code change.**
 3. **Scrub** the `last_response_body` printer in `test/remote_otlp.zig` *before* the next default-branch CI run. **Status: DONE** (`43330db`).
 4. **Block the next release** on landing fixes for C-1, C-2, C-3, H-1, M-5. **Status: DONE** — all five landed (`d19b65b`, `e508627`, `e508627`, `553502b`, `ea94ef9`).
+5. **Quarterly token-rotation cron**: schedule recurring rotation of `OTEL_INTEGRATION_AUTH_HEADER`. **Next rotation: 2026-07-26.** Owner: <benji@codepros.org>.
 
 ---
 
@@ -194,6 +197,23 @@ All Tier 1–3 items from the Step 1 plan landed in this run. The remaining road
 - **H-7 ↔ M-5 ↔ M-6** — exfiltration chain: SSRF response (M-5) → `last_response_body` (M-6) → CI logs (H-7). All three closed by independent commits (`ea94ef9`, `627947d`, `43330db` code side); operator-side rotation for H-7 still pending.
 - **M-2 ↔ M-3** — sibling supply-chain hardening gaps. M-2: `252481c` (generators reproducible); M-3: `f82e186` (osv-scanner) consumer side.
 - **L-7 ↔ M-5 ↔ L-6** — same `Config.validate` function; bundle the validation hardening. All three closed by `ea94ef9`.
+
+---
+
+## 6.1 Phase 3 re-audit findings (2026-04-26 PM)
+
+Re-audit run after the 2026-04-26 AM closure. Scope: full re-scan (gitleaks 0 leaks across 68 commits, semgrep 0 findings, LoopbackServer production-gating PASS). Production attack surface unchanged. Four new findings, all bench-only:
+
+| ID   | Severity | Risk | Title                                                                                  | File                                              | Issue URL                                                            | Status |
+|------|----------|-----:|----------------------------------------------------------------------------------------|---------------------------------------------------|----------------------------------------------------------------------|--------|
+| S-N1 | Info     | 1    | Bench loopback `wake()` uses raw Linux syscalls; track Zig stdlib `Server.shutdown()`  | `benchmarks/integration/loopback_server.zig:200-216` | <https://gitlab.com/devnw/zig/otel/-/work_items/119> | Open — track upstream stdlib |
+| S-N2 | Info     | 1    | Bench loopback endpoint formats unauthenticated `http://` (by design — Info note only) | `benchmarks/integration/loopback_server.zig:73-75`   | <https://gitlab.com/devnw/zig/otel/-/work_items/121> | Open — note only, no fix required |
+| S-N3 | Info     | 1    | `LoopbackServer.err` cross-thread field unguarded; refactor to atomic post-Zig-0.17    | `benchmarks/integration/loopback_server.zig:65-70,139,151` | <https://gitlab.com/devnw/zig/otel/-/work_items/125> | Open — track Zig 0.17 |
+| S-N4 | Low      | 2    | `build.zig.zon` `paths` ships `benchmarks/` in tarball — VERDICT: keep                 | `build.zig.zon:49-66`                                | <https://gitlab.com/devnw/zig/otel/-/work_items/127> | Open — doc-only follow-up |
+
+**S-N4 verdict:** **KEEP `benchmarks/` in `build.zig.zon` paths** — negligible size, useful for consumers, zero production exploit path. Document the trade-off in `docs/DEPENDENCIES.md` as the only follow-up.
+
+**Severity-only entries here.** Per project policy, exploit detail is not in this public doc; see the per-issue bodies on GitLab for context (none of S-N1..S-N4 are confidential — bench-only, no production attack path).
 
 ---
 

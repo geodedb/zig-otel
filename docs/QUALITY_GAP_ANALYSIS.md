@@ -12,15 +12,16 @@ PriorityScore = `SeverityWeight × BlastRadius × FixConfidence`
 
 ## Summary
 
-**Total findings:** 31. **Filed issues:** 24 (3 findings folded into the
-dead-code cleanup bundle: M3, L7, L10).
+**Total findings:** 40. **GitLab issues:** 33 (3 findings folded into the
+dead-code cleanup bundle: M3, L7, L10; 9 net-new from the 2026-04-26
+re-audit: Q32-Q38, DOC-1, DOC-2).
 
 | Severity | Count |
 |----------|-------|
 | Critical | 3     |
 | High     | 8     |
-| Medium   | 10    |
-| Low      | 10    |
+| Medium   | 12    |
+| Low      | 17    |
 
 **Top 5 risks (by PriorityScore):**
 
@@ -29,6 +30,15 @@ dead-code cleanup bundle: M3, L7, L10).
 3. **C2** — Metric export pipeline half-built; `MetricReader.collect` never invoked. Score 24.
 4. **H1** — `OtlpConfig.compression` / `skip_tls_verify` / `insecure` are dead config fields. Score 24.
 5. **H2** — 4-way attribute formatter duplication; arrays silently dropped. Score 24.
+
+> Phase 3 (2026-04-26 PM) net-new top finding: **Q35** — Linux comptime
+> guard around `wake()` raw syscalls, Score 8. Highest score of the
+> net-new batch; below the global Tier-1 cutoff but the most urgent of
+> the loopback-server nits.
+
+**Loopback server quality verdict (2026-04-26 PM):** ACCEPTABLE AS-IS
+for benchmark-tier code. Three nits in Q35 / Q37 / Q38 are worth fixing
+in-place; the rest of the file is well-factored.
 
 **Cross-reference with Security Audit:** Quality M9 (`applyEnv`
 thread-local slice aliasing) is the same defect as **Security C-1**
@@ -75,6 +85,31 @@ issue #34.
 single mechanical dead-code cleanup PR (#68) per the Phase 3
 recommendation; they are also listed individually above for
 traceability.
+
+## Phase 3 re-audit findings (2026-04-26 PM)
+
+Net-new findings produced by the 2026-04-26 re-audit, focused on the
+benchmarks suite (post F-2..F-5 landing) and on documentation drift
+since the original Phase 3 pass. Loopback server file
+(`benchmarks/integration/loopback_server.zig`) was assessed
+holistically — verdict: ACCEPTABLE AS-IS for benchmark-tier code; the
+3 nits below (Q35 / Q37 / Q38) are worth fixing in-place.
+
+| Q-ID  | Severity | Score | Category        | Finding                                                                       | Component               | Evidence                                              | Issue URL                                                  | Status |
+|-------|----------|-------|-----------------|-------------------------------------------------------------------------------|-------------------------|-------------------------------------------------------|------------------------------------------------------------|--------|
+| Q35   | Medium   | 8     | ci-cd           | Add Linux comptime guard around `wake()` raw syscalls (highest net-new)       | benchmarks/integration  | `benchmarks/integration/loopback_server.zig:200-216`  | <https://gitlab.com/devnw/zig/otel/-/work_items/116>          | Open   |
+| Q32   | Low      | 3     | cleanup         | DRY: hoist duplicated `fakeTransport` into `framework.fakeOtlpTransport`      | benchmarks              | `benchmarks/integration/main.zig:263-273` + `benchmarks/compare_bench.zig:290-300` | <https://gitlab.com/devnw/zig/otel/-/work_items/113> | Open |
+| Q33   | Low      | 2     | maintainability | Eliminate file-scope global `g_loopback_server`; pass via `Scenario.user_data`| benchmarks/integration  | `benchmarks/integration/main.zig:32`                  | <https://gitlab.com/devnw/zig/otel/-/work_items/114>          | Open   |
+| Q34   | Low      | 2     | api-contract    | Enforce `LoopbackServer.err` join-only contract via debug-assert              | benchmarks/integration  | `benchmarks/integration/loopback_server.zig:65-85`    | <https://gitlab.com/devnw/zig/otel/-/work_items/115>          | Open   |
+| Q36   | Low      | 2     | maintainability | Replace fixed-size `[sync.len + 16]Scenario` with comptime `sync ++ async`    | benchmarks/integration  | `benchmarks/integration/main.zig:60-65`               | <https://gitlab.com/devnw/zig/otel/-/work_items/117>          | Open   |
+| Q37   | Low      | 2     | api-contract    | Propagate body-stream errors in `handleOne` (don't `catch {}`)                | benchmarks/integration  | `benchmarks/integration/loopback_server.zig:179`      | <https://gitlab.com/devnw/zig/otel/-/work_items/118>          | Open   |
+| Q38   | Low      | 2     | readability     | Rename `request_count` → `connections_handled` (counts attempts, not OKs)     | benchmarks/integration  | `benchmarks/integration/loopback_server.zig:60-64,150-156` | <https://gitlab.com/devnw/zig/otel/-/work_items/120>     | Open   |
+| DOC-1 | Medium   | n/a   | docs            | Populate CHANGELOG `[Unreleased]` with F-2..F-5 entries                       | docs                    | `CHANGELOG.md`                                        | <https://gitlab.com/devnw/zig/otel/-/work_items/123>          | Open   |
+| DOC-2 | Medium   | n/a   | docs            | README section: runtime kill-switch precedence + async-pool flag + loopback bench mode | docs           | `README.md`                                           | <https://gitlab.com/devnw/zig/otel/-/work_items/124>          | Open   |
+
+> **Sequencing**: Q35 first (only net-new with Score ≥ 8); DOC-1 + DOC-2
+> in parallel with the next docs PR. Q32-Q34 / Q36-Q38 cluster naturally
+> into one bench-cleanup PR (all touch `benchmarks/integration/*`).
 
 ## Findings by Category
 

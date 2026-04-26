@@ -137,3 +137,15 @@ optional sections are listed under "Limitations" with a short rationale.
 - **Profiles**: signal types and the OTLP exporter path are wired but
   gated behind `-Dotel_profiles=true`. The default build ships an inert
   stub that returns `error.UnsupportedTransport`.
+
+## Bench
+
+The bench harnesses are out-of-spec engineering tooling, not normative
+behavior, but listed here for completeness. The level-6 OTLP/HTTP
+integration bench (`benchmarks/integration/main.zig`) drives the real
+exporter against a self-contained, in-tree threaded HTTP discard server
+(`benchmarks/integration/loopback_server.zig`, Linux-only, no
+third-party dependency); see `docs/DEPENDENCIES.md` for the dependency
+declaration. Optionally run `bench-integration` under `-Dtsan=true` for
+thread-sanitizer coverage of the loopback server's cross-thread `err`
+contract.

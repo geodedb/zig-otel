@@ -2,7 +2,7 @@
 
 > Resolved or invalidated gaps. Source: GitLab issue tracker at <https://gitlab.com/devnw/zig/otel/-/issues>.
 >
-> **Last sync:** 2026-04-26 (Phase 4 of codepros audit + Step 4 of /codepros:gap-close security run)
+> **Last sync:** 2026-04-26 (PM re-audit Phase 4 gap-sync) — adds GAP-BENCH-NOT-WIRED to the functional-closure ledger.
 
 ---
 
@@ -64,6 +64,30 @@ The 16-commit security closure run (`d19b65b..cd9f906`) closed 20 gaps fully and
 - **Generators:** `zig build gen-otlp` and `zig build gen-semconv` deterministic (working tree clean after regen)
 
 Resolution evidence per Gap-ID is captured in `docs/audit/SECURITY_VERIFY.md` §2.
+
+### Phase 3 re-audit signed-off 2026-04-26 PM
+
+Independent re-audit run after the 2026-04-26 AM closure. **Result: GREEN — no production-side findings.**
+
+- **Gitleaks:** **0 leaks** across the full 68-commit history scan.
+- **Semgrep:** **0 findings** on the production tree.
+- **LoopbackServer production-gating check:** **PASS** — bench loopback server is gated to test/bench builds, not present in the consumer runtime path.
+- **New findings:** 4 bench-only (S-N1, S-N2, S-N3 = Info; S-N4 = Low). Tracked on GitLab as #119, #121, #125, #127 — all public, all `area::bench`, none on the production attack surface.
+- **Outstanding from AM run:** H-7 operator rotation (#80, deadline 2026-05-03; quarterly cron next 2026-07-26) and M-3 upstream Sigstore signing (#84) remain open as previously scoped.
+
+Re-audit verdict: **production attack surface unchanged from AM closure**; the 4 new entries are tracked-only hardening notes against the bench harness.
+
+---
+
+## Functional (closed 2026-04-26 PM)
+
+The PM re-audit verified one functional gap closed since the morning sync.
+
+| Gap-ID | Title | Resolution | Issue URL |
+|--------|-------|------------|-----------|
+| GAP-BENCH-NOT-WIRED | bench/bench-micro/scale-bench/compare-bench all run fmt-check, not benchmarks | Six bench artifacts wired in `build.zig:454-505` (`bench-micro`, `bench-integration`, `bench-ab`, `bench-smoke`, `compare-bench`, `hard-criterion-check`) plus a `bench-ci` aggregator. Resolution commits: `cc9592d`, `ac6e79a`, `d255da3`, `41672dd`, `b97cc47`, `69fddf1`, `5926bee`. Verified: `zig build hard-criterion-check` exits 0 (Phase 2). | <https://gitlab.com/devnw/zig/otel/-/issues/78> (closed 2026-04-26 PM) |
+
+> Documentation follow-up tracked separately on issue [#112](https://gitlab.com/devnw/zig/otel/-/issues/112) (GAP-BENCH-LOOPBACK-UNDOCUMENTED) — bench loopback server needs a row in `DEPENDENCIES.md` and a sentence in `SPEC_COMPLIANCE.md`.
 
 ---
 

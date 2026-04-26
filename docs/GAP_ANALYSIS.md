@@ -3,8 +3,8 @@
 > Source of truth: GitLab issue tracker at <https://gitlab.com/devnw/zig/otel/-/issues>
 > This file is a flatfile mirror of issues labelled `gap`. Issue tracker is authoritative.
 >
-> **Last sync:** 2026-04-26 (Phase 4 of codepros audit)
-> **Source:** `docs/audit/GAP_DETECTION.md` (37 Gap-IDs classified by Phase 3)
+> **Last sync:** 2026-04-26 (PM re-audit — Phase 4 gap-sync)
+> **Source:** `docs/audit/GAP_DETECTION.md` (37 Gap-IDs classified by Phase 3) + 1 docs gap added in PM re-audit (GAP-BENCH-LOOPBACK-UNDOCUMENTED)
 
 ## Status / Severity Summary
 
@@ -12,22 +12,24 @@
 |----------|------|----------|-------|
 | Critical | 6 | 0 | 6 |
 | High     | 11 | 0 | 11 |
-| Medium   | 13 | 0 | 13 |
-| Low      | 6  | 1 | 7 |
-| **Total**| **36** | **1** | **37** |
+| Medium   | 12 | 1 | 13 |
+| Low      | 7  | 1 | 8 |
+| **Total**| **36** | **2** | **38** |
+
+> PM re-audit delta (2026-04-26): **GAP-BENCH-NOT-WIRED** (#78, Medium) closed — moved to GAP_ANALYSIS_RESOLVED.md. **GAP-BENCH-LOOPBACK-UNDOCUMENTED** (#112, Low) added.
 
 | Status          | Count |
 |-----------------|-------|
 | Not Implemented | 30    |
 | Partial         | 6     |
-| Implemented     | 1 (moved to GAP_ANALYSIS_RESOLVED.md) |
+| Implemented     | 2 (moved to GAP_ANALYSIS_RESOLVED.md) |
 | Unknown         | 0     |
 
 ## Gap Index (Open)
 
 | Gap-ID | Title | Status | Severity | Issue |
 |--------|-------|--------|----------|-------|
-| GAP-INSTRUMENTATION-SCOPE-PROPAGATION | Tracer scope never reaches SpanState (one-line bug at src/sdk/trace.zig:240) | Not Implemented | Critical | [#1](https://gitlab.com/devnw/zig/otel/-/issues/1) |
+| GAP-INSTRUMENTATION-SCOPE-PROPAGATION | Tracer scope never reaches SpanState (one-line bug at src/sdk/trace.zig:254) | Not Implemented | Critical | [#1](https://gitlab.com/devnw/zig/otel/-/issues/1) |
 | GAP-OTLP-WIRE-INSTRUMENTATION-SCOPE | ScopeSpans.scope.name always empty in OTLP wire output | Not Implemented | Critical | [#3](https://gitlab.com/devnw/zig/otel/-/issues/3) |
 | GAP-EXPORTER-FACTORY | OTEL_*_EXPORTER env vars parsed but never construct an exporter | Not Implemented | Critical | [#4](https://gitlab.com/devnw/zig/otel/-/issues/4) |
 | GAP-OTLP-METRIC-EXPORT | No OTLP metric export path (HTTP /v1/metrics or gRPC MetricsService/Export) | Not Implemented | Critical | [#7](https://gitlab.com/devnw/zig/otel/-/issues/7) |
@@ -55,7 +57,6 @@
 | GAP-ENV-OTLP-PER-SIGNAL-HEADERS | per-signal OTLP_*_HEADERS env vars not parsed | Not Implemented | Medium | [#64](https://gitlab.com/devnw/zig/otel/-/issues/64) |
 | GAP-ENV-OTLP-PER-SIGNAL-COMPRESSION | no env var reader for compression at all | Not Implemented | Medium | [#66](https://gitlab.com/devnw/zig/otel/-/issues/66) |
 | GAP-ENV-ATTR-LIMITS | spec attribute-limit env vars not parsed; limits hard-coded constants | Not Implemented | Medium | [#76](https://gitlab.com/devnw/zig/otel/-/issues/76) |
-| GAP-BENCH-NOT-WIRED | bench/bench-micro/scale-bench/compare-bench all run fmt-check, not benchmarks | Not Implemented | Medium | [#78](https://gitlab.com/devnw/zig/otel/-/issues/78) |
 | GAP-INTEGRATION-SUITE-MISSING | test-integration and test-stress are aliases for test (no separate coverage) | Not Implemented | Medium | [#79](https://gitlab.com/devnw/zig/otel/-/issues/79) |
 | GAP-DEVNW-TLS-UNUSED | -Dotel_use_devnw_tls actually toggles std.http.Client; flag name is misleading | Partial | Low | [#95](https://gitlab.com/devnw/zig/otel/-/issues/95) |
 | GAP-ENV-OTLP-PER-SIGNAL-INSECURE | OTEL_EXPORTER_OTLP_*_INSECURE env vars not parsed | Not Implemented | Low | [#96](https://gitlab.com/devnw/zig/otel/-/issues/96) |
@@ -63,6 +64,7 @@
 | GAP-ENV-BLRP | OTEL_BLRP_* env vars not parsed (no log batch processor exists yet) | Not Implemented | Low | [#98](https://gitlab.com/devnw/zig/otel/-/issues/98) |
 | GAP-FUZZ-DISABLED | zig-fuzz CI job disabled pending Zig 0.16 stdlib bug fix (upstream) | Not Implemented | Low | [#99](https://gitlab.com/devnw/zig/otel/-/issues/99) |
 | GAP-WINDOWS-TESTS-DISABLED | Windows test jobs disabled pending devnw/ci-catalog fix (upstream) | Not Implemented | Low | [#100](https://gitlab.com/devnw/zig/otel/-/issues/100) |
+| GAP-BENCH-LOOPBACK-UNDOCUMENTED | bench loopback server (benchmarks/integration/loopback_server.zig) not declared in DEPENDENCIES.md or SPEC_COMPLIANCE.md | Partial | Low | [#112](https://gitlab.com/devnw/zig/otel/-/issues/112) |
 
 ## Dependency Graph
 
@@ -93,12 +95,12 @@
    └─> Implicitly needed before #29 can deliver async metrics
 
 #1 GAP-INSTRUMENTATION-SCOPE-PROPAGATION  ←→  #3 GAP-OTLP-WIRE-INSTRUMENTATION-SCOPE
-   (sibling pair — same root-cause bug at src/sdk/trace.zig:240; one fix closes both)
+   (sibling pair — same root-cause bug at src/sdk/trace.zig:254; one fix closes both)
 ```
 
 ## Recommended Implementation Order
 
-1. **Sibling pair** #1 + #3 — one-line fix at `src/sdk/trace.zig:240`, closes 2 Critical
+1. **Sibling pair** #1 + #3 — one-line fix at `src/sdk/trace.zig:254`, closes 2 Critical
 2. **#4 GAP-EXPORTER-FACTORY** — gates per-signal env-var family
 3. **#7 + #8 in parallel** — OTLP metric and log exporters
 4. **Per-signal env-var family** — #60, #63, #64, #66, #96 — small once #4 lands

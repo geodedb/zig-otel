@@ -34,6 +34,7 @@ or ISC.
 | URI parsing           | `src/sdk/config.zig` endpoint validation               | `gitlab.com/devnw/zig/uri`                     | MIT         | scheme prefix check    | Endpoint validation is a single substring match — full URI parsing not needed yet |
 | DNS                   | Future endpoint resolution                              | `gitlab.com/devnw/zig/dns`                     | Apache-2.0  | None                  | Resolution lives inside the HTTP transport (stdlib) when we land it |
 | Write-ahead log       | Future durable export queue                             | `gitlab.com/devnw/zig/wal`                     | Apache-2.0  | None                  | Out of scope for this release |
+| Bench-only loopback HTTP server | `benchmarks/integration/main.zig` (level-6 OTLP/HTTP integration bench) | n/a — bench-only, in-tree | n/a (in-repo) | `benchmarks/integration/loopback_server.zig` (284 LOC threaded HTTP discard server, Linux-only). No third-party dep. Not compiled into library or test artifacts; consumed exclusively by the `bench-integration` build step. The server's cross-thread `err` contract is documented in commit `7140bb0` and made race-free in `5926bee`. | Lets the integration bench drive the OTLP/HTTP exporter against a real loopback socket without pulling in `std.http.Server` from the library surface or vendoring an external HTTP test server. Linux-only because it uses POSIX socket APIs directly. Optionally exercise under `-Dtsan=true` for thread-safety coverage of the cross-thread shutdown. |
 
 ## Pinning a DevNW dependency
 

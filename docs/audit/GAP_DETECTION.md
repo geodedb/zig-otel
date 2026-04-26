@@ -79,7 +79,7 @@ GAP-OBSERVABLE-INSTRUMENTS
    └─> Implicitly needed before GAP-PERIODIC-METRIC-READER can deliver async metrics
 
 GAP-OTLP-WIRE-INSTRUMENTATION-SCOPE  ←→  GAP-INSTRUMENTATION-SCOPE-PROPAGATION
-   (sibling pair — same root-cause bug at src/sdk/trace.zig:240; one fix closes both)
+   (sibling pair — same root-cause bug at src/sdk/trace.zig:254; one fix closes both)
    ├─> independent of all other gaps; fix unblocks correct ScopeSpans grouping for any backend
    └─> resolution lets GAP-OTLP-METRIC-EXPORT / GAP-OTLP-LOG-EXPORT inherit the correct scope shape
 ```
@@ -155,13 +155,13 @@ Implementation order recommendation for Phase 4: fix the scope-propagation pair 
 - **Requirement source:** OpenTelemetry Specification 1.56.0 — Tracer Provider §"InstrumentationScope identifies an instrumentation library uniquely"
 - **Current state (evidence):**
   - `src/sdk/trace.zig:235` — `var state = try trace_api.SpanState.init(self.allocator, name, sc, .{ .name = "" }, start_ns);` (correctly threads scope, but with empty name placeholder)
-  - `src/sdk/trace.zig:240` — `state.instrumentation_scope = .{ .name = "" };` overwrites whatever was set above with an explicit blank — and the comment on line 239 says "Attach scope from the caller's tracer."
+  - `src/sdk/trace.zig:254` — `state.instrumentation_scope = .{ .name = "" };` overwrites whatever was set above with an explicit blank — and the comment on line 253 says "Attach scope from the caller's tracer."
   - `src/exporters/otlp_http.zig:248-249` — `try w.writeString(otlp.fn_scope_name, items[0].instrumentation_scope.name);` therefore always writes "" for `scope.name`.
 - **Why this is a gap:** Bug — the line is the inverse of what the comment claims and what the spec requires. Every span in OTLP wire output reports `scope.name == ""`, breaking the standard backend assumption that `scope.name == library name`.
 - **User impact:** Backends that group/route by instrumentation scope (every major collector and most observability vendors do) collapse all spans into one anonymous bucket. Library attribution is impossible.
 - **Effort:** Small (one-line fix: `state.instrumentation_scope = self.scope;` or equivalent — verify the field path)
 - **Dependencies:** None; trivially fixable. Resolution corrects scope shape for any subsequent metric/log exporter that copies the trace pattern.
-- **Recommended fix:** Replace `src/sdk/trace.zig:240` with assignment from the tracer's stored scope (`self.instrumentation_scope` or whatever the field is called on the parent Tracer). Confirm `Tracer` actually carries name/version through `getTracer`.
+- **Recommended fix:** Replace `src/sdk/trace.zig:254` with assignment from the tracer's stored scope (`self.instrumentation_scope` or whatever the field is called on the parent Tracer). Confirm `Tracer` actually carries name/version through `getTracer`.
 - **Acceptance criteria:** A test that creates `tracerProvider.getTracer("foo", "1.2.3")`, starts and ends a span, and asserts `encodeSpansProto` output decodes to `scope.name=="foo"` and `scope.version=="1.2.3"`.
 
 #### GAP-INSTRUMENTATION-SCOPE-PROPAGATION
@@ -172,16 +172,16 @@ Implementation order recommendation for Phase 4: fix the scope-propagation pair 
 - **Spec citation:** OpenTelemetry Specification 1.56.0 — Tracer §"Tracer is associated with an InstrumentationScope (name + version + schema_url)"
 - **Requirement source:** `Tracer.getTracer(name, version, schema_url)` API contract
 - **Current state (evidence):**
-  - `src/sdk/trace.zig:235-240` — Span init receives a placeholder scope `.{ .name = "" }` and is then *re-overwritten* by line 240's `state.instrumentation_scope = .{ .name = "" };` instead of being assigned `self.scope` from the parent `Tracer`.
+  - `src/sdk/trace.zig:235-254` — Span init receives a placeholder scope `.{ .name = "" }` and is then *re-overwritten* by line 254's `state.instrumentation_scope = .{ .name = "" };` instead of being assigned `self.scope` from the parent `Tracer`.
   - The Tracer struct holds the scope; the line never reads from it.
 - **Why this is a gap:** This is the *propagation* side of `GAP-OTLP-WIRE-INSTRUMENTATION-SCOPE`. They are tracked separately because:
   - The propagation bug (this gap) is the root cause — the Tracer's scope never reaches the SpanState.
   - The wire bug (the sibling) is the visible symptom — the OTLP encoder writes `""`.
-  - Either fix lives in the same line (`src/sdk/trace.zig:240`); resolving this gap automatically resolves the sibling. Phase 4 should treat them as one issue with two visible failure modes.
+  - Either fix lives in the same line (`src/sdk/trace.zig:254`); resolving this gap automatically resolves the sibling. Phase 4 should treat them as one issue with two visible failure modes.
 - **User impact:** Same as `GAP-OTLP-WIRE-INSTRUMENTATION-SCOPE` — every span loses its library attribution.
 - **Effort:** Small (one-line fix; same line as the sibling)
 - **Dependencies:** None. Trivial. This and `GAP-OTLP-WIRE-INSTRUMENTATION-SCOPE` should be closed together.
-- **Recommended fix:** Replace `src/sdk/trace.zig:240` with assignment from the tracer's scope (`state.instrumentation_scope = self.scope;`).
+- **Recommended fix:** Replace `src/sdk/trace.zig:254` with assignment from the tracer's scope (`state.instrumentation_scope = self.scope;`).
 - **Acceptance criteria:** Test creating `tracerProvider.getTracer("foo", "1.2.3").startSpan(...)` and asserting `span.state.instrumentation_scope.name == "foo"` and `.version == "1.2.3"` *before* OTLP encoding; the wire-side test under `GAP-OTLP-WIRE-INSTRUMENTATION-SCOPE` then passes for free.
 
 #### GAP-EXPORTER-FACTORY

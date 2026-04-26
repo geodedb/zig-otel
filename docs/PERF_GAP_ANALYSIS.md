@@ -1,7 +1,7 @@
 # Performance Gap Analysis
 
-**Last updated:** 2026-04-26
-**Source:** `docs/audit/PERF_REVIEW.md` (Phase 3, 39 findings; 23 P0/P1 actionable)
+**Last updated:** 2026-04-26 (PM re-audit)
+**Source:** `docs/audit/PERF_REVIEW.md` (Phase 3, 39 findings; 23 P0/P1 actionable) + Phase 3 re-audit (P-N1..P-N7)
 **Owner:** codepros perf-issue-tracker (Phase 4)
 **Project:** [`devnw/zig/otel`](https://gitlab.com/devnw/zig/otel) (GitLab)
 
@@ -13,24 +13,25 @@
 
 ### Counts by PerfSeverity
 
-| PerfSeverity | Open Issues | Blocker | Notes |
+| PerfSeverity | Open Issues | Closed | Notes |
 |---|---:|---:|---|
-| **P0 (blocker)** | 1 | 1 | Bench harness gate — see #2. |
-| **P0 (perf)** | 9 | — | All confirmed by direct re-read. |
-| **P1** | 13 | — | 12 confirmed, 1 suspected (`P1-13` cache layout). |
-| **Total tracked** | **23** | **1** | — |
+| **P0 (perf)** | 11 | — | 9 from Phase 3 + P-N1, P-N2 (2026-04-26 PM re-audit). |
+| **P1** | 14 | 1 | 12 confirmed + 3 new (P-N3, P-N4, P-N6, P-N7 — N4 counts in P1); P1-5 closed. |
+| **P2** | 1 | — | P-N5 (folds with P-N3). |
+| **Closed (resolved)** | — | 2 | #2 BENCH-HARNESS, #43 P1-5 forceFlush busy-poll. |
+| **Total open** | **26** | **2** | — |
 
-### Top 5 risks (PerfScore = 72; tied)
+### Top 5 risks
 
-1. **`AttributeSet.put` is O(n²) + pollutes arena pre-dedup** (P0-1) — every span / log / metric record. Hash index + defer-dupe → ~10× on N=128. → [#5](https://gitlab.com/devnw/zig/otel/-/work_items/5)
-2. **`SpanState` alloc/arena/dupe per span** (P0-2) — every recording span pays 3 allocs + `mmap`/`munmap`. Pool with `arena.reset(.retain_capacity)` → ~5–10× steady state. → [#6](https://gitlab.com/devnw/zig/otel/-/work_items/6)
-3. **`MeterProvider.pointFor` 3-7 allocs per record** (P0-4) — every metric write rebuilds the attribute key. Per-instrument scratch + `points_index` → 0 allocs on hit, 5–10× latency drop. → [#15](https://gitlab.com/devnw/zig/otel/-/work_items/15)
-4. **Default `async_workers=0` + dead `schedule_delay_ms`** (P0-9) — every 512th span eats full export latency on the producer thread. Stdlib thread + condvar → P99.9 from >10ms to <50µs. → [#22](https://gitlab.com/devnw/zig/otel/-/work_items/22)
-5. **Default = `SimpleSpanProcessor`** (P0-10) — one HTTP POST per span out of the box. Wrap default in BSP → 1k spans/sec → 50k–500k spans/sec. → [#28](https://gitlab.com/devnw/zig/otel/-/work_items/28)
+1. **`AttributeSet.put` is O(n²) + pollutes arena pre-dedup** (P0-1, score 72) — every span / log / metric record. Hash index + defer-dupe → ~10× on N=128. → [#5](https://gitlab.com/devnw/zig/otel/-/work_items/5)
+2. **`SpanState` alloc/arena/dupe per span** (P0-2, score 72) — every recording span pays 3 allocs + `mmap`/`munmap`. Pool with `arena.reset(.retain_capacity)` → ~5–10× steady state. → [#6](https://gitlab.com/devnw/zig/otel/-/work_items/6)
+3. **`MeterProvider.pointFor` 3-7 allocs per record** (P0-4, score 72) — every metric write rebuilds the attribute key. Per-instrument scratch + `points_index` → 0 allocs on hit, 5–10× latency drop. → [#15](https://gitlab.com/devnw/zig/otel/-/work_items/15)
+4. **Default `async_workers=0` + dead `schedule_delay_ms` + Simple is the default** (P0-9 + P0-10, score 72 each) — bundled because P0-10 hard-depends on P0-9. P99.9 from >10ms to <50µs; throughput 1k → 50k–500k spans/sec. → [#22](https://gitlab.com/devnw/zig/otel/-/work_items/22) + [#28](https://gitlab.com/devnw/zig/otel/-/work_items/28)
+5. **OTLP retry loops tight-spin on persistent failures** (P-N1 + P-N2, score 64 each, **tied**) — `otlp_http.zig:288-324` and `otlp_grpc.zig:120-152` compute backoff but never `std.Thread.sleep`. 100% CPU per failing exporter during outages. → [#122](https://gitlab.com/devnw/zig/otel/-/work_items/122) + [#126](https://gitlab.com/devnw/zig/otel/-/work_items/126)
 
-### Hard blocker (#2)
+### Bench harness operational
 
-`benchmarks/bench.zig:55-71` calls `lib.init(.{})` which does not exist on the public surface, and `benchmarks/micro/` is empty. Until the harness compiles and the 13 load-bearing micros land, **no A/B validation of any perf fix is possible**. All baseline cells below read **"no baseline yet"**. See [#2](https://gitlab.com/devnw/zig/otel/-/work_items/2).
+Bench harness operational — see `docs/performance/2026-04-26-zero-overhead-when-disabled/`. Hard-criteria gate passes (comptime-disabled 0.131 ns/op, level-1-tracer-noop 1.04 ns/op). Six bench artifacts wired in `build.zig:454-505`. All previously-blocked perf items are now actionable (`triage`).
 
 ---
 
@@ -38,31 +39,38 @@
 
 | Rank | PerfSeverity | PerfScore | Finding ID | Component | File:Line | Confidence | Baseline | Issue | Status |
 |---:|:---:|---:|:---|:---|:---|:---:|:---|:---|:---|
-| — | P0 (blocker) | — | BENCH-HARNESS | benchmarks | `benchmarks/bench.zig:55-71` | confirmed | n/a | [#2](https://gitlab.com/devnw/zig/otel/-/work_items/2) | triage (gate) |
-| 1 | P0 | **72** | P0-1 | api/internal | `src/internal/attributes.zig:106-127` | confirmed | no baseline yet | [#5](https://gitlab.com/devnw/zig/otel/-/work_items/5) | blocked (#2) |
-| 2 | P0 | **72** | P0-2 | api | `src/api/trace.zig:103-118` | confirmed | no baseline yet | [#6](https://gitlab.com/devnw/zig/otel/-/work_items/6) | blocked (#2) |
-| 3 | P0 | **72** | P0-4 | sdk | `src/sdk/metrics.zig:254-285` | confirmed | no baseline yet | [#15](https://gitlab.com/devnw/zig/otel/-/work_items/15) | blocked (#2) |
-| 4 | P0 | **72** | P0-9 | sdk | `src/sdk/export.zig:147,142,343-378` | confirmed | no baseline yet | [#22](https://gitlab.com/devnw/zig/otel/-/work_items/22) | blocked (#2) |
-| 5 | P0 | **72** | P0-10 | sdk | `src/sdk/trace.zig:172-178` | confirmed | no baseline yet | [#28](https://gitlab.com/devnw/zig/otel/-/work_items/28) | blocked (#2) |
-| 6 | P0 | 48 | P0-5 | sdk | `src/sdk/metrics.zig:314-329` | confirmed | no baseline yet | [#17](https://gitlab.com/devnw/zig/otel/-/work_items/17) | blocked (#2) — folded into P0-4 |
-| 7 | P0 | 48 | P0-7 | sdk | `src/sdk/metrics.zig:414-419` | confirmed | no baseline yet | [#18](https://gitlab.com/devnw/zig/otel/-/work_items/18) | blocked (#2) |
-| 8 | P1 | 48 | P1-9 | exporters | `src/exporters/otlp_http.zig:138-139` | confirmed | no baseline yet | [#47](https://gitlab.com/devnw/zig/otel/-/work_items/47) | blocked (#2) |
-| 9 | P1 | 48 | P1-11 | exporters | `src/exporters/otlp_grpc.zig:171-172` | confirmed | no baseline yet | [#70](https://gitlab.com/devnw/zig/otel/-/work_items/70) | blocked (#2) |
-| 10 | P0 | 32 | P0-8 | sdk | `src/sdk/export.zig:343-378` | confirmed (severity Likely) | no baseline yet | [#21](https://gitlab.com/devnw/zig/otel/-/work_items/21) | blocked (#2 + P0-9) |
-| 11 | P0 | 24 | P0-3 | api | `src/api/trace.zig:159-165` | confirmed | no baseline yet | [#10](https://gitlab.com/devnw/zig/otel/-/work_items/10) | blocked (#2) |
-| 12 | P1 | 24 | P1-1 | exporters | `src/generated/otlp.zig:110-137` | confirmed | no baseline yet | [#36](https://gitlab.com/devnw/zig/otel/-/work_items/36) | blocked (#2) |
-| 13 | P1 | 24 | P1-2 | exporters | `src/generated/otlp.zig:42-49` | confirmed | no baseline yet | [#40](https://gitlab.com/devnw/zig/otel/-/work_items/40) | blocked (#2) |
-| 14 | P1 | 16 | P1-3 | sdk | `src/sdk/export.zig:251-260` | confirmed | no baseline yet | [#41](https://gitlab.com/devnw/zig/otel/-/work_items/41) | blocked (#2) |
-| 15 | P1 | 16 | P1-7 | api/exporters | `src/internal/json_codec.zig:154-164` + `src/internal/attributes.zig:147-156` | confirmed | no baseline yet | [#45](https://gitlab.com/devnw/zig/otel/-/work_items/45) | blocked (#2) |
-| 16 | P1 | 8 | P1-4 | sdk | `src/sdk/export.zig:262-297` | confirmed | no baseline yet | [#42](https://gitlab.com/devnw/zig/otel/-/work_items/42) | blocked (#2) — subsumed by P0-2 |
-| 17 | P1 | 8 | P1-5 | sdk | `src/sdk/export.zig:380-428` | confirmed | no baseline yet | [#43](https://gitlab.com/devnw/zig/otel/-/work_items/43) | blocked (#2) |
-| 18 | P1 | 8 | P1-6 | sdk | `src/sdk/metrics.zig:499-557` | confirmed | no baseline yet | [#44](https://gitlab.com/devnw/zig/otel/-/work_items/44) | blocked (#2) |
-| 19 | P1 | 8 | P1-8 | exporters | `src/exporters/prometheus.zig:25-86` | confirmed | no baseline yet | [#46](https://gitlab.com/devnw/zig/otel/-/work_items/46) | blocked (#2) |
-| 20 | P1 | 8 | P1-10 | exporters | `src/exporters/otlp_http.zig:212` | confirmed | no baseline yet | [#56](https://gitlab.com/devnw/zig/otel/-/work_items/56) | triage (code fix needs no bench) |
-| 21 | P1 | 4 | P1-12 | sdk | `src/sdk/resource.zig:30-38` | confirmed | no baseline yet | [#75](https://gitlab.com/devnw/zig/otel/-/work_items/75) | blocked (#2) — auto-fixed by P0-1 |
-| 22 | P1 | 4 | P1-13 | api | `src/api/trace.zig:71-101` | suspected | no baseline yet | [#82](https://gitlab.com/devnw/zig/otel/-/work_items/82) | blocked (#2 + needs `perf` access) |
+| — | P0 (blocker) | — | BENCH-HARNESS | benchmarks | `benchmarks/bench.zig:55-71` | confirmed | n/a | [#2](https://gitlab.com/devnw/zig/otel/-/work_items/2) | ✅ CLOSED 2026-04-26 PM |
+| 1 | P0 | **72** | P0-1 | api/internal | `src/internal/attributes.zig:106-127` | confirmed | no baseline yet | [#5](https://gitlab.com/devnw/zig/otel/-/work_items/5) | triage |
+| 2 | P0 | **72** | P0-2 | api | `src/api/trace.zig:103-118` | confirmed | no baseline yet | [#6](https://gitlab.com/devnw/zig/otel/-/work_items/6) | triage |
+| 3 | P0 | **72** | P0-4 | sdk | `src/sdk/metrics.zig:254-285` | confirmed | no baseline yet | [#15](https://gitlab.com/devnw/zig/otel/-/work_items/15) | triage |
+| 4 | P0 | **72** | P0-9 | sdk | `src/sdk/export.zig:147,142,343-378` | confirmed | no baseline yet | [#22](https://gitlab.com/devnw/zig/otel/-/work_items/22) | triage |
+| 5 | P0 | **72** | P0-10 | sdk | `src/sdk/trace.zig:172-178` | confirmed | no baseline yet | [#28](https://gitlab.com/devnw/zig/otel/-/work_items/28) | triage |
+| 6 | **P0** | **64** | **P-N1** | exporters | `src/exporters/otlp_http.zig:288-324` | confirmed | no baseline yet | [#122](https://gitlab.com/devnw/zig/otel/-/work_items/122) | triage |
+| 7 | **P0** | **64** | **P-N2** | exporters | `src/exporters/otlp_grpc.zig:120-152` | confirmed | no baseline yet | [#126](https://gitlab.com/devnw/zig/otel/-/work_items/126) | triage |
+| 8 | P0 | 48 | P0-5 | sdk | `src/sdk/metrics.zig:314-329` | confirmed | no baseline yet | [#17](https://gitlab.com/devnw/zig/otel/-/work_items/17) | triage — folded into P0-4 |
+| 9 | P0 | 48 | P0-7 | sdk | `src/sdk/metrics.zig:414-419` | confirmed | no baseline yet | [#18](https://gitlab.com/devnw/zig/otel/-/work_items/18) | triage |
+| 10 | P1 | 48 | P1-9 | exporters | `src/exporters/otlp_http.zig:138-139` | confirmed | no baseline yet | [#47](https://gitlab.com/devnw/zig/otel/-/work_items/47) | triage |
+| 11 | P1 | 48 | P1-11 | exporters | `src/exporters/otlp_grpc.zig:171-172` | confirmed | no baseline yet | [#70](https://gitlab.com/devnw/zig/otel/-/work_items/70) | triage |
+| 12 | P0 | 32 | P0-8 | sdk | `src/sdk/export.zig:343-378` | confirmed (severity Likely) | no baseline yet | [#21](https://gitlab.com/devnw/zig/otel/-/work_items/21) | triage (sequenced after P0-9) |
+| 13 | P0 | 24 | P0-3 | api | `src/api/trace.zig:159-165` | confirmed | no baseline yet | [#10](https://gitlab.com/devnw/zig/otel/-/work_items/10) | triage |
+| 14 | P1 | 24 | P1-1 | exporters | `src/generated/otlp.zig:110-137` | confirmed | no baseline yet | [#36](https://gitlab.com/devnw/zig/otel/-/work_items/36) | triage |
+| 15 | P1 | 24 | P1-2 | exporters | `src/generated/otlp.zig:42-49` | confirmed | no baseline yet | [#40](https://gitlab.com/devnw/zig/otel/-/work_items/40) | triage |
+| 16 | **P1** | **24** | **P-N3** | bench | `benchmarks/integration/loopback_server.zig:181-184` | confirmed | n/a | [#128](https://gitlab.com/devnw/zig/otel/-/work_items/128) | triage |
+| 17 | **P1** | **24** | **P-N6** | exporters | `src/exporters/stdout_json.zig:56-57,68-69,80-81` | confirmed | no baseline yet | [#131](https://gitlab.com/devnw/zig/otel/-/work_items/131) | triage |
+| 18 | **P1** | **24** | **P-N7** | exporters | `src/exporters/file.zig:82-83,93-94` | confirmed | no baseline yet | [#132](https://gitlab.com/devnw/zig/otel/-/work_items/132) | triage |
+| 19 | P1 | 16 | P1-3 | sdk | `src/sdk/export.zig:251-260` | confirmed | no baseline yet | [#41](https://gitlab.com/devnw/zig/otel/-/work_items/41) | triage |
+| 20 | P1 | 16 | P1-7 | api/exporters | `src/internal/json_codec.zig:154-164` + `src/internal/attributes.zig:147-156` | confirmed | no baseline yet | [#45](https://gitlab.com/devnw/zig/otel/-/work_items/45) | triage |
+| 21 | **P1** | **16** | **P-N4** | bench | `benchmarks/integration/loopback_server.zig:131,135-156` | confirmed | n/a | [#129](https://gitlab.com/devnw/zig/otel/-/work_items/129) | triage |
+| 22 | P1 | 8 | P1-4 | sdk | `src/sdk/export.zig:262-297` | confirmed | no baseline yet | [#42](https://gitlab.com/devnw/zig/otel/-/work_items/42) | triage — subsumed by P0-2 |
+| 23 | P1 | 8 | P1-5 | sdk | `src/sdk/export.zig:380-428` | confirmed | n/a | [#43](https://gitlab.com/devnw/zig/otel/-/work_items/43) | ✅ CLOSED 2026-04-26 PM |
+| 24 | P1 | 8 | P1-6 | sdk | `src/sdk/metrics.zig:499-557` | confirmed | no baseline yet | [#44](https://gitlab.com/devnw/zig/otel/-/work_items/44) | triage |
+| 25 | P1 | 8 | P1-8 | exporters | `src/exporters/prometheus.zig:25-86` | confirmed | no baseline yet | [#46](https://gitlab.com/devnw/zig/otel/-/work_items/46) | triage |
+| 26 | P1 | 8 | P1-10 | exporters | `src/exporters/otlp_http.zig:212` | confirmed | no baseline yet | [#56](https://gitlab.com/devnw/zig/otel/-/work_items/56) | triage (code fix needs no bench) |
+| 27 | **P2** | **8** | **P-N5** | bench | `benchmarks/integration/loopback_server.zig:159-184` | confirmed | n/a | [#130](https://gitlab.com/devnw/zig/otel/-/work_items/130) | triage (folds with P-N3) |
+| 28 | P1 | 4 | P1-12 | sdk | `src/sdk/resource.zig:30-38` | confirmed | no baseline yet | [#75](https://gitlab.com/devnw/zig/otel/-/work_items/75) | triage — auto-fixed by P0-1 |
+| 29 | P1 | 4 | P1-13 | api | `src/api/trace.zig:71-101` | suspected | no baseline yet | [#82](https://gitlab.com/devnw/zig/otel/-/work_items/82) | triage (needs `perf` access for cache-miss measurement) |
 
-> **No baseline yet** — every cell pending #2 (bench harness). The Phase-3 PerfScores are derived from semantic re-read, allocation counting, and complexity arguments — see `docs/audit/PERF_REVIEW.md` for per-finding evidence.
+> **Baselines unblocked** — bench harness (#2) is closed and operational. Each item still reads "no baseline yet" until A/B captures land per finding; no longer blocked. PerfScores are derived from semantic re-read, allocation counting, and complexity arguments — see `docs/audit/PERF_REVIEW.md` for per-finding evidence and the Phase 3 re-audit section below for P-N1..P-N7.
 
 ---
 
@@ -157,14 +165,32 @@
 
 ### Pre-requisite (gate)
 
-- **#2 — Repair `benchmarks/bench.zig` + seed 13 micros.** Nothing above can be A/B-validated without this. **Do this first.**
+- **#2 — CLOSED 2026-04-26 PM.** Harness operational; comptime-disabled 0.131 ns/op, level-1-tracer-noop 1.04 ns/op. Six bench artifacts wired in `build.zig:454-505`. See `docs/performance/2026-04-26-zero-overhead-when-disabled/`.
+
+---
+
+## Phase 3 re-audit findings (2026-04-26 PM)
+
+Seven new perf items surfaced from the post-harness re-audit. Two are P0 retry-loop bugs (CPU hot-spin on persistent failures); four are bench-harness fidelity issues; two are per-emit ArenaAllocator init/deinit on default debug exporters.
+
+| ID | PerfSeverity | PerfScore | File:Line | Issue | Fix shape |
+|---|:---:|---:|:---|:---|:---|
+| **P-N1** | **P0** | **64** | `src/exporters/otlp_http.zig:288-324` | [#122](https://gitlab.com/devnw/zig/otel/-/work_items/122) | Insert `std.Thread.sleep(backoff_ns);` in retry loop before `attempt += 1`. |
+| **P-N2** | **P0** | **64** | `src/exporters/otlp_grpc.zig:120-152` | [#126](https://gitlab.com/devnw/zig/otel/-/work_items/126) | Same as P-N1; co-implement and consider extracting `retryWithBackoff` helper (closes Quality M6 #53). |
+| **P-N3** | P1 | 24 | `benchmarks/integration/loopback_server.zig:181-184` | [#128](https://gitlab.com/devnw/zig/otel/-/work_items/128) | Reply with `Connection: keep-alive`; reuse connection across iterations. |
+| **P-N4** | P1 | 16 | `benchmarks/integration/loopback_server.zig:131,135-156` | [#129](https://gitlab.com/devnw/zig/otel/-/work_items/129) | Spawn-per-accept (or thread pool); add `concurrency: u32` option. |
+| **P-N5** | P2 | 8 | `benchmarks/integration/loopback_server.zig:159-184` | [#130](https://gitlab.com/devnw/zig/otel/-/work_items/130) | Folds with P-N3 — no standalone fix. |
+| **P-N6** | P1 | 24 | `src/exporters/stdout_json.zig:56-57,68-69,80-81` | [#131](https://gitlab.com/devnw/zig/otel/-/work_items/131) | Hoist arena to exporter struct; `arena.reset(.retain_capacity)` between batch items. |
+| **P-N7** | P1 | 24 | `src/exporters/file.zig:82-83,93-94` | [#132](https://gitlab.com/devnw/zig/otel/-/work_items/132) | Same as P-N6; co-implement. |
+
+All P-N* labeled `confidence::confirmed` (direct re-read of the cited line ranges).
 
 ---
 
 ## Recommended execution sequence
 
-1. **Land #2** (bench harness + 13 micros). Capture `bench-baseline-pre-perf-fixes` JSON.
-2. **Quick wins in parallel** — P1-10 (no harness), P0-7, P1-6, P1-2.
+1. ~~Land #2 (bench harness + 13 micros).~~ ✅ DONE 2026-04-26 PM. Capture `bench-baseline-pre-perf-fixes` JSON next.
+2. **Quick wins in parallel** — P1-10 (no harness), P0-7, P1-6, P1-2, **P-N1+P-N2 (P0 hot-spin fix — single-line per file)**, P-N3+P-N5 (bench keep-alive).
 3. **High-leverage trio** in three independent worktrees, each with its own micro: P0-1 (`#5`), P0-4 (`#15`), P0-2 (`#6`). Capture A/B per-finding.
 4. **Default-config bundle**: P0-9 (`#22`) → P0-10 (`#28`) → P0-8 (`#21`) → P1-5 (`#43`). Order matters; each builds on the previous.
 5. **Exporter trio**: P1-9 (`#47`) + P1-11 (`#70`) co-implemented; then P1-1 (`#36`) + P1-2 (`#40`) for the encoder.

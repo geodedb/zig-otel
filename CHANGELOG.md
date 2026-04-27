@@ -245,6 +245,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`Span.events` and `Span.links` now land on the OTLP wire
+  (GAP-OTLP-WIRE-EVENTS-LINKS, gitlab #9).** Pre-fix the SDK tracked
+  events on `Span.events` (`src/api/trace.zig:65-69`) and links on
+  `Span.links` (`:60-63`), and the export contract carried them
+  through to the encoder (`src/sdk/export.zig:37-38`), but the
+  protobuf encoders dropped both on the floor — every `addEvent` /
+  `recordException` and every `Link` recorded by an application
+  disappeared on the wire. Collectors saw spans with no events and
+  no links, even when applications had populated them. The in-repo
+  encoder (`src/exporters/otlp_http/encode_proto.zig`) now emits
+  `Span.events` at field 11 with `dropped_events_count` at field 12,
+  and `Span.links` at field 13 with `dropped_links_count` at field 14,
+  via new `writeEvent` / `writeLink` helpers. Sub-fields per
+  `third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/trace/v1/trace.proto:222-239,252-291`
+  — Event: time_unix_nano (1, fixed64), name (2, string), attributes
+  (3, repeated KeyValue), dropped_attributes_count (4, uint32);
+  Link: trace_id (1, bytes), span_id (2, bytes), trace_state
+  (3, string), attributes (4, repeated KeyValue),
+  dropped_attributes_count (5, uint32). The optional `Link.flags`
+  (field 6, fixed32) is intentionally not emitted because the SDK's
+  `Link` (`src/api/trace.zig:60-63`) does not track per-link trace
+  flags. The DevNW encoder
+  (`src/exporters/otlp_http/encode_proto_devnw.zig`) ships matching
+  `ProtoMessages.Event` / `ProtoMessages.Link` descriptors plus the
+  four new `Span` fields (events, dropped_events_count, links,
+  dropped_links_count) interleaved between
+  `dropped_attributes_count` and `status` so its reflective walk
+  produces byte-identical output to the in-repo encoder. Empty
+  events/links arrays emit zero bytes (proto3 default-omit), so
+  spans without them stay byte-identical to the pre-fix wire shape.
+  New regression tests in `test/otlp_span_events_links.zig`
+  (7 tests: events at field 11 + names + times, event attributes
+  nested at sub-field 3, links at field 13 with distinct trace/span
+  ids, byte-identical no-events/no-links case, plus three DevNW
+  parity assertions covering events-only / links-only / empty
+  spans) FAIL on `main` pre-fix and PASS post-fix. The
+  `test/otlp_wire_parity.zig` and `test/otlp_spans_multi_scope.zig`
+  golden contracts continue to hold. (#9)
 - **`Resource.schema_url` now lands on the OTLP wire
   (GAP-OTLP-WIRE-SCHEMA-URL, gitlab #26).** Pre-fix the SDK tracked
   the value on the `Resource` struct (`src/sdk/resource.zig:15`) but

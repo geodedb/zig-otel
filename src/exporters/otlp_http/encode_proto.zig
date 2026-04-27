@@ -268,6 +268,28 @@ fn writeSpan(w: *otlp.Writer, span: exp.SpanData) !void {
     }
     try w.writeUint64(otlp.fn_span_dropped_attributes_count, span.dropped_attributes_count);
 
+    // Span.events (field 11) and Span.dropped_events_count (field 12) —
+    // closes GAP-OTLP-WIRE-EVENTS-LINKS (#9). Pre-fix the SDK tracked
+    // events on `Span.events` (`src/api/trace.zig:65-69`) and the SpanData
+    // export contract carries them through (`src/sdk/export.zig:37,42`),
+    // but the encoder dropped them on the floor — `addEvent` /
+    // `recordException` callers lost ALL data on the wire. Field numbers
+    // pinned by
+    // `third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/trace/v1/trace.proto:242,246`.
+    // Empty `events` slice emits zero bytes (proto3 default-omit), so
+    // spans without events stay byte-identical to the pre-fix wire shape.
+    for (span.events) |ev| {
+        try writeEvent(w, ev);
+    }
+    try w.writeUint64(otlp.fn_span_dropped_events_count, span.dropped_events_count);
+
+    // Span.links (field 13) and Span.dropped_links_count (field 14) —
+    // same closure (#9). Field numbers pinned by `trace.proto:295,299`.
+    for (span.links) |lk| {
+        try writeLink(w, lk);
+    }
+    try w.writeUint64(otlp.fn_span_dropped_links_count, span.dropped_links_count);
+
     const status_start = try w.beginSubMessage(otlp.fn_span_status);
     try w.writeString(otlp.fn_status_message, span.status_description);
     try w.writeUint64(otlp.fn_status_code, switch (span.status_code) {
@@ -277,6 +299,48 @@ fn writeSpan(w: *otlp.Writer, span: exp.SpanData) !void {
     });
     try w.commitSubMessage(status_start);
     try w.commitSubMessage(span_start);
+}
+
+/// Span.Event (proto field 11 on Span; sub-fields per `trace.proto:222-239`).
+/// Layout: time_unix_nano (1, fixed64), name (2, string), attributes
+/// (3, repeated KeyValue), dropped_attributes_count (4, uint32). The SDK
+/// stores the time as an absolute unix-nano on the `Event` struct, mirroring
+/// `Span.start_time_unix_nano` — so `writeFixed64Field` is the same path used
+/// by the parent span's clocks.
+fn writeEvent(w: *otlp.Writer, ev: trace_api.Event) !void {
+    const ev_start = try w.beginSubMessage(otlp.fn_span_events);
+    try w.writeFixed64Field(otlp.fn_event_time_unix_nano, ev.time_unix_nano);
+    try w.writeString(otlp.fn_event_name, ev.name);
+    if (ev.attributes) |a| {
+        for (a.entries.items) |kv| {
+            try writeKeyValue(w, otlp.fn_event_attributes, kv);
+        }
+        try w.writeUint64(otlp.fn_event_dropped_attributes_count, a.dropped);
+    }
+    try w.commitSubMessage(ev_start);
+}
+
+/// Span.Link (proto field 13 on Span; sub-fields per `trace.proto:252-291`).
+/// Layout: trace_id (1, bytes), span_id (2, bytes), trace_state (3, string),
+/// attributes (4, repeated KeyValue), dropped_attributes_count (5, uint32),
+/// flags (6, fixed32). The SDK's `Link` (`src/api/trace.zig:60-63`) tracks
+/// only `span_context` + `attributes`; per-link `trace_state` is read from
+/// the link's `SpanContext.trace_state`, and `flags` is not tracked, so it
+/// is left at zero (proto3 default-omit for `fixed32`-via-`writeUint64`
+/// would zero-omit, but since the SDK has no source for it we simply do
+/// not emit the field).
+fn writeLink(w: *otlp.Writer, lk: trace_api.Link) !void {
+    const lk_start = try w.beginSubMessage(otlp.fn_span_links);
+    try w.writeBytes(otlp.fn_link_trace_id, lk.span_context.trace_id.bytes[0..]);
+    try w.writeBytes(otlp.fn_link_span_id, lk.span_context.span_id.bytes[0..]);
+    if (lk.span_context.trace_state) |ts| try w.writeString(otlp.fn_link_trace_state, ts);
+    if (lk.attributes) |a| {
+        for (a.entries.items) |kv| {
+            try writeKeyValue(w, otlp.fn_link_attributes, kv);
+        }
+        try w.writeUint64(otlp.fn_link_dropped_attributes_count, a.dropped);
+    }
+    try w.commitSubMessage(lk_start);
 }
 
 pub fn encodeSpansProto(allocator: std.mem.Allocator, items: []const exp.SpanData) ![]u8 {

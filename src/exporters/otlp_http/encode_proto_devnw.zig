@@ -112,6 +112,50 @@ const ProtoMessages = if (build_options.use_devnw_protobuf) struct {
         };
     };
 
+    // Span.Event — closes GAP-OTLP-WIRE-EVENTS-LINKS (#9). Sub-fields per
+    // `third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/trace/v1/trace.proto:222-239`.
+    // Field-emission order mirrors `writeEvent` in `encode_proto.zig` so
+    // DevNW's reflective walk produces a byte-identical Event submessage.
+    // `dropped_attributes_count` is declared `.uint64` to mirror the
+    // in-repo encoder's `writeUint64` (the OTLP spec types it `uint32`,
+    // but as with the rest of this descriptor the parity contract is the
+    // in-repo wire output, not the .proto definition — see the file
+    // header note on wire-type drift).
+    pub const Event = struct {
+        time_unix_nano: u64 = 0,
+        name: []const u8 = "",
+        attributes: std.ArrayListUnmanaged(KeyValue) = .empty,
+        dropped_attributes_count: u64 = 0,
+
+        pub const _desc_table = .{
+            .time_unix_nano = fd(1, .{ .scalar = .fixed64 }),
+            .name = fd(2, .{ .scalar = .string }),
+            .attributes = fd(3, .{ .repeated = .submessage }),
+            .dropped_attributes_count = fd(4, .{ .scalar = .uint64 }),
+        };
+    };
+
+    // Span.Link — closes GAP-OTLP-WIRE-EVENTS-LINKS (#9). Sub-fields per
+    // `trace.proto:252-291`. The SDK does not track per-link `flags`
+    // (field 6 fixed32) so it is intentionally absent from the descriptor;
+    // proto3 default-omit on a missing field produces no bytes, which
+    // matches the in-repo encoder's `writeLink` output.
+    pub const Link = struct {
+        trace_id: []const u8 = "",
+        span_id: []const u8 = "",
+        trace_state: []const u8 = "",
+        attributes: std.ArrayListUnmanaged(KeyValue) = .empty,
+        dropped_attributes_count: u64 = 0,
+
+        pub const _desc_table = .{
+            .trace_id = fd(1, .{ .scalar = .bytes }),
+            .span_id = fd(2, .{ .scalar = .bytes }),
+            .trace_state = fd(3, .{ .scalar = .string }),
+            .attributes = fd(4, .{ .repeated = .submessage }),
+            .dropped_attributes_count = fd(5, .{ .scalar = .uint64 }),
+        };
+    };
+
     pub const Span = struct {
         // NOTE: order matches `encodeSpansProto`'s emission order so
         // DevNW's reflective walk produces an identical byte sequence.
@@ -123,6 +167,13 @@ const ProtoMessages = if (build_options.use_devnw_protobuf) struct {
         end_time_unix_nano: u64 = 0,
         attributes: std.ArrayListUnmanaged(KeyValue) = .empty,
         dropped_attributes_count: u64 = 0,
+        // GAP-OTLP-WIRE-EVENTS-LINKS (#9): events/links land between
+        // dropped_attributes_count (field 10) and status (field 15) so
+        // the byte sequence matches `writeSpan`'s emission order.
+        events: std.ArrayListUnmanaged(Event) = .empty,
+        dropped_events_count: u64 = 0,
+        links: std.ArrayListUnmanaged(Link) = .empty,
+        dropped_links_count: u64 = 0,
         status: Status = .{},
 
         pub const _desc_table = .{
@@ -134,6 +185,10 @@ const ProtoMessages = if (build_options.use_devnw_protobuf) struct {
             .end_time_unix_nano = fd(8, .{ .scalar = .fixed64 }),
             .attributes = fd(9, .{ .repeated = .submessage }),
             .dropped_attributes_count = fd(10, .{ .scalar = .uint64 }),
+            .events = fd(11, .{ .repeated = .submessage }),
+            .dropped_events_count = fd(12, .{ .scalar = .uint64 }),
+            .links = fd(13, .{ .repeated = .submessage }),
+            .dropped_links_count = fd(14, .{ .scalar = .uint64 }),
             .status = fd(15, .submessage),
         };
     };
@@ -250,6 +305,39 @@ pub fn encodeSpansProtoDevnw(allocator: std.mem.Allocator, items: []const exp.Sp
             for (span.attributes.entries.items) |kv| {
                 try s.attributes.append(aa, buildKeyValue(kv));
             }
+            // GAP-OTLP-WIRE-EVENTS-LINKS (#9): mirror `writeEvent` /
+            // `writeLink` in `encode_proto.zig` so the DevNW path emits
+            // events at field 11 and links at field 13 in the same order
+            // and with the same sub-message shape as the in-repo encoder.
+            for (span.events) |ev| {
+                var ev_msg: M.Event = .{
+                    .time_unix_nano = ev.time_unix_nano,
+                    .name = ev.name,
+                };
+                if (ev.attributes) |a| {
+                    for (a.entries.items) |kv| {
+                        try ev_msg.attributes.append(aa, buildKeyValue(kv));
+                    }
+                    ev_msg.dropped_attributes_count = a.dropped;
+                }
+                try s.events.append(aa, ev_msg);
+            }
+            s.dropped_events_count = span.dropped_events_count;
+            for (span.links) |lk| {
+                var lk_msg: M.Link = .{
+                    .trace_id = lk.span_context.trace_id.bytes[0..],
+                    .span_id = lk.span_context.span_id.bytes[0..],
+                    .trace_state = lk.span_context.trace_state orelse "",
+                };
+                if (lk.attributes) |a| {
+                    for (a.entries.items) |kv| {
+                        try lk_msg.attributes.append(aa, buildKeyValue(kv));
+                    }
+                    lk_msg.dropped_attributes_count = a.dropped;
+                }
+                try s.links.append(aa, lk_msg);
+            }
+            s.dropped_links_count = span.dropped_links_count;
             try ss.spans.append(aa, s);
         }
         try rs.scope_spans.append(aa, ss);

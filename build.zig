@@ -252,6 +252,11 @@ pub fn build(b: *std.Build) void {
         // GAP-OTLP-WIRE-SCHEMA-URL (#26): pins Resource.schema_url
         // emission at ResourceSpans field 3 / ResourceMetrics field 3.
         "test/otlp_resource_schema_url.zig",
+        // GAP-OTLP-WIRE-EVENTS-LINKS (#9): pins Span.events emission at
+        // field 11 and Span.links emission at field 13, plus DevNW
+        // protobuf parity for both. Trace.proto:242,295 in the vendored
+        // OTLP 1.10.0 tree.
+        "test/otlp_span_events_links.zig",
         "test/tls_loopback.zig",
         "test/batch_async.zig",
         "test/comptime_disabled.zig",

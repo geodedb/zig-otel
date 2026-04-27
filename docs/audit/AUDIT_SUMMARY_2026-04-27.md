@@ -64,9 +64,9 @@
 |---|---:|---:|---:|---:|
 | Gap Analysis | 105 (catalogued) | 1 | 0 | 3 |
 | Quality | 18 | 12 | 2 | 0 |
-| Performance | 16 | 13 (incl. 2 tracking) | 2 | 5 |
+| Performance | 16 | 13 (incl. 2 tracking) | 2 | 6 |
 | Security | 14 | 9 (3 confidential) | 0 | 9¹ |
-| **Total** | **153** | **35** | **4** | **17** |
+| **Total** | **153** | **35** | **4** | **18** |
 
 ¹ Security closures are evidence-confirmation comments on already-closed items (H-1/H-3/H-4/H-5/M-1/M-5/C-2/C-3/H-6).
 
@@ -119,6 +119,7 @@ Per-phase artifacts:
 | Perf | #15 P0-4 pointFor 3→0 allocs | src/sdk/metrics.zig:271 |
 | Perf | #122 P-N1 retry sleep (HTTP) | src/sdk/export.zig:673-680 |
 | Perf | #126 P-N2 retry sleep (gRPC) | src/sdk/export.zig:678 |
+| Perf | #138 PR-5 hash-keyed groupByScope (metrics + spans + JSON) | src/exporters/otlp_http/encode_proto.zig:32-127,228-253 + src/exporters/otlp_http/encode_json.zig:33-93 + test/otlp_spans_multi_scope.zig (new 32-scope batch + duplicate-instance tests) |
 
 ## Operator-Pending Follow-Ups
 

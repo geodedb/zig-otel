@@ -312,6 +312,123 @@ test "encodeSpansProto single-scope output stays byte-identical to ungrouped for
     try std.testing.expectEqualStrings("s3", blocks[0].span_names.items[2]);
 }
 
+test "encodeSpansProto groups 32-scope batches with mixed pointer- and tuple-equal scopes" {
+    // Pins the hash-keyed `groupSpansByScope` (PR-5 / #138). Pre-fix the
+    // encoder used a linear scan over already-bucketed scopes, which is
+    // O(R x S) per batch. The post-fix code uses a content-keyed hash on
+    // `(name, version, schema_url)`. This test exercises two regression
+    // angles at once:
+    //   1. 32 distinct scopes with 2 spans each (64 records) must collapse
+    //      into exactly 32 ScopeSpans blocks in first-seen order.
+    //   2. Two `InstrumentationScope` value-instances with equal
+    //      `(name, version, schema_url)` tuples but different storage
+    //      addresses must collapse into ONE bucket — this is the core
+    //      tuple-equality fallback the hash strategy must guarantee.
+    const a = std.testing.allocator;
+
+    var resource = try otel.sdk.resource.defaultResource(a);
+    defer resource.deinit();
+    var attr_set = otel.internal.attributes.AttributeSet.init(a);
+    defer attr_set.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    // Build 32 scope name strings, each a freshly allocated buffer so
+    // each scope is content-equal across copies but pointer-distinct
+    // when re-instantiated (the duplicate-instance test below).
+    var names: [32][]u8 = undefined;
+    for (&names, 0..) |*slot, i| {
+        slot.* = try std.fmt.allocPrint(aa, "tracer-{d}", .{i});
+    }
+
+    // Build 64 spans: scope[i] hosts spans (i*2) and (i*2+1).
+    var items: [64]otel.sdk.exporter.SpanData = undefined;
+    for (0..32) |i| {
+        const scope: otel.api.trace.InstrumentationScope = .{
+            .name = names[i],
+            .version = "1.0",
+            .schema_url = "",
+        };
+        const t1: u8 = @intCast(i + 1);
+        const s1: u8 = @intCast(i + 1);
+        const t2: u8 = @intCast(i + 33);
+        const s2: u8 = @intCast(i + 33);
+        const span_a_name = try std.fmt.allocPrint(aa, "scope{d}-a", .{i});
+        const span_b_name = try std.fmt.allocPrint(aa, "scope{d}-b", .{i});
+        items[i * 2] = mkSpan(span_a_name, &attr_set, &resource, scope, t1, s1);
+        items[i * 2 + 1] = mkSpan(span_b_name, &attr_set, &resource, scope, t2, s2);
+    }
+
+    const out = try otel.exporters.otlp_http.encodeSpansProto(a, &items);
+    defer a.free(out);
+
+    var decode_arena = std.heap.ArenaAllocator.init(a);
+    defer decode_arena.deinit();
+    const blocks = try decodeScopeBlocks(decode_arena.allocator(), out);
+
+    try std.testing.expectEqual(@as(usize, 32), blocks.len);
+    // Insertion order is preserved on both axes.
+    for (blocks, 0..) |block, i| {
+        const expected_name = try std.fmt.allocPrint(aa, "tracer-{d}", .{i});
+        try std.testing.expectEqualStrings(expected_name, block.name);
+        try std.testing.expectEqualStrings("1.0", block.version);
+        try std.testing.expectEqual(@as(usize, 2), block.span_names.items.len);
+        const exp_a = try std.fmt.allocPrint(aa, "scope{d}-a", .{i});
+        const exp_b = try std.fmt.allocPrint(aa, "scope{d}-b", .{i});
+        try std.testing.expectEqualStrings(exp_a, block.span_names.items[0]);
+        try std.testing.expectEqualStrings(exp_b, block.span_names.items[1]);
+    }
+}
+
+test "encodeSpansProto collapses tuple-equal scopes from distinct value instances" {
+    // Two `InstrumentationScope` *values* with content-equal tuples must
+    // collapse into a single ScopeSpans block, even when the scope's
+    // string slices originate from separate allocations (different
+    // pointers). This pins the tuple-equality semantics that PR-5's
+    // hash-keyed grouping must preserve — a pure pointer-keyed map would
+    // (incorrectly) emit two blocks here.
+    const a = std.testing.allocator;
+
+    var resource = try otel.sdk.resource.defaultResource(a);
+    defer resource.deinit();
+    var attr_set = otel.internal.attributes.AttributeSet.init(a);
+    defer attr_set.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    // Two name buffers with identical content but distinct storage.
+    const name_1 = try aa.dupe(u8, "tracer-dup");
+    const name_2 = try aa.dupe(u8, "tracer-dup");
+    try std.testing.expect(name_1.ptr != name_2.ptr);
+
+    const scope_a: otel.api.trace.InstrumentationScope = .{ .name = name_1, .version = "1.0" };
+    const scope_b: otel.api.trace.InstrumentationScope = .{ .name = name_2, .version = "1.0" };
+
+    const items = [_]otel.sdk.exporter.SpanData{
+        mkSpan("first", &attr_set, &resource, scope_a, 1, 1),
+        mkSpan("second", &attr_set, &resource, scope_b, 2, 2),
+        mkSpan("third", &attr_set, &resource, scope_a, 3, 3),
+    };
+
+    const out = try otel.exporters.otlp_http.encodeSpansProto(a, &items);
+    defer a.free(out);
+
+    var decode_arena = std.heap.ArenaAllocator.init(a);
+    defer decode_arena.deinit();
+    const blocks = try decodeScopeBlocks(decode_arena.allocator(), out);
+
+    try std.testing.expectEqual(@as(usize, 1), blocks.len);
+    try std.testing.expectEqualStrings("tracer-dup", blocks[0].name);
+    try std.testing.expectEqual(@as(usize, 3), blocks[0].span_names.items.len);
+    try std.testing.expectEqualStrings("first", blocks[0].span_names.items[0]);
+    try std.testing.expectEqualStrings("second", blocks[0].span_names.items[1]);
+    try std.testing.expectEqualStrings("third", blocks[0].span_names.items[2]);
+}
+
 test "encodeSpansProtoDevnw matches in-repo encoder for multi-scope batches" {
     if (!build_options.use_devnw_protobuf) return error.SkipZigTest;
     const a = std.testing.allocator;

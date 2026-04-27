@@ -30,29 +30,56 @@ const devnw_json = if (build_options.use_devnw_json) @import("json") else struct
 // (also internal). Sharing across modules would tangle visibility for a
 // helper that's < 25 LOC; keep the duplication to keep the surface
 // inert.
+//
+// Closes GAP-PERF-PR-5 (#138) on the JSON path: replaces the prior
+// O(R x S) linear scan with a hash-keyed bucket index. See the header
+// note above `ScopeKey2` in `encode_proto.zig` for the strategy
+// rationale (content hash on `(name, version)`, not pointer hash —
+// scopes are copied by value into `MetricData` so per-record pointers
+// differ even when content matches).
 const ScopeBucket = struct {
     scope: trace_api.InstrumentationScope,
     metrics: std.ArrayList(*const exp.MetricData),
 };
 
+const ScopeKey2 = struct {
+    name: []const u8,
+    version: []const u8,
+};
+
+const ScopeKey2Context = struct {
+    pub fn hash(_: @This(), k: ScopeKey2) u64 {
+        var h = std.hash.Wyhash.init(0);
+        h.update(k.name);
+        h.update(&[_]u8{0});
+        h.update(k.version);
+        return h.final();
+    }
+    pub fn eql(_: @This(), a: ScopeKey2, b: ScopeKey2) bool {
+        return std.mem.eql(u8, a.name, b.name) and
+            std.mem.eql(u8, a.version, b.version);
+    }
+};
+
 fn groupByScope(arena: std.mem.Allocator, items: []const exp.MetricData) ![]ScopeBucket {
     var buckets: std.ArrayList(ScopeBucket) = .empty;
+    var index_map = std.HashMap(ScopeKey2, usize, ScopeKey2Context, std.hash_map.default_max_load_percentage).init(arena);
+    defer index_map.deinit();
+
     for (items) |*m| {
-        var found: ?usize = null;
-        for (buckets.items, 0..) |b, i| {
-            if (std.mem.eql(u8, b.scope.name, m.instrumentation_scope.name) and
-                std.mem.eql(u8, b.scope.version, m.instrumentation_scope.version))
-            {
-                found = i;
-                break;
-            }
-        }
-        if (found) |idx| {
-            try buckets.items[idx].metrics.append(arena, m);
+        const key: ScopeKey2 = .{
+            .name = m.instrumentation_scope.name,
+            .version = m.instrumentation_scope.version,
+        };
+        const gop = try index_map.getOrPut(key);
+        if (gop.found_existing) {
+            try buckets.items[gop.value_ptr.*].metrics.append(arena, m);
         } else {
+            const idx = buckets.items.len;
             var b: ScopeBucket = .{ .scope = m.instrumentation_scope, .metrics = .empty };
             try b.metrics.append(arena, m);
             try buckets.append(arena, b);
+            gop.value_ptr.* = idx;
         }
     }
     return buckets.toOwnedSlice(arena);

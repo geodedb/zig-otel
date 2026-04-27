@@ -24,11 +24,75 @@ const trace_api = @import("../../api/trace.zig");
 const attrs_mod = @import("../../internal/attributes.zig");
 const redact = @import("../../internal/redact.zig");
 
+// ---------------------------------------------------------------- Scope hash key
+//
+// Closes GAP-PERF-PR-5 (#138). Replaces the prior O(R x S) linear scan
+// in `groupByScope` / `groupSpansByScope` with an O(R) amortised
+// hash-keyed lookup.
+//
+// Strategy: single-level content hash on the `(name, version, schema_url)`
+// tuple, hashed with `std.hash.Wyhash` over the three byte slices. We do
+// NOT use a pointer-hash on `*const InstrumentationScope` because the
+// SDK copies `instrumentation_scope` *by value* into `SpanData` /
+// `MetricData` (`src/sdk/export.zig:39,572`); pointers therefore differ
+// per-record even when scopes are content-equal, which would defeat the
+// fast path. Slice-pointer hashing is also unsafe: callers may construct
+// scopes with freshly-allocated name buffers (see the duplicate-instance
+// test in `test/otlp_spans_multi_scope.zig`).
+//
+// Two ScopeKey variants are needed because metric grouping omits
+// `schema_url` (it is not part of the metric scope contract here) while
+// span grouping must include it (PR-3 / #136 made schema_url part of the
+// scope identity).
+const ScopeKey2 = struct {
+    name: []const u8,
+    version: []const u8,
+};
+
+const ScopeKey3 = struct {
+    name: []const u8,
+    version: []const u8,
+    schema_url: []const u8,
+};
+
+const ScopeKey2Context = struct {
+    pub fn hash(_: @This(), k: ScopeKey2) u64 {
+        var h = std.hash.Wyhash.init(0);
+        h.update(k.name);
+        h.update(&[_]u8{0});
+        h.update(k.version);
+        return h.final();
+    }
+    pub fn eql(_: @This(), a: ScopeKey2, b: ScopeKey2) bool {
+        return std.mem.eql(u8, a.name, b.name) and
+            std.mem.eql(u8, a.version, b.version);
+    }
+};
+
+const ScopeKey3Context = struct {
+    pub fn hash(_: @This(), k: ScopeKey3) u64 {
+        var h = std.hash.Wyhash.init(0);
+        h.update(k.name);
+        h.update(&[_]u8{0});
+        h.update(k.version);
+        h.update(&[_]u8{0});
+        h.update(k.schema_url);
+        return h.final();
+    }
+    pub fn eql(_: @This(), a: ScopeKey3, b: ScopeKey3) bool {
+        return std.mem.eql(u8, a.name, b.name) and
+            std.mem.eql(u8, a.version, b.version) and
+            std.mem.eql(u8, a.schema_url, b.schema_url);
+    }
+};
+
 // ---------------------------------------------------------------- Metric grouping
 //
 // Group metrics by `(scope.name, scope.version)` so the wire emits one
 // `ScopeMetrics` per scope. Returns arena-owned slices of `MetricData`
-// referencing the input batch (no payload copy).
+// referencing the input batch (no payload copy). Buckets preserve
+// first-seen order — the hash-map only memoises bucket indices; the
+// `buckets` ArrayList is what defines emission order.
 const ScopeBucket = struct {
     scope: trace_api.InstrumentationScope,
     metrics: std.ArrayList(*const exp.MetricData),
@@ -36,22 +100,23 @@ const ScopeBucket = struct {
 
 fn groupByScope(arena: std.mem.Allocator, items: []const exp.MetricData) ![]ScopeBucket {
     var buckets: std.ArrayList(ScopeBucket) = .empty;
+    var index_map = std.HashMap(ScopeKey2, usize, ScopeKey2Context, std.hash_map.default_max_load_percentage).init(arena);
+    defer index_map.deinit();
+
     for (items) |*m| {
-        var found: ?usize = null;
-        for (buckets.items, 0..) |b, i| {
-            if (std.mem.eql(u8, b.scope.name, m.instrumentation_scope.name) and
-                std.mem.eql(u8, b.scope.version, m.instrumentation_scope.version))
-            {
-                found = i;
-                break;
-            }
-        }
-        if (found) |idx| {
-            try buckets.items[idx].metrics.append(arena, m);
+        const key: ScopeKey2 = .{
+            .name = m.instrumentation_scope.name,
+            .version = m.instrumentation_scope.version,
+        };
+        const gop = try index_map.getOrPut(key);
+        if (gop.found_existing) {
+            try buckets.items[gop.value_ptr.*].metrics.append(arena, m);
         } else {
+            const idx = buckets.items.len;
             var b: ScopeBucket = .{ .scope = m.instrumentation_scope, .metrics = .empty };
             try b.metrics.append(arena, m);
             try buckets.append(arena, b);
+            gop.value_ptr.* = idx;
         }
     }
     return buckets.toOwnedSlice(arena);
@@ -224,23 +289,27 @@ pub const SpanScopeBucket = struct {
 
 pub fn groupSpansByScope(arena: std.mem.Allocator, items: []const exp.SpanData) ![]SpanScopeBucket {
     var buckets: std.ArrayList(SpanScopeBucket) = .empty;
+    // Hash-keyed bucket index — closes GAP-PERF-PR-5 (#138). See the
+    // header note above the `ScopeKey2`/`ScopeKey3` declarations for the
+    // rationale (content hash on the tuple, not pointer hash).
+    var index_map = std.HashMap(ScopeKey3, usize, ScopeKey3Context, std.hash_map.default_max_load_percentage).init(arena);
+    defer index_map.deinit();
+
     for (items) |*s| {
-        var found: ?usize = null;
-        for (buckets.items, 0..) |b, i| {
-            if (std.mem.eql(u8, b.scope.name, s.instrumentation_scope.name) and
-                std.mem.eql(u8, b.scope.version, s.instrumentation_scope.version) and
-                std.mem.eql(u8, b.scope.schema_url, s.instrumentation_scope.schema_url))
-            {
-                found = i;
-                break;
-            }
-        }
-        if (found) |idx| {
-            try buckets.items[idx].spans.append(arena, s);
+        const key: ScopeKey3 = .{
+            .name = s.instrumentation_scope.name,
+            .version = s.instrumentation_scope.version,
+            .schema_url = s.instrumentation_scope.schema_url,
+        };
+        const gop = try index_map.getOrPut(key);
+        if (gop.found_existing) {
+            try buckets.items[gop.value_ptr.*].spans.append(arena, s);
         } else {
+            const idx = buckets.items.len;
             var b: SpanScopeBucket = .{ .scope = s.instrumentation_scope, .spans = .empty };
             try b.spans.append(arena, s);
             try buckets.append(arena, b);
+            gop.value_ptr.* = idx;
         }
     }
     return buckets.toOwnedSlice(arena);
@@ -353,9 +422,9 @@ pub fn encodeSpansProto(allocator: std.mem.Allocator, items: []const exp.SpanDat
 
     // Bucket bookkeeping is short-lived; route it through an internal
     // arena so direct callers don't have to manage it. Mirrors the
-    // metrics encoder pattern at `groupByScope`. PR-5 (#138) will replace
-    // the linear scan inside `groupSpansByScope` with a hash-keyed
-    // grouping; the public encoder API stays unchanged.
+    // metrics encoder pattern at `groupByScope`. `groupSpansByScope` itself
+    // uses a hash-keyed index (closes GAP-PERF-PR-5 / #138) so this is
+    // O(R) amortised across the whole batch.
     var bucket_arena = std.heap.ArenaAllocator.init(allocator);
     defer bucket_arena.deinit();
     const ba = bucket_arena.allocator();

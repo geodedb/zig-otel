@@ -101,7 +101,7 @@ pub const SimpleSpanProcessor = struct {
 
 fn simpleOnEnd(ctx: ?*anyopaque, span: *trace_api.SpanState) void {
     const self: *SimpleSpanProcessor = @ptrCast(@alignCast(ctx.?));
-    defer span.deinit();
+    defer span.recycle();
     const data: SpanData = .{
         .name = span.name,
         .span_context = span.sc,
@@ -252,7 +252,7 @@ pub const BatchSpanProcessor = struct {
                 self.pool = null;
             }
         }
-        for (self.queue.items) |s| s.deinit();
+        for (self.queue.items) |s| s.recycle();
         self.queue.deinit(self.allocator);
         self.allocator.destroy(self);
     }
@@ -278,7 +278,7 @@ pub const BatchSpanProcessor = struct {
         defer self.allocator.free(batch);
         if (batch.len == 0) return;
         const datas = self.allocator.alloc(SpanData, batch.len) catch {
-            for (batch) |s| s.deinit();
+            for (batch) |s| s.recycle();
             return;
         };
         defer self.allocator.free(datas);
@@ -308,7 +308,7 @@ pub const BatchSpanProcessor = struct {
         self.export_mutex.lock();
         _ = self.exporter.exportSpans(datas) catch {};
         self.export_mutex.unlock();
-        for (batch) |s| s.deinit();
+        for (batch) |s| s.recycle();
     }
 };
 
@@ -371,13 +371,13 @@ fn batchOnEnd(ctx: ?*anyopaque, span: *trace_api.SpanState) void {
     if (self.queue.items.len >= self.options.max_queue_size) {
         self.dropped +%= 1;
         self.mutex.unlock();
-        span.deinit();
+        span.recycle();
         return;
     }
     self.queue.append(self.allocator, span) catch {
         self.dropped +%= 1;
         self.mutex.unlock();
-        span.deinit();
+        span.recycle();
         return;
     };
     const should_flush = self.queue.items.len >= self.options.max_export_batch_size;

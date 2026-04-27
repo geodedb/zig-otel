@@ -11,6 +11,7 @@ const clock_mod = @import("../internal/clock.zig");
 const attrs_mod = @import("../internal/attributes.zig");
 const Resource = @import("resource.zig").Resource;
 const exp = @import("export.zig");
+const span_pool = @import("span_pool.zig");
 
 pub const SamplingDecision = enum {
     drop,
@@ -139,6 +140,10 @@ pub const TracerProvider = struct {
     /// valid even if the TracerProvider value is moved.
     default_processor: ?*exp.SimpleSpanProcessor = null,
     default_random: ?*id_mod.Random = null,
+    /// SpanState reuse pool. See ADR-0001. Heap-allocated so the
+    /// recycler's `ctx` pointer stays valid if the TracerProvider
+    /// value is moved.
+    pool: *span_pool.Pool,
 
     pub fn init(allocator: std.mem.Allocator, config: TraceConfig) !TracerProvider {
         var owns_resource = false;
@@ -152,6 +157,10 @@ pub const TracerProvider = struct {
             owns_resource = true;
         }
 
+        const pool_ptr = try allocator.create(span_pool.Pool);
+        errdefer allocator.destroy(pool_ptr);
+        pool_ptr.* = span_pool.Pool.init(allocator);
+
         var self: TracerProvider = .{
             .allocator = allocator,
             .config = config,
@@ -161,6 +170,7 @@ pub const TracerProvider = struct {
             .resource = resource_ptr,
             .owns_resource = owns_resource,
             .processors = &.{},
+            .pool = pool_ptr,
         };
 
         if (config.id_generator) |g| {
@@ -197,6 +207,11 @@ pub const TracerProvider = struct {
 
     pub fn deinit(self: *TracerProvider) void {
         for (self.processors) |p| p.shutdown();
+        // Drain the pool BEFORE freeing the pool struct so any
+        // pooled SpanStates run their final deinit while the
+        // child allocator is still valid.
+        self.pool.deinit();
+        self.allocator.destroy(self.pool);
         self.allocator.free(self.processors);
         if (self.default_processor) |sp| self.allocator.destroy(sp);
         if (self.default_random) |r| self.allocator.destroy(r);
@@ -246,7 +261,24 @@ fn startSpan(ctx: ?*anyopaque, scope: trace_api.InstrumentationScope, parent: ct
     }
 
     const start_ns = opts.start_unix_nano orelse self.clock.now();
-    var state = try trace_api.SpanState.init(self.allocator, name, sc, scope, start_ns);
+    var state = blk: {
+        if (self.pool.tryAcquire()) |reused| {
+            // Reseat fields that are bound to this span's identity.
+            // The `recycle()` path already cleared the previous
+            // span's transient state and reset the arena/attributes,
+            // so we just need to re-prime them.
+            const child = reused.arena.child_allocator;
+            reused.name = try child.dupe(u8, name);
+            reused.sc = sc;
+            reused.start_unix_nano = start_ns;
+            reused.instrumentation_scope = scope;
+            // Pool entries already have recycler set; no change needed.
+            break :blk reused;
+        }
+        const fresh = try trace_api.SpanState.init(self.allocator, name, sc, scope, start_ns);
+        fresh.recycler = self.pool.recycler();
+        break :blk fresh;
+    };
     state.kind = opts.kind;
     if (parent_sc) |psc| state.parent_span_id = psc.span_id;
 
@@ -269,7 +301,7 @@ fn startSpan(ctx: ?*anyopaque, scope: trace_api.InstrumentationScope, parent: ct
 fn onSpanEnd(ctx: ?*anyopaque, span: *trace_api.SpanState) void {
     const self: *TracerProvider = @ptrCast(@alignCast(ctx.?));
     if (self.processors.len == 0) {
-        span.deinit();
+        span.recycle();
         return;
     }
     if (self.processors.len == 1) {

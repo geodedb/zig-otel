@@ -59,6 +59,7 @@ pub const sdk = struct {
     pub const logs = @import("sdk/logs.zig");
     pub const config = @import("sdk/config.zig");
     pub const exporter = @import("sdk/export.zig");
+    pub const span_pool = @import("sdk/span_pool.zig");
 };
 
 pub const exporters = struct {

@@ -1,0 +1,56 @@
+{
+  "generated_at_unix_s": 1777248063,
+  "rows": [
+    {
+      "git_sha": "12150b986581cebcd0b144b3f374dcc6abb974cb",
+      "run_timestamp_unix_s": 1777248063,
+      "zig_version": "0.16.0",
+      "os": "linux",
+      "arch": "x86_64",
+      "cpu": "broadwell",
+      "scenario_name": "micro_span_record_steady_state",
+      "ops_per_iteration": 1000,
+      "sample_count": 6,
+      "wall_ns_min": 1872552,
+      "wall_ns_p50": 2043980,
+      "wall_ns_p95": 2098882,
+      "wall_ns_p99": 2098882,
+      "wall_ns_max": 2132564,
+      "wall_ns_stddev": 101327.56180822669,
+      "throughput_ops_per_sec": 489241.5777062398,
+      "throughput_stddev_ops_per_sec": 25808.68669913901,
+      "alloc_count": 10021,
+      "alloc_bytes": 1384070,
+      "peak_live_bytes": 362611,
+      "rss_current_bytes": 10903552,
+      "rss_peak_bytes": 10903552,
+      "layer": "micro",
+      "variant": "default",
+      "language": "zig",
+      "runtime_version": "0.16.0",
+      "command": "",
+      "warmups": 1,
+      "wall_ns_samples": [
+        2098882,
+        2132564,
+        2043980,
+        1872552,
+        1899068,
+        2062828
+      ],
+      "alloc_count_samples": [
+        10021,
+        10021,
+        10021,
+        10021,
+        10021,
+        10021
+      ],
+      "counters": {
+        "alloc_delta_bytes": 1384070,
+        "alloc_threshold_bytes": 0,
+        "alloc_assertion": "na"
+      }
+    }
+  ]
+}

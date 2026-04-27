@@ -99,6 +99,20 @@ pub const SpanState = struct {
     /// non-recording span without paying for mutation work.
     recording: bool = true,
     ended: bool = false,
+    /// Optional reuse hook. When set, `recycle()` resets transient
+    /// state and returns the SpanState to the SDK's pool instead of
+    /// freeing the struct + arena pages. Null on caller-constructed
+    /// spans (e.g. in tests) — `recycle()` then falls back to a full
+    /// `deinit()`.
+    recycler: ?Recycler = null,
+
+    pub const Recycler = struct {
+        ctx: *anyopaque,
+        /// Returns true when the SpanState was successfully returned
+        /// to the pool. False means the pool was full and the caller
+        /// must do a full `deinit()`.
+        returnFn: *const fn (*anyopaque, *SpanState) bool,
+    };
 
     pub fn init(allocator: std.mem.Allocator, name: []const u8, sc: SpanContext, scope: InstrumentationScope, start_ns: u64) !*SpanState {
         const self = try allocator.create(SpanState);
@@ -121,6 +135,57 @@ pub const SpanState = struct {
         const child = self.arena.child_allocator;
         child.free(self.name);
         if (self.status_description.len != 0) child.free(self.status_description);
+        for (self.events.items) |*ev| {
+            if (ev.attributes) |a| {
+                a.deinit();
+                child.destroy(a);
+            }
+        }
+        self.attributes.deinit();
+        self.events.deinit(child);
+        self.links.deinit(child);
+        self.arena.deinit();
+        child.destroy(self);
+    }
+
+    /// End-of-life hook for span ownership. When a recycler is wired
+    /// (SDK code path), reset transient state and try to return this
+    /// SpanState to the pool. On pool overflow, fall through to a
+    /// full `deinit()`. When no recycler is wired (test/no-pool path)
+    /// this is a plain `deinit()`. After this call the SpanState
+    /// pointer is invalid for the caller in either case.
+    pub fn recycle(self: *SpanState) void {
+        const r = self.recycler orelse {
+            self.deinit();
+            return;
+        };
+        const child = self.arena.child_allocator;
+        child.free(self.name);
+        self.name = &.{};
+        if (self.status_description.len != 0) {
+            child.free(self.status_description);
+            self.status_description = &.{};
+        }
+        for (self.events.items) |*ev| {
+            if (ev.attributes) |a| {
+                a.deinit();
+                child.destroy(a);
+            }
+        }
+        self.events.clearRetainingCapacity();
+        self.links.clearRetainingCapacity();
+        self.attributes.reset();
+        _ = self.arena.reset(.retain_capacity);
+        self.parent_span_id = .invalid;
+        self.kind = .internal;
+        self.end_unix_nano = null;
+        self.status_code = .unset;
+        self.on_end_ctx = null;
+        self.on_end = null;
+        self.recording = true;
+        self.ended = false;
+        if (r.returnFn(r.ctx, self)) return;
+        // Pool was full: tear down the rest of the state.
         self.attributes.deinit();
         self.events.deinit(child);
         self.links.deinit(child);

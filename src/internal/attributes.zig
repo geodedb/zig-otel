@@ -60,6 +60,17 @@ pub const AttributeSet = struct {
         self.arena.deinit();
     }
 
+    /// Clear all entries and reset the arena while retaining capacity
+    /// (entry list, index buckets, first arena page). Used by the
+    /// SpanState pool so a recycled span pays no per-span attribute
+    /// allocator traffic on the steady-state hot path.
+    pub fn reset(self: *AttributeSet) void {
+        self.entries.clearRetainingCapacity();
+        self.index.clearRetainingCapacity();
+        _ = self.arena.reset(.retain_capacity);
+        self.dropped = 0;
+    }
+
     pub fn count(self: *const AttributeSet) usize {
         return self.entries.items.len;
     }

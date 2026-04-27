@@ -36,6 +36,7 @@ pub fn main(init: std.process.Init) !void {
         .{ .name = "micro_counter_add_no_attrs", .layer = .micro, .ops_per_iteration = 10_000, .run = benchCounterAddNoAttrs },
         .{ .name = "micro_counter_add_4_attrs_hit", .layer = .micro, .ops_per_iteration = 10_000, .run = benchCounterAdd4AttrsHit },
         .{ .name = "micro_histogram_record_4_attrs_hit", .layer = .micro, .ops_per_iteration = 10_000, .run = benchHistogramRecord4AttrsHit },
+        .{ .name = "micro_span_record_steady_state", .layer = .micro, .ops_per_iteration = 1_000, .run = benchSpanRecordSteadyState },
         .{ .name = "micro_next_trace_id", .layer = .micro, .ops_per_iteration = 100_000, .zero_alloc_expected = true, .run = benchNextTraceId },
         .{ .name = "micro_next_span_id", .layer = .micro, .ops_per_iteration = 100_000, .zero_alloc_expected = true, .run = benchNextSpanId },
         .{ .name = "micro_clock_unix_nano", .layer = .micro, .ops_per_iteration = 100_000, .zero_alloc_expected = true, .run = benchClockUnixNano },
@@ -247,6 +248,31 @@ fn jsonWriteAttrs(ctx: *framework.Context, attr_count: u32) !void {
         try json_codec.writeAttributes(ctx.allocator, &out, &set);
         std.mem.doNotOptimizeAway(out.items.len);
     }
+}
+
+// ----------------------------------------------------------------------------
+// SpanState steady-state recording
+// ----------------------------------------------------------------------------
+
+fn benchSpanRecordSteadyState(ctx: *framework.Context) anyerror!void {
+    if (@import("build_options").otel_disabled) return;
+    var resource = try otel.sdk.resource.defaultResource(ctx.allocator);
+    defer resource.deinit();
+    var rec = otel.exporters.in_memory.Recorder.init(ctx.allocator);
+    defer rec.deinit();
+    var tp = try otel.sdk.trace.TracerProvider.init(ctx.allocator, .{
+        .resource = &resource,
+        .default_exporter = rec.spanExporter(),
+    });
+    defer tp.deinit();
+    const t = tp.tracer(.{ .name = "bench" });
+    var i: u64 = 0;
+    while (i < ctx.scenario.ops_per_iteration) : (i += 1) {
+        const span = try t.startSpan(.empty(), "op", .{});
+        try span.setStringAttribute("k", "v");
+        span.end(null);
+    }
+    std.mem.doNotOptimizeAway(rec.spans.items.len);
 }
 
 // ----------------------------------------------------------------------------

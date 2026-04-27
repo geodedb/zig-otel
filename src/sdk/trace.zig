@@ -137,13 +137,22 @@ pub const TracerProvider = struct {
     owns_resource: bool,
     processors: []exp.SpanProcessor,
     /// Heap-allocated so the processor's internal `ctx` pointer stays
-    /// valid even if the TracerProvider value is moved.
-    default_processor: ?*exp.SimpleSpanProcessor = null,
+    /// valid even if the TracerProvider value is moved. Tagged union:
+    /// `default_exporter` paths default to `.batch` per ADR-0003;
+    /// callers who want the legacy synchronous Simple path provide
+    /// their own SimpleSpanProcessor via the `processors` field.
+    default_processor: DefaultProcessor = .none,
     default_random: ?*id_mod.Random = null,
     /// SpanState reuse pool. See ADR-0001. Heap-allocated so the
     /// recycler's `ctx` pointer stays valid if the TracerProvider
     /// value is moved.
     pool: *span_pool.Pool,
+
+    pub const DefaultProcessor = union(enum) {
+        none,
+        simple: *exp.SimpleSpanProcessor,
+        batch: *exp.BatchSpanProcessor,
+    };
 
     pub fn init(allocator: std.mem.Allocator, config: TraceConfig) !TracerProvider {
         var owns_resource = false;
@@ -192,11 +201,16 @@ pub const TracerProvider = struct {
             @memcpy(owned, config.processors);
             self.processors = owned;
         } else if (config.default_exporter) |exporter| {
-            const sp = try allocator.create(exp.SimpleSpanProcessor);
-            sp.* = exp.SimpleSpanProcessor.init(allocator, exporter, resource_ptr);
-            self.default_processor = sp;
+            // ADR-0003: default to BatchSpanProcessor. Callers who
+            // want the synchronous Simple path supply their own
+            // SimpleSpanProcessor via `processors`.
+            const bsp = try exp.BatchSpanProcessor.init(allocator, exporter, resource_ptr, .{
+                .async_workers = 1,
+            });
+            errdefer bsp.deinit();
+            self.default_processor = .{ .batch = bsp };
             const owned = try allocator.alloc(exp.SpanProcessor, 1);
-            owned[0] = sp.processor();
+            owned[0] = bsp.processor();
             self.processors = owned;
         } else {
             self.processors = try allocator.alloc(exp.SpanProcessor, 0);
@@ -213,7 +227,11 @@ pub const TracerProvider = struct {
         self.pool.deinit();
         self.allocator.destroy(self.pool);
         self.allocator.free(self.processors);
-        if (self.default_processor) |sp| self.allocator.destroy(sp);
+        switch (self.default_processor) {
+            .none => {},
+            .simple => |sp| self.allocator.destroy(sp),
+            .batch => |bsp| bsp.deinit(),
+        }
         if (self.default_random) |r| self.allocator.destroy(r);
         if (self.owns_resource) {
             self.resource.deinit();

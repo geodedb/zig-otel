@@ -39,6 +39,10 @@ pub fn main(init: std.process.Init) !void {
     });
     otel.instrumentation.http.endClientSpan(span, .{ .status_code = 200 });
 
+    // ADR-0003: default_exporter wraps in BatchSpanProcessor, so the
+    // recorder is empty until we flush.
+    try tp.forceFlush(1_000);
+
     try out.print(
         "captured {d} span(s); first kind = {s}\n",
         .{ rec.spans.items.len, rec.spans.items[0].kind.toString() },

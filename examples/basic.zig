@@ -32,6 +32,10 @@ pub fn main(init: std.process.Init) !void {
     span.setStatus(.ok, "");
     span.end(null);
 
+    // ADR-0003: default_exporter wraps in BatchSpanProcessor, so the
+    // recorder is empty until we flush.
+    try tp.forceFlush(1_000);
+
     try out.print(
         "exported {d} span(s); first name = {s}\n",
         .{ exporter.spans.items.len, exporter.spans.items[0].name },

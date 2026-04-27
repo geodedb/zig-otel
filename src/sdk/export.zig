@@ -285,13 +285,15 @@ pub const BatchSpanProcessor = struct {
         // sleeping timer, and join. Order matters — the timer can
         // call `submitDrain` on the pool, so it must exit before
         // we tear the pool down.
-        if (self.timer_thread) |t| {
-            self.shutdown_requested.store(true, .release);
-            self.shutdown_mu.lock();
-            self.shutdown_cond.broadcast();
-            self.shutdown_mu.unlock();
-            t.join();
-            self.timer_thread = null;
+        if (build_options.use_devnw_pool) {
+            if (self.timer_thread) |t| {
+                self.shutdown_requested.store(true, .release);
+                self.shutdown_mu.lock();
+                self.shutdown_cond.broadcast();
+                self.shutdown_mu.unlock();
+                t.join();
+                self.timer_thread = null;
+            }
         }
         // Tear down the pool next so no in-flight drain task can race
         // with the queue cleanup below. `.drain` waits for queued and

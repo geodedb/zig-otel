@@ -48,6 +48,9 @@ test "tracer end-to-end with in-memory exporter" {
     try span.setStringAttribute("k", "v");
     span.end(2000);
 
+    // ADR-0003: default_exporter now wraps in BSP, not Simple, so
+    // post-`end` reads need an explicit flush.
+    try tp.forceFlush(1_000);
     try std.testing.expectEqual(@as(usize, 1), rec.spans.items.len);
     try std.testing.expectEqual(otel.api.trace.StatusCode.ok, rec.spans.items[0].status_code);
     // GAP #1: tracer scope must propagate to the recorded span.
@@ -74,6 +77,7 @@ test "scope from each tracer is preserved on its spans" {
     sa.end(null);
     const sb = try t_b.startSpan(.empty(), "from-b", .{});
     sb.end(null);
+    try tp.forceFlush(1_000);
 
     try std.testing.expectEqual(@as(usize, 2), rec.spans.items.len);
     try std.testing.expectEqualStrings("lib-a", rec.spans.items[0].instrumentation_scope.name);

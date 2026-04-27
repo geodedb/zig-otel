@@ -7,13 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING:** `TracerProvider`'s `default_exporter` now wraps the
+  supplied exporter in a `BatchSpanProcessor` (one async worker,
+  5 s `schedule_delay_ms`) instead of a `SimpleSpanProcessor`.
+  Aligns with every other OTel SDK; lifts blocking export off the
+  producer thread. Migration: callers that need synchronous post-
+  `end` visibility (most tests) should construct a
+  `SimpleSpanProcessor` explicitly and pass it via the `processors`
+  field, or call `tp.forceFlush(timeout_ms)` before reading the
+  exporter. See `docs/adr/0003-default-bsp.md`. (P0-10)
+- `BatchSpanProcessor` now honours `schedule_delay_ms` via a
+  dedicated timer thread (gated on `-Dotel_use_devnw_pool=true`
+  and `async_workers > 0`). Spans below `max_export_batch_size`
+  no longer sit in the queue until the next forceFlush. (P0-9)
+- `SpanState` is now reused via a mutex-guarded pool with arena
+  retain-capacity semantics. Steady-state span recording is ~1.97×
+  faster and uses 55% less allocator traffic. (P0-2)
+- `AttributeSet.put` now uses an O(1) hash index. Per-span
+  attribute ingestion at 120-attr prefill is **~11× faster**.
+  (P0-1)
+- `MeterProvider.pointFor` is now zero-alloc on the hit path via a
+  fingerprint index. `Counter.add` / `Histogram.record` go from 3
+  allocs/op to 0. (P0-4)
+
 ### Added
 
-- Initial project structure
-- Core library implementation
-- Unit and integration tests
-- CI/CD pipeline
-- Documentation
+- Runtime kill-switch on `Tracer`/`Meter`/`Logger` providers via
+  `config.disabled` (mirrors the `OTEL_SDK_DISABLED` env var). (F-2)
+- Real-loopback HTTP integration bench at level 6. (F-5)
+- Per-call retry backoff sleep in OTLP/HTTP and OTLP/gRPC
+  exporters; CPU no longer pegs on persistent failures. (P-N1, P-N2)
+- Linux comptime guard around `LoopbackServer.wake()` raw syscalls
+  for clean cross-OS bench compile errors. (Q35)
+
+### Fixed
+
+- `InstrumentationScope` now propagates from the `Tracer` value to
+  the recorded `SpanState` instead of being clobbered with an empty
+  scope. OTLP wire output groups spans correctly under their
+  originating `ScopeSpans`. (GAP #1, #3)
 
 ## [0.1.0] - YYYY-MM-DD
 

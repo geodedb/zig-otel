@@ -260,9 +260,17 @@ fn benchSpanRecordSteadyState(ctx: *framework.Context) anyerror!void {
     defer resource.deinit();
     var rec = otel.exporters.in_memory.Recorder.init(ctx.allocator);
     defer rec.deinit();
+    // Explicit Simple processor — this scenario isolates the SDK's
+    // span-lifecycle cost; using the default (BSP per ADR-0003) would
+    // also amortise queue + batch overhead and answer a different
+    // question. See PERF_GAP_ANALYSIS Top-5 risks for the BSP-vs-
+    // Simple trade-off.
+    const sp = try ctx.allocator.create(otel.sdk.exporter.SimpleSpanProcessor);
+    defer ctx.allocator.destroy(sp);
+    sp.* = otel.sdk.exporter.SimpleSpanProcessor.init(ctx.allocator, rec.spanExporter(), &resource);
     var tp = try otel.sdk.trace.TracerProvider.init(ctx.allocator, .{
         .resource = &resource,
-        .default_exporter = rec.spanExporter(),
+        .processors = &.{sp.processor()},
     });
     defer tp.deinit();
     const t = tp.tracer(.{ .name = "bench" });

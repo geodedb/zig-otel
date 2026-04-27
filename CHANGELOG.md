@@ -70,6 +70,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Trace OTLP encoder now groups spans by `instrumentation_scope`.**
+  `encodeSpansProto` (and the parallel `encodeSpansProtoDevnw` path)
+  in `src/exporters/otlp_http.zig` previously took
+  `items[0].instrumentation_scope` for the entire batch and emitted
+  one `ScopeSpans` block. When a batch contained spans from multiple
+  tracers (different `(name, version, schema_url)`) every span past
+  index 0 was mislabelled as belonging to the first tracer's scope —
+  a wire-correctness defect that downstream OTLP backends could not
+  recover from. The encoder now passes the batch through a new
+  `groupSpansByScope` helper (mirroring the metrics-side
+  `groupByScope` pattern but keyed on the full
+  `(name, version, schema_url)` tuple) and emits one `ScopeSpans`
+  per distinct scope. `ScopeSpans.schema_url` (proto field 3) is
+  wired through both encoder paths. Single-scope batches stay
+  byte-identical to the pre-fix wire shape (proto3 default-omit
+  on the empty `schema_url`), so the common case takes no perf
+  hit. New regression tests in `test/otlp_spans_multi_scope.zig`
+  (5 tests: multi-scope by name/version/schema_url, single-scope
+  byte-parity fast path, DevNW↔in-repo wire parity) FAIL on `main`
+  pre-fix and PASS post-fix. PR-5 (#138) replaces the linear scan
+  inside `groupSpansByScope` with a hash-keyed bucket table next.
+  (PR-3, #136)
 - **`MeterProvider.pointFor` race fix.** Concurrent
   `Counter.add` / `Histogram.record` / `Gauge.set` calls — and a
   concurrent `collect()` — now run under a per-instrument

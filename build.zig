@@ -232,6 +232,7 @@ pub fn build(b: *std.Build) void {
         "test/security.zig",
         "test/instrumentation_slog.zig",
         "test/otlp_wire_parity.zig",
+        "test/otlp_spans_multi_scope.zig",
         "test/tls_loopback.zig",
         "test/batch_async.zig",
         "test/comptime_disabled.zig",

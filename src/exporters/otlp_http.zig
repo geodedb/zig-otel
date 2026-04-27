@@ -1036,6 +1036,76 @@ fn writeHistogramPointJsonStd(allocator: std.mem.Allocator, buf: *std.ArrayList(
     try buf.append(allocator, '}');
 }
 
+/// Group spans by `(scope.name, scope.version, scope.schema_url)` so the
+/// wire emits one `ScopeSpans` per distinct InstrumentationScope. Buckets
+/// preserve first-seen order. Returns arena-owned slices referencing the
+/// input batch (no payload copy).
+///
+/// Closes PR-3 (#136): pre-fix the trace encoder used
+/// `items[0].instrumentation_scope` for the entire batch, which mislabelled
+/// every span past index 0 when a batch crossed multiple tracers.
+const SpanScopeBucket = struct {
+    scope: trace_api.InstrumentationScope,
+    spans: std.ArrayList(*const exp.SpanData),
+};
+
+fn groupSpansByScope(arena: std.mem.Allocator, items: []const exp.SpanData) ![]SpanScopeBucket {
+    var buckets: std.ArrayList(SpanScopeBucket) = .empty;
+    for (items) |*s| {
+        var found: ?usize = null;
+        for (buckets.items, 0..) |b, i| {
+            if (std.mem.eql(u8, b.scope.name, s.instrumentation_scope.name) and
+                std.mem.eql(u8, b.scope.version, s.instrumentation_scope.version) and
+                std.mem.eql(u8, b.scope.schema_url, s.instrumentation_scope.schema_url))
+            {
+                found = i;
+                break;
+            }
+        }
+        if (found) |idx| {
+            try buckets.items[idx].spans.append(arena, s);
+        } else {
+            var b: SpanScopeBucket = .{ .scope = s.instrumentation_scope, .spans = .empty };
+            try b.spans.append(arena, s);
+            try buckets.append(arena, b);
+        }
+    }
+    return buckets.toOwnedSlice(arena);
+}
+
+fn writeSpan(w: *otlp.Writer, span: exp.SpanData) !void {
+    const span_start = try w.beginSubMessage(otlp.fn_spans);
+    try w.writeBytes(otlp.fn_span_trace_id, span.span_context.trace_id.bytes[0..]);
+    try w.writeBytes(otlp.fn_span_span_id, span.span_context.span_id.bytes[0..]);
+    if (span.span_context.trace_state) |ts| try w.writeString(otlp.fn_span_trace_state, ts);
+    if (span.parent_span_id.isValid()) try w.writeBytes(otlp.fn_span_parent_span_id, span.parent_span_id.bytes[0..]);
+    try w.writeString(otlp.fn_span_name, span.name);
+    try w.writeUint64(otlp.fn_span_kind, switch (span.kind) {
+        .unspecified => otlp.span_kind_unspecified,
+        .internal => otlp.span_kind_internal,
+        .server => otlp.span_kind_server,
+        .client => otlp.span_kind_client,
+        .producer => otlp.span_kind_producer,
+        .consumer => otlp.span_kind_consumer,
+    });
+    try w.writeFixed64Field(otlp.fn_span_start_unix_nano, span.start_unix_nano);
+    try w.writeFixed64Field(otlp.fn_span_end_unix_nano, span.end_unix_nano);
+    for (span.attributes.entries.items) |kv| {
+        try writeKeyValue(w, otlp.fn_span_attributes, kv);
+    }
+    try w.writeUint64(otlp.fn_span_dropped_attributes_count, span.dropped_attributes_count);
+
+    const status_start = try w.beginSubMessage(otlp.fn_span_status);
+    try w.writeString(otlp.fn_status_message, span.status_description);
+    try w.writeUint64(otlp.fn_status_code, switch (span.status_code) {
+        .unset => otlp.status_code_unset,
+        .ok => otlp.status_code_ok,
+        .@"error" => otlp.status_code_error,
+    });
+    try w.commitSubMessage(status_start);
+    try w.commitSubMessage(span_start);
+}
+
 pub fn encodeSpansProto(allocator: std.mem.Allocator, items: []const exp.SpanData) ![]u8 {
     var w = otlp.Writer.init(allocator);
     defer w.deinit();
@@ -1043,6 +1113,17 @@ pub fn encodeSpansProto(allocator: std.mem.Allocator, items: []const exp.SpanDat
     // For simplicity we emit one ResourceSpans per call.
     if (items.len == 0) return try w.toOwnedSlice();
     const resource = items[0].resource;
+
+    // Bucket bookkeeping is short-lived; route it through an internal
+    // arena so direct callers don't have to manage it. Mirrors the
+    // metrics encoder pattern at `groupByScope`. PR-5 (#138) will replace
+    // the linear scan inside `groupSpansByScope` with a hash-keyed
+    // grouping; the public encoder API stays unchanged.
+    var bucket_arena = std.heap.ArenaAllocator.init(allocator);
+    defer bucket_arena.deinit();
+    const ba = bucket_arena.allocator();
+
+    const buckets = try groupSpansByScope(ba, items);
 
     const rs_start = try w.beginSubMessage(otlp.fn_resource_spans);
     {
@@ -1052,45 +1133,29 @@ pub fn encodeSpansProto(allocator: std.mem.Allocator, items: []const exp.SpanDat
         }
         try w.commitSubMessage(r_start);
 
-        const ss_start = try w.beginSubMessage(otlp.fn_scope_spans);
-        const sc_start = try w.beginSubMessage(otlp.fn_scope);
-        try w.writeString(otlp.fn_scope_name, items[0].instrumentation_scope.name);
-        try w.writeString(otlp.fn_scope_version, items[0].instrumentation_scope.version);
-        try w.commitSubMessage(sc_start);
+        // Single-scope fast path: byte-identical to the pre-PR-3 wire
+        // shape. The loop body below is the same code; for `buckets.len
+        // == 1` the only field-level difference is the conditional
+        // `schema_url` emission, which `writeString` already skips when
+        // the value is empty (proto3 default-omit). Empty `schema_url`
+        // therefore produces zero extra bytes — full byte-parity holds.
+        for (buckets) |bucket| {
+            const ss_start = try w.beginSubMessage(otlp.fn_scope_spans);
+            const sc_start = try w.beginSubMessage(otlp.fn_scope);
+            try w.writeString(otlp.fn_scope_name, bucket.scope.name);
+            try w.writeString(otlp.fn_scope_version, bucket.scope.version);
+            try w.commitSubMessage(sc_start);
 
-        for (items) |span| {
-            const span_start = try w.beginSubMessage(otlp.fn_spans);
-            try w.writeBytes(otlp.fn_span_trace_id, span.span_context.trace_id.bytes[0..]);
-            try w.writeBytes(otlp.fn_span_span_id, span.span_context.span_id.bytes[0..]);
-            if (span.span_context.trace_state) |ts| try w.writeString(otlp.fn_span_trace_state, ts);
-            if (span.parent_span_id.isValid()) try w.writeBytes(otlp.fn_span_parent_span_id, span.parent_span_id.bytes[0..]);
-            try w.writeString(otlp.fn_span_name, span.name);
-            try w.writeUint64(otlp.fn_span_kind, switch (span.kind) {
-                .unspecified => otlp.span_kind_unspecified,
-                .internal => otlp.span_kind_internal,
-                .server => otlp.span_kind_server,
-                .client => otlp.span_kind_client,
-                .producer => otlp.span_kind_producer,
-                .consumer => otlp.span_kind_consumer,
-            });
-            try w.writeFixed64Field(otlp.fn_span_start_unix_nano, span.start_unix_nano);
-            try w.writeFixed64Field(otlp.fn_span_end_unix_nano, span.end_unix_nano);
-            for (span.attributes.entries.items) |kv| {
-                try writeKeyValue(&w, otlp.fn_span_attributes, kv);
+            for (bucket.spans.items) |span_ptr| {
+                try writeSpan(&w, span_ptr.*);
             }
-            try w.writeUint64(otlp.fn_span_dropped_attributes_count, span.dropped_attributes_count);
 
-            const status_start = try w.beginSubMessage(otlp.fn_span_status);
-            try w.writeString(otlp.fn_status_message, span.status_description);
-            try w.writeUint64(otlp.fn_status_code, switch (span.status_code) {
-                .unset => otlp.status_code_unset,
-                .ok => otlp.status_code_ok,
-                .@"error" => otlp.status_code_error,
-            });
-            try w.commitSubMessage(status_start);
-            try w.commitSubMessage(span_start);
+            // ScopeSpans.schema_url (field 3) — emit only when set so
+            // single-scope batches without a schema_url stay byte-identical
+            // to the pre-PR-3 wire shape.
+            try w.writeString(otlp.fn_schema_url, bucket.scope.schema_url);
+            try w.commitSubMessage(ss_start);
         }
-        try w.commitSubMessage(ss_start);
     }
     try w.commitSubMessage(rs_start);
 
@@ -1282,10 +1347,16 @@ const ProtoMessages = if (build_options.use_devnw_protobuf) struct {
     pub const ScopeSpans = struct {
         scope: InstrumentationScope = .{},
         spans: std.ArrayListUnmanaged(Span) = .empty,
+        // ScopeSpans.schema_url (field 3) — populated by the multi-scope
+        // grouping path so the DevNW encoder's byte output stays in lock-
+        // step with the in-repo encoder when a tracer ships a non-empty
+        // schema_url.
+        schema_url: []const u8 = "",
 
         pub const _desc_table = .{
             .scope = fd(1, .submessage),
             .spans = fd(2, .{ .repeated = .submessage }),
+            .schema_url = fd(3, .{ .scalar = .string }),
         };
     };
 
@@ -1326,43 +1397,56 @@ pub fn encodeSpansProtoDevnw(allocator: std.mem.Allocator, items: []const exp.Sp
         try rs.resource.attributes.append(aa, buildKeyValue(kv));
     }
 
-    // Single ScopeSpans per call (matches in-repo encoder).
-    var ss: M.ScopeSpans = .{};
-    ss.scope = .{
-        .name = items[0].instrumentation_scope.name,
-        .version = items[0].instrumentation_scope.version,
-    };
-    for (items) |span| {
-        var s: M.Span = .{
-            .trace_id = span.span_context.trace_id.bytes[0..],
-            .span_id = span.span_context.span_id.bytes[0..],
-            .name = span.name,
-            .kind = switch (span.kind) {
-                .unspecified => otlp.span_kind_unspecified,
-                .internal => otlp.span_kind_internal,
-                .server => otlp.span_kind_server,
-                .client => otlp.span_kind_client,
-                .producer => otlp.span_kind_producer,
-                .consumer => otlp.span_kind_consumer,
-            },
-            .start_time_unix_nano = span.start_unix_nano,
-            .end_time_unix_nano = span.end_unix_nano,
-            .dropped_attributes_count = span.dropped_attributes_count,
-            .status = .{
-                .message = span.status_description,
-                .code = switch (span.status_code) {
-                    .unset => otlp.status_code_unset,
-                    .ok => otlp.status_code_ok,
-                    .@"error" => otlp.status_code_error,
-                },
-            },
+    // Group by `(scope.name, scope.version, scope.schema_url)` so the
+    // DevNW path mirrors the in-repo encoder's per-scope ScopeSpans
+    // emission. Closes PR-3 (#136).
+    const buckets = try groupSpansByScope(aa, items);
+
+    for (buckets) |bucket| {
+        var ss: M.ScopeSpans = .{};
+        ss.scope = .{
+            .name = bucket.scope.name,
+            .version = bucket.scope.version,
         };
-        for (span.attributes.entries.items) |kv| {
-            try s.attributes.append(aa, buildKeyValue(kv));
+        ss.schema_url = bucket.scope.schema_url;
+        for (bucket.spans.items) |span_ptr| {
+            // Source slices (`trace_id`, `span_id`, `name`, attribute
+            // values) must reference the original `items[]` storage —
+            // the encoded `M.Span` survives in `ss.spans` past this
+            // loop iteration, and a stack-local `span = span_ptr.*`
+            // copy would dangle as soon as the loop advances.
+            const span = span_ptr;
+            var s: M.Span = .{
+                .trace_id = span.span_context.trace_id.bytes[0..],
+                .span_id = span.span_context.span_id.bytes[0..],
+                .name = span.name,
+                .kind = switch (span.kind) {
+                    .unspecified => otlp.span_kind_unspecified,
+                    .internal => otlp.span_kind_internal,
+                    .server => otlp.span_kind_server,
+                    .client => otlp.span_kind_client,
+                    .producer => otlp.span_kind_producer,
+                    .consumer => otlp.span_kind_consumer,
+                },
+                .start_time_unix_nano = span.start_unix_nano,
+                .end_time_unix_nano = span.end_unix_nano,
+                .dropped_attributes_count = span.dropped_attributes_count,
+                .status = .{
+                    .message = span.status_description,
+                    .code = switch (span.status_code) {
+                        .unset => otlp.status_code_unset,
+                        .ok => otlp.status_code_ok,
+                        .@"error" => otlp.status_code_error,
+                    },
+                },
+            };
+            for (span.attributes.entries.items) |kv| {
+                try s.attributes.append(aa, buildKeyValue(kv));
+            }
+            try ss.spans.append(aa, s);
         }
-        try ss.spans.append(aa, s);
+        try rs.scope_spans.append(aa, ss);
     }
-    try rs.scope_spans.append(aa, ss);
 
     // The in-repo encoder writes a bare ResourceSpans (field tag 1 +
     // length-prefixed payload), not an ExportTraceServiceRequest envelope.

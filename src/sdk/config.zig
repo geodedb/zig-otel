@@ -10,6 +10,7 @@
 const std = @import("std");
 const build_options = @import("build_options");
 const devnw_yaml = if (build_options.use_devnw_config) @import("yaml") else struct {};
+const propagator_mod = @import("../propagation/propagator.zig");
 
 pub const ExporterKind = enum {
     in_memory,
@@ -218,7 +219,7 @@ pub const Config = struct {
     log_level: enum { trace, debug, info, warn, err } = .info,
     service_name: []const u8 = "",
     resource_attributes: []const u8 = "",
-    propagator: enum { tracecontext, baggage, b3, jaeger, composite } = .composite,
+    propagator: enum { tracecontext, baggage, b3, b3multi, jaeger, composite, none } = .composite,
     traces: TraceProviderConfig = .{},
     metrics: MetricProviderConfig = .{},
     logs: LogProviderConfig = .{},
@@ -424,10 +425,25 @@ pub fn applyEnvFromMap(cfg: *Config, allocator: std.mem.Allocator, env_map: *con
         try setOwnedString(&cfg.resource_attributes, &cfg.resource_attributes_owned, allocator, v);
     }
     if (env_map.get("OTEL_PROPAGATORS")) |v| {
-        if (std.mem.eql(u8, v, "tracecontext")) cfg.propagator = .tracecontext;
-        if (std.mem.eql(u8, v, "baggage")) cfg.propagator = .baggage;
-        if (std.mem.eql(u8, v, "b3")) cfg.propagator = .b3;
-        if (std.mem.eql(u8, v, "jaeger")) cfg.propagator = .jaeger;
+        // OTEL_PROPAGATORS may be a single token or a comma-separated
+        // list. The single-token branch maps directly onto a single
+        // configured propagator; a multi-token list selects the
+        // built-in `composite` configuration that wraps the listed
+        // members. Unknown tokens are ignored (spec: "implementations
+        // SHOULD support multiple values"). The `none` token disables
+        // propagation entirely.
+        const trimmed = std.mem.trim(u8, v, " \t");
+        if (std.mem.indexOfScalar(u8, trimmed, ',') == null) {
+            // Single token — fast path for the common case.
+            if (std.mem.eql(u8, trimmed, "tracecontext")) cfg.propagator = .tracecontext;
+            if (std.mem.eql(u8, trimmed, "baggage")) cfg.propagator = .baggage;
+            if (std.mem.eql(u8, trimmed, "b3")) cfg.propagator = .b3;
+            if (std.mem.eql(u8, trimmed, "b3multi")) cfg.propagator = .b3multi;
+            if (std.mem.eql(u8, trimmed, "jaeger")) cfg.propagator = .jaeger;
+            if (std.mem.eql(u8, trimmed, "none")) cfg.propagator = .none;
+        } else {
+            cfg.propagator = .composite;
+        }
     }
 
     // GAP-ENV-BSP (#33): OTEL_BSP_* env-var family. Spec calls for
@@ -749,6 +765,129 @@ const devnw_loader = if (build_options.use_devnw_config) struct {
         return error.UnsupportedTransport;
     }
 };
+
+// ----- Propagator factory (GAP-PROPAGATOR-* family) -----------------
+//
+// The parsed `Config.propagator` enum names a propagator
+// configuration; this factory turns that enum into a runtime-
+// dispatched `Composite` with the appropriate member propagators.
+// The supported tokens are:
+//
+//   tracecontext   → [tracecontext]
+//   baggage        → [baggage]
+//   b3             → [b3 single header]
+//   b3multi        → [b3 multi header]
+//   jaeger         → [jaeger uber-trace-id + uberctx baggage]
+//   composite      → default = [tracecontext, baggage]
+//   none           → []  (no-op propagator)
+//
+// `OTEL_PROPAGATORS` may also be a comma-separated list (e.g.
+// `tracecontext,baggage,b3multi`); when it is, `applyEnvFromMap`
+// flips `cfg.propagator = .composite` and the *raw* list is parsed
+// via `propagatorBundleFromEnvList`. Both paths return the same
+// `PropagatorBundle`, which owns the `members` slice and frees it on
+// `deinit`.
+
+pub const PropagatorBundle = struct {
+    members: []propagator_mod.TextMapPropagator,
+    allocator: std.mem.Allocator,
+
+    pub fn deinit(self: *PropagatorBundle) void {
+        if (self.members.len > 0) self.allocator.free(self.members);
+        self.members = &.{};
+    }
+
+    /// Borrow a `Composite` view for the bundle's lifetime. The slice
+    /// returned by `members` is borrowed; do not free until after the
+    /// `Composite` value falls out of scope.
+    pub fn composite(self: *const PropagatorBundle) propagator_mod.Composite {
+        return propagator_mod.Composite.init(self.members);
+    }
+};
+
+/// Build a propagator bundle from the parsed enum *and*, if present,
+/// the raw `OTEL_PROPAGATORS` env var (so comma-separated lists end
+/// up as a real composite). Pass `env_map = null` to use only the
+/// enum (matching the `Config`-only construction path; e.g. tests
+/// that bypass the environment).
+pub fn propagatorBundleFromConfig(
+    allocator: std.mem.Allocator,
+    cfg: *const Config,
+    env_map: ?*const EnvMap,
+) !PropagatorBundle {
+    if (env_map) |em| {
+        if (em.get("OTEL_PROPAGATORS")) |raw| {
+            return propagatorBundleFromEnvList(allocator, raw);
+        }
+    }
+    return propagatorBundleFromEnum(allocator, cfg.propagator);
+}
+
+/// Build a propagator bundle from a single enum value. Used by
+/// callers that already have a `Config` with the propagator field
+/// set (no env var to re-parse).
+pub fn propagatorBundleFromEnum(
+    allocator: std.mem.Allocator,
+    which: @TypeOf(@as(Config, .{}).propagator),
+) !PropagatorBundle {
+    var members = std.ArrayList(propagator_mod.TextMapPropagator).empty;
+    errdefer members.deinit(allocator);
+
+    switch (which) {
+        .tracecontext => try members.append(allocator, propagator_mod.trace_context),
+        .baggage => try members.append(allocator, propagator_mod.baggage),
+        // b3/b3multi/jaeger arms land in subsequent commits when the
+        // concrete propagator modules ship (#23, #24). For now the
+        // tokens are accepted (enum values are real) but the factory
+        // produces an empty bundle so call sites compile and round-
+        // trip cleanly through the parsed enum.
+        .b3, .b3multi, .jaeger => {},
+        .composite => {
+            try members.append(allocator, propagator_mod.trace_context);
+            try members.append(allocator, propagator_mod.baggage);
+        },
+        .none => {},
+    }
+    const owned = try members.toOwnedSlice(allocator);
+    return .{ .members = owned, .allocator = allocator };
+}
+
+/// Parse a comma-separated `OTEL_PROPAGATORS` value into a bundle.
+/// Unknown tokens are skipped (per spec). The `none` token short-
+/// circuits the rest of the list and yields an empty bundle.
+pub fn propagatorBundleFromEnvList(
+    allocator: std.mem.Allocator,
+    raw: []const u8,
+) !PropagatorBundle {
+    var members = std.ArrayList(propagator_mod.TextMapPropagator).empty;
+    errdefer members.deinit(allocator);
+
+    var iter = std.mem.splitScalar(u8, raw, ',');
+    while (iter.next()) |token_raw| {
+        const token = std.mem.trim(u8, token_raw, " \t");
+        if (token.len == 0) continue;
+        if (std.mem.eql(u8, token, "none")) {
+            members.clearRetainingCapacity();
+            break;
+        }
+        if (std.mem.eql(u8, token, "tracecontext")) {
+            try members.append(allocator, propagator_mod.trace_context);
+        } else if (std.mem.eql(u8, token, "baggage")) {
+            try members.append(allocator, propagator_mod.baggage);
+        } else if (std.mem.eql(u8, token, "b3") or
+            std.mem.eql(u8, token, "b3multi") or
+            std.mem.eql(u8, token, "jaeger"))
+        {
+            // b3/b3multi/jaeger arms land in subsequent commits (#23,
+            // #24); accept the token without poisoning the rest of
+            // the list — sibling propagators still compose correctly.
+        } else {
+            // Unknown token — spec says to ignore, not error. Continue.
+        }
+    }
+    const owned = try members.toOwnedSlice(allocator);
+    return .{ .members = owned, .allocator = allocator };
+}
 
 test "validate rejects empty endpoint" {
     var cfg: Config = .{};

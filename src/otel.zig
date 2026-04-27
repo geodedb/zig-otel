@@ -50,6 +50,11 @@ pub const propagation = struct {
     pub const trace_context = @import("propagation/trace_context.zig");
     pub const baggage = @import("propagation/baggage.zig");
     pub const composite = @import("propagation/composite.zig");
+    /// Pluggable TextMapPropagator interface + runtime-dispatched
+    /// Composite. Used by the SDK to construct a propagator from
+    /// `OTEL_PROPAGATORS` at provider-build time. See
+    /// `sdk.config.propagatorFromConfig`.
+    pub const propagator = @import("propagation/propagator.zig");
 };
 
 pub const sdk = struct {

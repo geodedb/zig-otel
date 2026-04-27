@@ -264,6 +264,11 @@ pub fn build(b: *std.Build) void {
         // symlink following in `src/exporters/file.zig`. See the file
         // header for the Zig 0.16 stdlib evidence.
         "test/file_exporter_symlink.zig",
+        // Pluggable TextMapPropagator + Composite contract — pins the
+        // factory the SDK uses to construct a propagator from
+        // OTEL_PROPAGATORS at provider-build time. Carries the B3 /
+        // Jaeger end-to-end coverage once those propagators land.
+        "test/propagator.zig",
     };
     for (test_files) |path| {
         const m = b.createModule(.{

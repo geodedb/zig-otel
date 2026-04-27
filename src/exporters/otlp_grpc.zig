@@ -35,16 +35,31 @@ pub const OtlpGrpcExporter = struct {
     io: ?std.Io = null,
     prng: std.Random.DefaultPrng,
     closed: bool = false,
+    /// PR-9 (#143): parsed endpoint cached at `init`. The endpoint is
+    /// immutable for the exporter's lifetime, so reparsing it on every
+    /// export was pure waste. The cached slices borrow from
+    /// `config.endpoint`; that field's lifetime is the caller's
+    /// responsibility (same as before — nothing in `config` is owned).
+    parsed_endpoint: ParsedEndpoint,
 
     pub fn init(allocator: std.mem.Allocator, config: config_mod.OtlpConfig) !OtlpGrpcExporter {
         if (config.endpoint.len == 0) return error.InvalidEndpoint;
         if (config.protocol != .grpc) return error.InvalidConfig;
+        // PR-9 (#143): parse the endpoint once at init so a malformed
+        // URL is rejected here instead of at first export. The parsed
+        // host/port/scheme become a borrow over `config.endpoint`,
+        // which is stored by value below — so the cached slices stay
+        // valid for the exporter's lifetime as long as the caller keeps
+        // the original `config.endpoint` storage alive (same lifetime
+        // contract as before).
+        const parsed = try parseGrpcEndpoint(config.endpoint);
         return .{
             .allocator = allocator,
             .config = config,
             // GAP-SEC-L-5: seed jitter PRNG from CSPRNG so two
             // exporter instances don't share a backoff schedule.
             .prng = std.Random.DefaultPrng.init(id_mod.csprngU64()),
+            .parsed_endpoint = parsed,
         };
     }
 
@@ -62,8 +77,9 @@ pub const OtlpGrpcExporter = struct {
     ///     metadata API yet; the headers (typically `Authorization`)
     ///     would be silently dropped, exporting telemetry without auth.
     pub fn checkExportPreconditions(self: *const OtlpGrpcExporter) !void {
-        const parsed = try parseGrpcEndpoint(self.config.endpoint);
-        if (parsed.scheme_secure and !self.config.insecure) {
+        // PR-9 (#143): use the endpoint parsed once at `init` instead of
+        // reparsing per call.
+        if (self.parsed_endpoint.scheme_secure and !self.config.insecure) {
             return error.UnsupportedTransport;
         }
         if (self.config.headers) |h| {
@@ -121,12 +137,12 @@ fn expSpans(ctx: ?*anyopaque, items: []const exp.SpanData) anyerror!exp.SpanExpo
     // across retries and the protobuf bytes only depend on `items`.
     const body = try otlp_http.encodeSpansProto(aa, items);
 
-    // Parse host + port out of the endpoint URL. `OtlpConfig.endpoint`
+    // PR-9 (#143): use the endpoint parsed once at `init`. `OtlpConfig.endpoint`
     // is canonically `http://host:port` (or `https://...`); for gRPC we
     // ignore the scheme — h2c is the only mode the loopback server
     // speaks, and TLS-wrapped h2 would route through a different
     // transport seam (see DEPENDENCIES.md, gRPC row).
-    const parsed = try parseGrpcEndpoint(self.config.endpoint);
+    const parsed = self.parsed_endpoint;
 
     var retry: exp.RetryState = .{};
     while (true) {
@@ -174,7 +190,8 @@ fn expMetrics(ctx: ?*anyopaque, items: []const exp.MetricData) anyerror!exp.Span
     const aa = arena.allocator();
 
     const body = try otlp_http.encodeMetricsProto(aa, items);
-    const parsed = try parseGrpcEndpoint(self.config.endpoint);
+    // PR-9 (#143): use the endpoint parsed once at `init` (see expSpans).
+    const parsed = self.parsed_endpoint;
 
     var retry: exp.RetryState = .{};
     while (true) {

@@ -94,6 +94,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **OTLP/gRPC endpoint parsed once at `init` (PR-9, gitlab #143).**
+  `OtlpGrpcExporter.checkExportPreconditions`, `expSpans`, and
+  `expMetrics` were each calling `parseGrpcEndpoint(self.config.endpoint)`
+  on every export — three reparses per call before the gRPC client
+  even sees a byte. The endpoint is immutable for the exporter's
+  lifetime; it is now parsed once at `init` and cached on
+  `OtlpGrpcExporter.parsed_endpoint`. Side effect: malformed
+  endpoints fail at construction time instead of at first export
+  (callers see `error.InvalidEndpoint` from
+  `OtlpGrpcExporter.init`). Pinned by 5 regression tests in
+  `test/otlp_grpc_endpoint_cache.zig` including a "post-init mutation
+  of `config.endpoint` does not affect dispatch" assertion.
+
 - **Single `clock.now()` per metric record (PR-8, gitlab #141).**
   `counterAdd` / `udcAdd` / `histRecord` / `gaugeSet` in
   `src/sdk/metrics.zig` were calling `provider.clock.now()` twice per

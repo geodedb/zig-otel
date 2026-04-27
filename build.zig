@@ -241,6 +241,9 @@ pub fn build(b: *std.Build) void {
         "test/logs.zig",
         "test/otlp.zig",
         "test/otlp_metrics.zig",
+        // PR-9 (#143): pins the OTLP/gRPC endpoint-cache invariant
+        // (parsed once at init, reads dispatch from the cache).
+        "test/otlp_grpc_endpoint_cache.zig",
         "test/config.zig",
         "test/security.zig",
         "test/instrumentation_slog.zig",

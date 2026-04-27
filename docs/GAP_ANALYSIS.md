@@ -36,6 +36,38 @@
      retry classifier in `src/exporters/otlp_grpc.zig`.
   - Operator todo tracked in `docs/runbooks/upstream-asks.md`.
 
+- **GAP-FUZZ-DISABLED (#99)** — Blocked on upstream Zig 0.16 stdlib.
+  CI job `zig-fuzz-0.16.0` at `.gitlab-ci.yml:237-239` is `when: never`
+  pending a fix to the `std.testing.fuzz` corpus-reseed crash. Closest
+  candidate upstream issues:
+  [ziglang/zig#26040](https://github.com/ziglang/zig/issues/26040)
+  ("Running multiple fuzz tests segfaults" in 0.16.0-dev) and
+  [ziglang/zig#21410](https://github.com/ziglang/zig/issues/21410)
+  ("Fuzz tests are not discovered by test runner when re-running with
+  same `--seed` argument"). **Unblock criteria:** Awaiting upstream Zig
+  fix for the 0.16 stdlib `std.testing.fuzz` crash on corpus reseed.
+  (a) upstream fix lands and reaches a tagged release the project
+  consumes, OR (b) we wait for Zig 0.17 and re-pin. **Owner action
+  items:** (1) confirm/file the upstream `ziglang/zig` issue (the two
+  candidates above need verification — file only if neither matches the
+  observed reseed crash); (2) record the link in
+  `docs/runbooks/upstream-asks.md`; (3) when upstream lands the fix,
+  flip `.gitlab-ci.yml:237-239` to `when: on_schedule`, run one full
+  corpus, then close this gap.
+
+- **GAP-WINDOWS-TESTS-DISABLED (#100)** — Blocked on upstream
+  `gitlab.com/devnw/ci-catalog`. The three Windows test jobs
+  `zig-test-windows-{unit,integration,stress}-0.16.0` at
+  `.gitlab-ci.yml:241-251` are `when: never` because the ci-catalog
+  PowerShell wrapper reports `NativeCommandError` on benign stderr
+  writes even when zig exits 0 (block-comment evidence at
+  `.gitlab-ci.yml:225-235`). **Unblock criteria:** Awaiting
+  `gitlab.com/devnw/ci-catalog` to ship a PowerShell-tolerant runner.
+  **Owner action items:** (1) confirm/file the upstream ci-catalog
+  issue and link it from `docs/runbooks/upstream-asks.md`; (2) when
+  the runner lands, set `rules: - when: on_success` at
+  `.gitlab-ci.yml:241-251` and verify against a sample MR.
+
 ## Status / Severity Summary
 
 | Severity | Open | Resolved | Total |
@@ -98,7 +130,7 @@
 | GAP-ENV-OTLP-PER-SIGNAL-INSECURE | OTEL_EXPORTER_OTLP_*_INSECURE env vars not parsed | Not Implemented | Low | [#96](https://gitlab.com/devnw/zig/otel/-/issues/96) |
 | GAP-ENV-OTLP-MTLS | mTLS env vars not parsed; no fields for cert/key in OtlpConfig | Not Implemented | Low | [#97](https://gitlab.com/devnw/zig/otel/-/issues/97) |
 | GAP-ENV-BLRP | OTEL_BLRP_* env vars not parsed (no log batch processor exists yet) | Not Implemented | Low | [#98](https://gitlab.com/devnw/zig/otel/-/issues/98) |
-| GAP-FUZZ-DISABLED | zig-fuzz CI job disabled pending Zig 0.16 stdlib bug fix (upstream) | Not Implemented | Low | [#99](https://gitlab.com/devnw/zig/otel/-/issues/99) |
+| GAP-FUZZ-DISABLED | zig-fuzz CI job disabled pending Zig 0.16 stdlib bug fix (upstream) | **Blocked (upstream-zig-stdlib)** | Low | [#99](https://gitlab.com/devnw/zig/otel/-/issues/99) |
 | GAP-WINDOWS-TESTS-DISABLED | Windows test jobs disabled pending devnw/ci-catalog fix (upstream) | Not Implemented | Low | [#100](https://gitlab.com/devnw/zig/otel/-/issues/100) |
 | GAP-BENCH-LOOPBACK-UNDOCUMENTED | bench loopback server (benchmarks/integration/loopback_server.zig) not declared in DEPENDENCIES.md or SPEC_COMPLIANCE.md | Partial | Low | [#112](https://gitlab.com/devnw/zig/otel/-/issues/112) |
 

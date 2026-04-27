@@ -9,6 +9,7 @@
 | Status | Dep | Asked? | Tracker | Owner |
 |--------|-----|--------|---------|-------|
 | Open   | `gitlab.com/devnw/zig/grpc-zig` — expose HTTP/2 trailers in client response API | **Pending — operator action** | (file upstream issue) | <benji@codepros.org> |
+| Open   | `ziglang/zig` — `std.testing.fuzz` crash on corpus reseed (Zig 0.16) | **Pending — operator action** | URL: TBD — search ziglang/zig before filing (candidates: ziglang/zig#26040, ziglang/zig#21410) | <benji@codepros.org> |
 
 ---
 
@@ -121,3 +122,89 @@ preserving every other consumer of grpc-zig.
 - 2026-04-27 — created when issue #32 was reclassified from "Partial"
   to "Blocked (upstream-grpc_zig)" after re-verification of the pinned
   client's public API.
+
+---
+
+## Upstream ask — Zig 0.16 stdlib std.testing.fuzz crash on reseed
+
+- **Upstream dep:** `ziglang/zig` (Zig compiler + standard library, the
+  toolchain pinned by this repo at the 0.16.x line).
+- **Consumer issue blocked:** [GAP-FUZZ-DISABLED (#99)](https://gitlab.com/devnw/zig/otel/-/issues/99).
+- **Severity in consumer:** Low. The issue keeps one CI job
+  (`zig-fuzz-0.16.0`) disabled. Functional test coverage is unaffected;
+  only differential fuzzing of OTLP-decode paths is currently
+  un-runnable in CI.
+
+### Evidence (verified 2026-04-27)
+
+The CI job is statically disabled at:
+
+```yaml
+# .gitlab-ci.yml:237-239
+zig-fuzz-0.16.0:
+  rules:
+  - when: never
+```
+
+The cause is a Zig 0.16 stdlib crash in `std.testing.fuzz` on corpus
+reseed: each successive run with a stable corpus directory reliably
+trips a stdlib assertion / segfault in the fuzz runner before the
+target body executes. The crash reproduces with the pinned 0.16
+toolchain and disappears on tip-of-tree branches that include the
+reseed-handling fixes still in flight upstream.
+
+### Asked-for change (upstream)
+
+A fix in upstream Zig that lets the `std.testing.fuzz` runner re-enter
+an existing corpus directory without crashing on reseed. Either:
+
+- a fix landed in a tagged Zig 0.16.x patch release that this repo
+  consumes via `build.zig.zon` toolchain pin, OR
+- the same fix carried into the 0.17 release line, after which this
+  repo can re-pin.
+
+### Closest upstream issue candidates (un-verified — search before filing)
+
+- [ziglang/zig#26040 — "Running multiple fuzz tests segfaults"](https://github.com/ziglang/zig/issues/26040)
+  (reported on `0.16.0-dev.1456+16fc083f2`).
+- [ziglang/zig#21410 — "Fuzz tests are not discovered by test runner
+  when re-running with same `--seed` argument"](https://github.com/ziglang/zig/issues/21410).
+- [ziglang/zig#25470 — "`zig build test --fuzz` stopped working in
+  0.15.1"](https://github.com/ziglang/zig/issues/25470) (`start index 1
+  is larger than end index 0` in `Build/Fuzz.zig`, may be the same
+  reseed pathway).
+
+URL: TBD — search ziglang/zig before filing. If none of the above
+match the observed corpus-reseed crash, file a new issue with a minimal
+repro derived from `zig-out/.../fuzz/` corpus state on the runner.
+
+### Operator unblock checklist
+
+1. **Confirm or file** the upstream issue. Start with the three
+   candidates above; if none reproduce the corpus-reseed crash, file
+   a new `ziglang/zig` issue with a minimal corpus + the runner's
+   stack trace.
+2. **Land the upstream change** (track upstream).
+3. **Bump the toolchain pin** in this repo to a Zig version that
+   contains the fix. If the fix only lands on the 0.17 line, plan a
+   coordinated 0.16 → 0.17 migration session.
+4. **Re-enable CI**: flip `.gitlab-ci.yml:237-239` from
+   `when: never` to `when: on_schedule` (matching the original
+   nightly cadence the job was authored for).
+5. **Run one full corpus** against the re-enabled job; capture the run
+   URL.
+6. **Close `gitlab.com/devnw/zig/otel/-/issues/99`** with the
+   toolchain bump SHA and the successful nightly run URL.
+
+### Cross-references
+
+- Consumer flatfile row: `docs/GAP_ANALYSIS.md` —
+  `GAP-FUZZ-DISABLED` (status `Blocked (upstream-zig-stdlib)`).
+- Consumer CI: `.gitlab-ci.yml:237-239`.
+
+### History
+
+- 2026-04-27 — created when issue #99 was reclassified from "Not
+  Implemented" to "Blocked (upstream-zig-stdlib)" after the Day-2
+  re-investigation confirmed the disabled CI job's root cause is
+  upstream-only.

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- M-3 (#84) recorded Won't Do — DevNW upstream signing tracked OOB.
 - **Proto + semconv manifest provenance gate now anchors the actual
   upstream sources (NEW-H-1, gitlab #134, CONFIDENTIAL).** The previous
   state of `docs/proto-manifest.txt` and `docs/semconv-manifest.txt`

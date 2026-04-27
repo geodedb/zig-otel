@@ -38,21 +38,22 @@ The 16-commit security closure run (`d19b65b..cd9f906`) closed 20 gaps fully and
 
 > 21 rows above for 20 fully-closed gaps because L-6 and L-7 were coalesced with M-5 in commit `ea94ef9`. The 22nd in-scope gap (H-7) is partially closed below.
 
-### Partially Closed (2 gaps — code side landed; out-of-band action remaining)
+### Partially Closed (1 gap — code side landed; out-of-band action remaining)
 
 | Gap-ID | Title | Code-Side Commit | Outstanding Action | Issue URL |
 |--------|-------|------------------|--------------------|-----------|
 | GAP-SEC-H-7 | Live integration test response-body printer [CONFIDENTIAL] | `43330db` | Operator: rotate `OTEL_INTEGRATION_AUTH_HEADER` GitLab CI/CD variable; audit last 30 days of CI logs for bearer pattern. Owner: <benji@codepros.org>. Issue **#80 left open**. | <https://gitlab.com/devnw/zig/otel/-/work_items/77> (audit row), tracker <https://gitlab.com/devnw/zig/otel/-/issues/80> |
-| GAP-SEC-M-3 | DevNW deps SHA-pinned but unsigned; no CVE scan | `f82e186` | DevNW upstream: publish Sigstore/cosign signatures for `config-*`, `dotenv-*`, `metric-*`, `prometheus-*`, `protobuf-*`, `runtime-*`, `thread_pool-*`, `tls-*` source tarballs. Issue **#84 left open**. | <https://gitlab.com/devnw/zig/otel/-/work_items/84> |
 
-### Won't Do (4 items)
+> GAP-SEC-M-3 was previously listed here as "Partially Closed (consumer side)". Reclassified to **Won't Do (this repo)** on 2026-04-27 — see the Won't Do section below.
+
+### Won't Do (5 items)
 
 | Gap-ID | Title | Reason | Alternative Control |
 |--------|-------|--------|---------------------|
 | GAP-SEC-L-1 | Vendored `dotenv.zig` test fixture trips gitleaks (false positive) | False positive — fixture is dummy data inside the upstream `dotenv` test suite, not a real credential. No exploit. | `.gitleaksignore` excluding `zig-pkg/`, `.zig-cache/`, `third_party/`. No issue filed. |
 | GAP-SEC-L-3 | `encodeSpansJson` static wrapping (note only) | Audit-record note only — no exploitable behaviour. | None required. No issue filed. |
 | GAP-SEC-H-7 (operator side) | Rotate CI bearer + audit 30 days of CI logs | Out of repo scope — operator action; not a code change. | Tracked on issue #80; owner <benji@codepros.org>. |
-| GAP-SEC-M-3 (signing infra side) | DevNW publishes Sigstore/cosign signatures upstream | Out of band — owned by DevNW upstream maintainers, not this repo. | osv-scanner CI job (`f82e186`) provides CVE coverage in the meantime; tracked on issue #84. |
+| GAP-SEC-M-3 | DevNW deps SHA-pinned but unsigned; no upstream Sigstore/cosign signing | Sigstore/cosign signing of DevNW packages (`slog`, `json`, `yaml`, `config`, `protobuf`, `metrics`, `tls`, `grpc-zig`, `thread-pool`, `dotenv`, `runtime`, `prometheus`) requires changes to DevNW shared CI infrastructure — not this consumer repo. Consumer-side mitigations are already shipped (commit `f82e186`, 2026-04-26): SHA pinning in `build.zig.zon` plus an `osv-scanner` CI gate on MR / main / schedule. The remaining signature-generation/verification work must land in DevNW shared infra, tracked separately as a DevNW-meta concern. Reclassified from "Partially Closed" → "Won't Do" 2026-04-27 (issue #84). | SHA pinning in `build.zig.zon` (every DevNW dep carries a `.hash`); `osv-scanner` CI job (`f82e186`) covers CVEs on every MR / main push / scheduled run; upstream signing tracked OOB on DevNW-meta (to be filed at <https://gitlab.com/devnw/meta>). |
 
 ### Verification
 

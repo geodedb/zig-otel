@@ -181,6 +181,15 @@ pub const Writer = struct {
         try self.writeFixed64(value);
     }
 
+    /// Emit a `fixed32` field with proto3 default-omit semantics
+    /// (suppresses zero so the OTLP `LogRecord.flags` field stays absent
+    /// when the trace flags bitfield is empty). Used by the logs encoder.
+    pub fn writeFixed32Field(self: *Writer, field_number: u32, value: u32) !void {
+        if (value == 0) return;
+        try self.writeTag(field_number, .fixed32);
+        try self.writeFixed32(value);
+    }
+
     pub fn writeDouble(self: *Writer, field_number: u32, value: f64) !void {
         if (value == 0.0) return;
         try self.writeTag(field_number, .fixed64);
@@ -417,6 +426,40 @@ pub const fn_hdp_max = 12;
 pub const aggregation_temporality_unspecified: u64 = 0;
 pub const aggregation_temporality_delta: u64 = 1;
 pub const aggregation_temporality_cumulative: u64 = 2;
+
+// ---------------- Logs field numbers (OTLP 1.10.0) ----------------------
+//
+// `opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest` and the
+// downstream messages from `opentelemetry.proto.logs.v1`. Field numbers
+// pinned by the protobuf wire format — pinned against the vendored
+// `third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/logs/v1/logs.proto`
+// and the matching `collector/logs/v1/logs_service.proto`. Closes
+// GAP-OTLP-LOG-EXPORT (#8).
+
+pub const fn_resource_logs = 1; // ExportLogsServiceRequest.resource_logs
+pub const fn_rl_resource = 1; // ResourceLogs.resource
+pub const fn_rl_scope_logs = 2; // ResourceLogs.scope_logs
+pub const fn_rl_schema_url = 3; // ResourceLogs.schema_url
+
+pub const fn_sl_scope = 1; // ScopeLogs.scope
+pub const fn_sl_log_records = 2; // ScopeLogs.log_records
+pub const fn_sl_schema_url = 3; // ScopeLogs.schema_url
+
+// LogRecord field numbers per logs.proto:136-226. `reserved 4` is honoured
+// by simply not emitting field 4. Field 12 (`event_name`) is present in
+// the vendored proto v1.10.0 and the SDK populates it; older collectors
+// that pre-date 1.5.0 silently ignore unknown fields per proto3 rules.
+pub const fn_lr_time_unix_nano = 1; // fixed64
+pub const fn_lr_severity_number = 2; // SeverityNumber (enum)
+pub const fn_lr_severity_text = 3; // string
+pub const fn_lr_body = 5; // AnyValue
+pub const fn_lr_attributes = 6; // repeated KeyValue
+pub const fn_lr_dropped_attributes_count = 7; // uint32
+pub const fn_lr_flags = 8; // fixed32
+pub const fn_lr_trace_id = 9; // bytes (16)
+pub const fn_lr_span_id = 10; // bytes (8)
+pub const fn_lr_observed_time_unix_nano = 11; // fixed64
+pub const fn_lr_event_name = 12; // string
 
 // ---------------- Smoke test --------------------------------------------
 

@@ -18,11 +18,13 @@ const std = @import("std");
 const exp = @import("../../sdk/export.zig");
 const otlp = @import("../../generated/otlp.zig");
 const trace_api = @import("../../api/trace.zig");
+const logs_api = @import("../../api/logs.zig");
 const attrs_mod = @import("../../internal/attributes.zig");
 const redact = @import("../../internal/redact.zig");
 const json_codec = @import("../../internal/json_codec.zig");
 const build_options = @import("build_options");
 const devnw_json = if (build_options.use_devnw_json) @import("json") else struct {};
+const encode_logs = @import("encode_logs.zig");
 
 // ---------------------------------------------------------------- Metric grouping
 //
@@ -606,4 +608,257 @@ fn encodeSpansJsonDevnw(allocator: std.mem.Allocator, items: []const exp.SpanDat
 
     // toOwnedSlice transfers the buffer to the caller without an extra dupe.
     return try aw.toOwnedSlice();
+}
+
+// ---------------------------------------------------------------- Log JSON
+//
+// OTLP/JSON logs encoder. Closes GAP-OTLP-LOG-EXPORT (#8) on the JSON
+// path. Field naming follows the OTLP/JSON convention (camelCase, large
+// integer fields as JSON strings) — same shape that `encodeMetricsJson`
+// uses. Routes through DevNW `../json` when `-Dotel_use_devnw_json=true`,
+// stdlib hand-rolled fallback otherwise.
+pub fn encodeLogsJson(allocator: std.mem.Allocator, items: []const exp.LogData) ![]u8 {
+    if (build_options.use_devnw_json) {
+        return encodeLogsJsonDevnw(allocator, items);
+    }
+    return encodeLogsJsonStd(allocator, items);
+}
+
+fn encodeLogsJsonDevnw(allocator: std.mem.Allocator, items: []const exp.LogData) ![]u8 {
+    var bucket_arena = std.heap.ArenaAllocator.init(allocator);
+    defer bucket_arena.deinit();
+    const ba = bucket_arena.allocator();
+
+    var aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer aw.deinit();
+
+    var enc = devnw_json.streamingEncoder(allocator, &aw.writer, .{});
+    defer enc.deinit();
+
+    try enc.beginObject();
+    try enc.writeKey("resourceLogs");
+    try enc.beginArray();
+    if (items.len > 0) {
+        try enc.beginObject();
+
+        try enc.writeKey("resource");
+        try enc.beginObject();
+        try enc.writeKey("attributes");
+        try enc.beginArray();
+        for (items[0].resource.attributes.entries.items) |kv| {
+            try writeJsonAttributeStreaming(&enc, kv);
+        }
+        try enc.endArray();
+        try enc.endObject();
+
+        const buckets = try encode_logs.groupLogsByScope(ba, items);
+        try enc.writeKey("scopeLogs");
+        try enc.beginArray();
+        for (buckets) |bucket| {
+            try enc.beginObject();
+            try enc.writeKey("scope");
+            try enc.beginObject();
+            try enc.writeKey("name");
+            try enc.writeString(bucket.scope.name);
+            try enc.writeKey("version");
+            try enc.writeString(bucket.scope.version);
+            try enc.endObject();
+
+            try enc.writeKey("logRecords");
+            try enc.beginArray();
+            for (bucket.logs.items) |l_ptr| {
+                try writeLogRecordJsonStreaming(&enc, l_ptr.*);
+            }
+            try enc.endArray();
+            try enc.endObject();
+        }
+        try enc.endArray();
+
+        try enc.endObject();
+    }
+    try enc.endArray();
+    try enc.endObject();
+    return try aw.toOwnedSlice();
+}
+
+fn writeLogRecordJsonStreaming(enc: anytype, l: exp.LogData) !void {
+    const r = l.record;
+    try enc.beginObject();
+    try writeJsonU64String(enc, "timeUnixNano", r.timestamp_unix_nano);
+    try writeJsonU64String(enc, "observedTimeUnixNano", r.observed_unix_nano);
+    try enc.writeKey("severityNumber");
+    try enc.writeInt(@intFromEnum(r.severity));
+    if (r.severity_text.len > 0) {
+        try enc.writeKey("severityText");
+        try enc.writeString(r.severity_text);
+    }
+    switch (r.body) {
+        .none => {},
+        else => {
+            try enc.writeKey("body");
+            try enc.beginObject();
+            switch (r.body) {
+                .string => |s| {
+                    try enc.writeKey("stringValue");
+                    try enc.writeString(s);
+                },
+                .bool => |b| {
+                    try enc.writeKey("boolValue");
+                    try enc.writeBool(b);
+                },
+                .int => |i| {
+                    try enc.writeKey("intValue");
+                    var buf: [24]u8 = undefined;
+                    const s = try std.fmt.bufPrint(&buf, "{d}", .{i});
+                    try enc.writeString(s);
+                },
+                .double => |d| {
+                    try enc.writeKey("doubleValue");
+                    try enc.writeFloat(d);
+                },
+                .none => {},
+            }
+            try enc.endObject();
+        },
+    }
+    if (r.attributes) |a| {
+        try enc.writeKey("attributes");
+        try enc.beginArray();
+        for (a.entries.items) |kv| try writeJsonAttributeStreaming(enc, kv);
+        try enc.endArray();
+    }
+    if (r.flags.toByte() != 0) {
+        try enc.writeKey("flags");
+        try enc.writeInt(@as(u64, r.flags.toByte()));
+    }
+    if (r.trace_id.isValid()) {
+        try enc.writeKey("traceId");
+        const hex = r.trace_id.toHex();
+        try enc.writeString(hex[0..]);
+    }
+    if (r.span_id.isValid()) {
+        try enc.writeKey("spanId");
+        const hex = r.span_id.toHex();
+        try enc.writeString(hex[0..]);
+    }
+    if (r.event_name.len > 0) {
+        try enc.writeKey("eventName");
+        try enc.writeString(r.event_name);
+    }
+    try enc.endObject();
+}
+
+fn encodeLogsJsonStd(allocator: std.mem.Allocator, items: []const exp.LogData) ![]u8 {
+    var bucket_arena = std.heap.ArenaAllocator.init(allocator);
+    defer bucket_arena.deinit();
+    const ba = bucket_arena.allocator();
+
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(allocator);
+    try buf.appendSlice(allocator, "{\"resourceLogs\":[");
+    if (items.len > 0) {
+        try buf.append(allocator, '{');
+        try buf.appendSlice(allocator, "\"resource\":{\"attributes\":[");
+        for (items[0].resource.attributes.entries.items, 0..) |kv, i| {
+            if (i > 0) try buf.append(allocator, ',');
+            try writeJsonAttributeStd(allocator, &buf, kv);
+        }
+        try buf.appendSlice(allocator, "]},\"scopeLogs\":[");
+        const buckets = try encode_logs.groupLogsByScope(ba, items);
+        for (buckets, 0..) |bucket, i| {
+            if (i > 0) try buf.append(allocator, ',');
+            try buf.appendSlice(allocator, "{\"scope\":{\"name\":");
+            try writeJsonStringStd(allocator, &buf, bucket.scope.name);
+            try buf.appendSlice(allocator, ",\"version\":");
+            try writeJsonStringStd(allocator, &buf, bucket.scope.version);
+            try buf.appendSlice(allocator, "},\"logRecords\":[");
+            for (bucket.logs.items, 0..) |l_ptr, j| {
+                if (j > 0) try buf.append(allocator, ',');
+                try writeLogRecordJsonStd(allocator, &buf, l_ptr.*);
+            }
+            try buf.appendSlice(allocator, "]}");
+        }
+        try buf.appendSlice(allocator, "]}");
+    }
+    try buf.appendSlice(allocator, "]}");
+    return try allocator.dupe(u8, buf.items);
+}
+
+fn writeLogRecordJsonStd(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), l: exp.LogData) !void {
+    const r = l.record;
+    try buf.append(allocator, '{');
+    try writeJsonU64StringStd(allocator, buf, "timeUnixNano", r.timestamp_unix_nano);
+    try buf.append(allocator, ',');
+    try writeJsonU64StringStd(allocator, buf, "observedTimeUnixNano", r.observed_unix_nano);
+    try buf.appendSlice(allocator, ",\"severityNumber\":");
+    var num_buf: [24]u8 = undefined;
+    var s = try std.fmt.bufPrint(&num_buf, "{d}", .{@intFromEnum(r.severity)});
+    try buf.appendSlice(allocator, s);
+    if (r.severity_text.len > 0) {
+        try buf.appendSlice(allocator, ",\"severityText\":");
+        try writeJsonStringStd(allocator, buf, r.severity_text);
+    }
+    switch (r.body) {
+        .none => {},
+        else => {
+            try buf.appendSlice(allocator, ",\"body\":{");
+            switch (r.body) {
+                .string => |bs| {
+                    try buf.appendSlice(allocator, "\"stringValue\":");
+                    try writeJsonStringStd(allocator, buf, bs);
+                },
+                .bool => |b| try buf.appendSlice(allocator, if (b) "\"boolValue\":true" else "\"boolValue\":false"),
+                .int => |i| {
+                    try buf.appendSlice(allocator, "\"intValue\":\"");
+                    s = try std.fmt.bufPrint(&num_buf, "{d}", .{i});
+                    try buf.appendSlice(allocator, s);
+                    try buf.append(allocator, '"');
+                },
+                .double => |d| {
+                    try buf.appendSlice(allocator, "\"doubleValue\":");
+                    var fbuf: [40]u8 = undefined;
+                    const fs = try std.fmt.bufPrint(&fbuf, "{d}", .{d});
+                    try buf.appendSlice(allocator, fs);
+                },
+                .none => {},
+            }
+            try buf.append(allocator, '}');
+        },
+    }
+    if (r.attributes) |a| {
+        try buf.appendSlice(allocator, ",\"attributes\":[");
+        for (a.entries.items, 0..) |kv, i| {
+            if (i > 0) try buf.append(allocator, ',');
+            try writeJsonAttributeStd(allocator, buf, kv);
+        }
+        try buf.append(allocator, ']');
+    }
+    if (r.flags.toByte() != 0) {
+        try buf.appendSlice(allocator, ",\"flags\":");
+        s = try std.fmt.bufPrint(&num_buf, "{d}", .{r.flags.toByte()});
+        try buf.appendSlice(allocator, s);
+    }
+    if (r.trace_id.isValid()) {
+        try buf.appendSlice(allocator, ",\"traceId\":\"");
+        const hex = r.trace_id.toHex();
+        try buf.appendSlice(allocator, hex[0..]);
+        try buf.append(allocator, '"');
+    }
+    if (r.span_id.isValid()) {
+        try buf.appendSlice(allocator, ",\"spanId\":\"");
+        const hex = r.span_id.toHex();
+        try buf.appendSlice(allocator, hex[0..]);
+        try buf.append(allocator, '"');
+    }
+    if (r.event_name.len > 0) {
+        try buf.appendSlice(allocator, ",\"eventName\":");
+        try writeJsonStringStd(allocator, buf, r.event_name);
+    }
+    try buf.append(allocator, '}');
+}
+
+// `logs_api` is referenced via `exp.LogData.record` so the import is
+// kept above; this trailing block ensures the local namespace is wired.
+comptime {
+    _ = logs_api;
 }

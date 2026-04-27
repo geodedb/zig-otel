@@ -102,6 +102,14 @@ pub const OtlpGrpcExporter = struct {
     pub fn metricExporter(self: *OtlpGrpcExporter) exp.MetricExporter {
         return .{ .ctx = self, .exportFn = expMetrics, .shutdownFn = doShutdown, .forceFlushFn = doFlush };
     }
+
+    /// OTLP/gRPC log exporter (GAP-OTLP-LOG-EXPORT, gitlab #8). Routes
+    /// through `opentelemetry.proto.collector.logs.v1.LogsService/Export`.
+    /// Reuses the same retry, header, and pre-flight pipeline as
+    /// `spanExporter` / `metricExporter`.
+    pub fn logExporter(self: *OtlpGrpcExporter) exp.LogExporter {
+        return .{ .ctx = self, .exportFn = expLogs, .shutdownFn = doShutdown, .forceFlushFn = doFlush };
+    }
 };
 
 fn doShutdown(ctx: ?*anyopaque) void {
@@ -113,6 +121,10 @@ fn doFlush(_: ?*anyopaque, _: u64) anyerror!void {}
 
 const trace_export_method = "/opentelemetry.proto.collector.trace.v1.TraceService/Export";
 const metrics_export_method = "/opentelemetry.proto.collector.metrics.v1.MetricsService/Export";
+/// OTLP/gRPC log export method path. GAP-OTLP-LOG-EXPORT (#8).
+/// Routes the encoded `ExportLogsServiceRequest` through grpc-zig's
+/// `GrpcClient.call` exactly like the trace and metrics paths.
+const logs_export_method = "/opentelemetry.proto.collector.logs.v1.LogsService/Export";
 
 fn expSpans(ctx: ?*anyopaque, items: []const exp.SpanData) anyerror!exp.SpanExportResult {
     const self: *OtlpGrpcExporter = @ptrCast(@alignCast(ctx.?));
@@ -196,6 +208,51 @@ fn expMetrics(ctx: ?*anyopaque, items: []const exp.MetricData) anyerror!exp.Span
     var retry: exp.RetryState = .{};
     while (true) {
         const status = unaryExport(aa, io, parsed.host, parsed.port, metrics_export_method, body) catch |err| {
+            switch (err) {
+                error.ConnectionRefused,
+                error.ConnectionResetByPeer,
+                error.UnsupportedTransport,
+                error.NetworkUnreachable,
+                error.WouldBlock,
+                => {},
+                else => return err,
+            }
+            if (!retry.shouldRetry(&self.prng)) return error.RetryExhausted;
+            continue;
+        };
+        switch (status) {
+            .ok => return .success,
+            .partial_success => return error.PartialSuccess,
+            .retryable => {
+                if (!retry.shouldRetry(&self.prng)) return error.RetryExhausted;
+                continue;
+            },
+            .fatal => return error.RetryExhausted,
+        }
+    }
+}
+
+fn expLogs(ctx: ?*anyopaque, items: []const exp.LogData) anyerror!exp.SpanExportResult {
+    const self: *OtlpGrpcExporter = @ptrCast(@alignCast(ctx.?));
+    if (self.closed) return error.RetryExhausted;
+    if (items.len == 0) return .success;
+
+    // Same C-2 / C-3 pre-flight as `expSpans` / `expMetrics`.
+    try self.checkExportPreconditions();
+
+    if (!build_options.use_devnw_grpc) return error.UnsupportedTransport;
+    const io = self.io orelse return error.UnsupportedTransport;
+
+    var arena = std.heap.ArenaAllocator.init(self.allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const body = try otlp_http.encodeLogsProto(aa, items);
+    const parsed = self.parsed_endpoint;
+
+    var retry: exp.RetryState = .{};
+    while (true) {
+        const status = unaryExport(aa, io, parsed.host, parsed.port, logs_export_method, body) catch |err| {
             switch (err) {
                 error.ConnectionRefused,
                 error.ConnectionResetByPeer,

@@ -44,7 +44,7 @@ Mapping vs catalog labels: `priority::critical → Critical`, `priority::high �
 | Rank | Gap-ID | IID | Severity | Status | File:line |
 |----:|--------|----:|----------|--------|-----------|
 | 1 | GAP-EXPORTER-FACTORY | #4 | Critical | Not Impl | `src/sdk/config.zig:342-350` (env parsed → enum, no constructor) |
-| 2 | GAP-OTLP-LOG-EXPORT | #8 | Critical | Not Impl | `src/sdk/logs.zig:40,126` (in-process only); 0 hits for `/v1/logs`/`LogsService` |
+| 2 | GAP-OTLP-LOG-EXPORT | #8 | Critical | Closed | `src/exporters/otlp_http/encode_logs.zig` (proto), `encode_json.zig:encodeLogsJson` (JSON), `logs.zig:expLogs` (`/v1/logs`), `exporter.zig:logExporter`; gRPC `src/exporters/otlp_grpc.zig:expLogs`+`logExporter` (`LogsService/Export`); DevNW parity `encode_proto_devnw.zig:encodeLogsProtoDevnw`; `test/otlp_logs_wire.zig` (12 tests) |
 | 3 | GAP-OTLP-WIRE-EVENTS-LINKS | #9 | Critical | Not Impl | `src/generated/otlp.zig:191,193` (constants exist, 0 use sites in `src/exporters/`) |
 | 4 | Q-METRIC-PIPELINE-HALF-BUILT (#13) | #13 | Critical | Partial | `MetricReader.collect` never invoked — gates #29 |
 | 5 | Q-BSP-SCHEDULE-IGNORED (#12) | #12 | Critical | Not Impl | `BatchSpanProcessorOptions.schedule_delay_ms` — wiring landed (`454de77`); verify Phase-4 |

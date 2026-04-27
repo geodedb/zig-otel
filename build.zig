@@ -257,6 +257,11 @@ pub fn build(b: *std.Build) void {
         // protobuf parity for both. Trace.proto:242,295 in the vendored
         // OTLP 1.10.0 tree.
         "test/otlp_span_events_links.zig",
+        // GAP-OTLP-LOG-EXPORT (#8): pins ExportLogsServiceRequest wire
+        // shape, /v1/logs HTTP path, end-to-end Logger -> exporter, and
+        // DevNW protobuf parity. logs.proto:48-226 in the vendored OTLP
+        // 1.10.0 tree.
+        "test/otlp_logs_wire.zig",
         "test/tls_loopback.zig",
         "test/batch_async.zig",
         "test/comptime_disabled.zig",

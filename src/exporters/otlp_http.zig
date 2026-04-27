@@ -32,6 +32,7 @@ const headers_mod = @import("otlp_http/headers.zig");
 const encode_proto_mod = @import("otlp_http/encode_proto.zig");
 const encode_proto_devnw_mod = @import("otlp_http/encode_proto_devnw.zig");
 const encode_json_mod = @import("otlp_http/encode_json.zig");
+const encode_logs_mod = @import("otlp_http/encode_logs.zig");
 
 // ---- Public re-exports ----
 
@@ -64,6 +65,13 @@ pub const encodeMetricsProto = encode_proto_mod.encodeMetricsProto;
 pub const encodeSpansJson = encode_json_mod.encodeSpansJson;
 pub const encodeMetricsJson = encode_json_mod.encodeMetricsJson;
 
+// GAP-OTLP-LOG-EXPORT (#8): encoder + grouping helpers.
+pub const encodeLogsProto = encode_logs_mod.encodeLogsProto;
+pub const encodeLogsProtoDevnw = encode_proto_devnw_mod.encodeLogsProtoDevnw;
+pub const encodeLogsJson = encode_json_mod.encodeLogsJson;
+pub const groupLogsByScope = encode_logs_mod.groupLogsByScope;
+pub const LogScopeBucket = encode_logs_mod.LogScopeBucket;
+
 // ---- Test aggregation ----
 //
 // Re-export the submodule tests so `zig build test` walks them through
@@ -80,6 +88,8 @@ test {
     std.testing.refAllDecls(encode_proto_mod);
     std.testing.refAllDecls(encode_proto_devnw_mod);
     std.testing.refAllDecls(encode_json_mod);
+    std.testing.refAllDecls(encode_logs_mod);
     std.testing.refAllDecls(@import("otlp_http/spans.zig"));
     std.testing.refAllDecls(@import("otlp_http/metrics.zig"));
+    std.testing.refAllDecls(@import("otlp_http/logs.zig"));
 }

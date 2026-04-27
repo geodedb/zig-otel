@@ -50,12 +50,22 @@
 const std = @import("std");
 const exp = @import("../../sdk/export.zig");
 const otlp = @import("../../generated/otlp.zig");
+const logs_api = @import("../../api/logs.zig");
 const attrs_mod = @import("../../internal/attributes.zig");
 const redact = @import("../../internal/redact.zig");
 const build_options = @import("build_options");
 const devnw_proto = if (build_options.use_devnw_protobuf) @import("devnw_protobuf") else struct {};
 
 const encode_proto = @import("encode_proto.zig");
+const encode_logs = @import("encode_logs.zig");
+
+// `logs_api.Body` is read via `r.body` in `encodeLogsProtoDevnw`, so the
+// import is consumed transitively. This `comptime` reference keeps the
+// import live in builds where the DevNW protobuf flag is off and the
+// only callsite is gated out at compile time.
+comptime {
+    _ = logs_api;
+}
 
 const ProtoMessages = if (build_options.use_devnw_protobuf) struct {
     const fd = devnw_proto.fd;
@@ -234,6 +244,76 @@ const ProtoMessages = if (build_options.use_devnw_protobuf) struct {
             .resource_spans = fd(1, .{ .repeated = .submessage }),
         };
     };
+
+    // ---- Logs (closes GAP-OTLP-LOG-EXPORT (#8) on the DevNW path) ----
+    //
+    // Field-emission order mirrors `writeLogRecord` in `encode_logs.zig`
+    // so the DevNW reflective walk produces a byte-identical LogRecord
+    // submessage when both encoders run on the same input. The same
+    // `dropped_attributes_count = uint64` and `severity_number = uint64`
+    // wire-type drift caveat applies as for the span descriptors above —
+    // `encode_logs.zig` uses `writeUint64`, which is varint, so the DevNW
+    // schema declares the same wire type. Updating one encoder
+    // independently will fail the parity test until both update.
+    pub const LogRecord = struct {
+        time_unix_nano: u64 = 0,
+        severity_number: u64 = 0,
+        severity_text: []const u8 = "",
+        body: AnyValue = .{},
+        attributes: std.ArrayListUnmanaged(KeyValue) = .empty,
+        dropped_attributes_count: u64 = 0,
+        flags: u32 = 0,
+        trace_id: []const u8 = "",
+        span_id: []const u8 = "",
+        observed_time_unix_nano: u64 = 0,
+        event_name: []const u8 = "",
+
+        pub const _desc_table = .{
+            .time_unix_nano = fd(1, .{ .scalar = .fixed64 }),
+            .severity_number = fd(2, .{ .scalar = .uint64 }),
+            .severity_text = fd(3, .{ .scalar = .string }),
+            .body = fd(5, .submessage),
+            .attributes = fd(6, .{ .repeated = .submessage }),
+            .dropped_attributes_count = fd(7, .{ .scalar = .uint64 }),
+            .flags = fd(8, .{ .scalar = .fixed32 }),
+            .trace_id = fd(9, .{ .scalar = .bytes }),
+            .span_id = fd(10, .{ .scalar = .bytes }),
+            .observed_time_unix_nano = fd(11, .{ .scalar = .fixed64 }),
+            .event_name = fd(12, .{ .scalar = .string }),
+        };
+    };
+
+    pub const ScopeLogs = struct {
+        scope: InstrumentationScope = .{},
+        log_records: std.ArrayListUnmanaged(LogRecord) = .empty,
+        schema_url: []const u8 = "",
+
+        pub const _desc_table = .{
+            .scope = fd(1, .submessage),
+            .log_records = fd(2, .{ .repeated = .submessage }),
+            .schema_url = fd(3, .{ .scalar = .string }),
+        };
+    };
+
+    pub const ResourceLogs = struct {
+        resource: Resource = .{},
+        scope_logs: std.ArrayListUnmanaged(ScopeLogs) = .empty,
+        schema_url: []const u8 = "",
+
+        pub const _desc_table = .{
+            .resource = fd(1, .submessage),
+            .scope_logs = fd(2, .{ .repeated = .submessage }),
+            .schema_url = fd(3, .{ .scalar = .string }),
+        };
+    };
+
+    pub const ExportLogsServiceRequest = struct {
+        resource_logs: std.ArrayListUnmanaged(ResourceLogs) = .empty,
+
+        pub const _desc_table = .{
+            .resource_logs = fd(1, .{ .repeated = .submessage }),
+        };
+    };
 } else struct {};
 
 pub fn encodeSpansProtoDevnw(allocator: std.mem.Allocator, items: []const exp.SpanData) ![]u8 {
@@ -349,6 +429,93 @@ pub fn encodeSpansProtoDevnw(allocator: std.mem.Allocator, items: []const exp.Sp
     // ResourceSpans record.
     var req: M.ExportTraceServiceRequest = .{};
     try req.resource_spans.append(aa, rs);
+
+    var aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer aw.deinit();
+    try devnw_proto.encode(&aw.writer, aa, req);
+    return try aw.toOwnedSlice();
+}
+
+/// DevNW protobuf encoder for OTLP logs (closes GAP-OTLP-LOG-EXPORT (#8)
+/// on the DevNW path). Mirrors `encodeLogsProto` byte-for-byte so the
+/// parity test in `test/otlp_logs_wire.zig` passes when
+/// `-Dotel_use_devnw_protobuf=true`.
+///
+/// Important wire-shape caveat: the in-repo encoder ALWAYS emits
+/// `time_unix_nano` (field 1) and `observed_time_unix_nano` (field 11) —
+/// even when zero — because the OTLP spec uses zero as the
+/// "unknown timestamp" sentinel. DevNW's reflective writer applies proto3
+/// default-omit on `fixed64`/`fixed32`, so a zero timestamp would NOT
+/// appear on the DevNW side, breaking byte parity. Callers driving the
+/// parity test MUST therefore use non-zero timestamps. The encoder here
+/// accepts any input, but the parity contract only holds when timestamps
+/// are non-zero. (The `LogRecord.flags` field has the same default-omit
+/// behaviour, but the in-repo encoder also default-omits zero flags via
+/// `writeFixed32Field`, so flags parity holds regardless.)
+pub fn encodeLogsProtoDevnw(allocator: std.mem.Allocator, items: []const exp.LogData) ![]u8 {
+    if (!build_options.use_devnw_protobuf) return error.UnsupportedTransport;
+    if (items.len == 0) return try allocator.alloc(u8, 0);
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const M = ProtoMessages;
+    var rl: M.ResourceLogs = .{};
+
+    const resource = items[0].resource;
+    for (resource.attributes.entries.items) |kv| {
+        try rl.resource.attributes.append(aa, buildKeyValue(kv));
+    }
+    rl.schema_url = resource.schema_url;
+
+    const buckets = try encode_logs.groupLogsByScope(aa, items);
+    for (buckets) |bucket| {
+        var sl: M.ScopeLogs = .{};
+        sl.scope = .{
+            .name = bucket.scope.name,
+            .version = bucket.scope.version,
+        };
+        sl.schema_url = bucket.scope.schema_url;
+        for (bucket.logs.items) |l_ptr| {
+            const r = l_ptr.record;
+            var lr: M.LogRecord = .{
+                .time_unix_nano = r.timestamp_unix_nano,
+                .severity_number = @intFromEnum(r.severity),
+                .severity_text = r.severity_text,
+                .dropped_attributes_count = if (r.attributes) |a| a.dropped else 0,
+                .flags = r.flags.toByte(),
+                .observed_time_unix_nano = r.observed_unix_nano,
+                .event_name = r.event_name,
+            };
+            // Body is a submessage; skip when none so DevNW emits zero
+            // bytes — same as the in-repo `writeLogRecord` skip path.
+            switch (r.body) {
+                .none => {},
+                .string => |s| lr.body.string_value = s,
+                .bool => |b| lr.body.bool_value = b,
+                .int => |i| lr.body.int_value = i,
+                .double => |d| lr.body.double_value = d,
+            }
+            // trace_id / span_id only when valid (matches in-repo skip).
+            if (r.trace_id.isValid()) {
+                lr.trace_id = r.trace_id.bytes[0..];
+            }
+            if (r.span_id.isValid()) {
+                lr.span_id = r.span_id.bytes[0..];
+            }
+            if (r.attributes) |a| {
+                for (a.entries.items) |kv| {
+                    try lr.attributes.append(aa, buildKeyValue(kv));
+                }
+            }
+            try sl.log_records.append(aa, lr);
+        }
+        try rl.scope_logs.append(aa, sl);
+    }
+
+    var req: M.ExportLogsServiceRequest = .{};
+    try req.resource_logs.append(aa, rl);
 
     var aw: std.Io.Writer.Allocating = .init(allocator);
     errdefer aw.deinit();

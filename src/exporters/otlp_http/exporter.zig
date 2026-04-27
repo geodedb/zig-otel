@@ -22,6 +22,7 @@ const id_mod = @import("../../internal/id.zig");
 const transport_mod = @import("transport.zig");
 const spans_mod = @import("spans.zig");
 const metrics_mod = @import("metrics.zig");
+const logs_mod = @import("logs.zig");
 
 pub const OtlpConfig = config_mod.OtlpConfig;
 pub const Transport = transport_mod.Transport;
@@ -96,6 +97,13 @@ pub const OtlpHttpExporter = struct {
     /// same transport/retry/headers plumbing as `spanExporter`.
     pub fn metricExporter(self: *OtlpHttpExporter) exp.MetricExporter {
         return .{ .ctx = self, .exportFn = metrics_mod.expMetrics, .shutdownFn = doShutdown, .forceFlushFn = doFlush };
+    }
+
+    /// OTLP/HTTP log exporter (GAP-OTLP-LOG-EXPORT, gitlab #8). Posts an
+    /// `ExportLogsServiceRequest` to `/v1/logs` using the same
+    /// transport/retry/headers plumbing as `spanExporter`/`metricExporter`.
+    pub fn logExporter(self: *OtlpHttpExporter) exp.LogExporter {
+        return .{ .ctx = self, .exportFn = logs_mod.expLogs, .shutdownFn = doShutdown, .forceFlushFn = doFlush };
     }
 
     /// Shared retry/dispatch loop used by both `expSpans` (in

@@ -43,10 +43,18 @@ fn writeAndFlush(self: *StdoutJson, payload: []const u8) !void {
         try w.writeByte('\n');
         return;
     }
-    // Fallback: write directly via std.posix to avoid an Io context here.
+    // Fallback: write directly to the stdout file descriptor without an
+    // `std.Io` context. Zig 0.16 dropped the convenience
+    // `std.posix.write` wrapper, so route through the platform-specific
+    // syscall via `std.posix.system.write` (resolves to `std.c.write` on
+    // libc-linked targets, `std.os.linux.write` on hermetic Linux). The
+    // return value is ignored — short writes degrade gracefully (the
+    // remainder is dropped, not a fatal exporter failure) and the
+    // structured `out_writer` injection path is what production callers
+    // wire anyway.
     const fd = std.posix.STDOUT_FILENO;
-    _ = std.posix.write(fd, payload) catch return;
-    _ = std.posix.write(fd, "\n") catch return;
+    _ = std.posix.system.write(fd, payload.ptr, payload.len);
+    _ = std.posix.system.write(fd, "\n", 1);
 }
 
 fn expSpans(ctx: ?*anyopaque, items: []const exp.SpanData) anyerror!exp.SpanExportResult {

@@ -72,6 +72,12 @@ pub const sdk = struct {
     pub const config = @import("sdk/config.zig");
     pub const exporter = @import("sdk/export.zig");
     pub const span_pool = @import("sdk/span_pool.zig");
+    /// GAP-EXPORTER-FACTORY (#4): turns the parsed `ExporterKind` enum
+    /// (sourced from `OTEL_TRACES_EXPORTER` / `OTEL_METRICS_EXPORTER`
+    /// / `OTEL_LOGS_EXPORTER`) plus the per-signal `OtlpConfig` into a
+    /// concrete typed exporter. See `sdk/exporter_factory.zig` for
+    /// the contract.
+    pub const exporter_factory = @import("sdk/exporter_factory.zig");
 };
 
 pub const exporters = struct {

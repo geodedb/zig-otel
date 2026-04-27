@@ -72,11 +72,11 @@
 
 | Severity | Open | Resolved | Total |
 |----------|-----:|---------:|------:|
-| Critical | 3    | 3        | 6     |
+| Critical | 2    | 4        | 6     |
 | High     | 9    | 2        | 11    |
 | Medium   | 13   | 1        | 14    |
 | Low      | 7    | 1        | 8     |
-| **Total**| **32** | **7**  | **39**|
+| **Total**| **31** | **8**  | **39**|
 
 > **2026-04-27 Phase 4 deltas:**
 >
@@ -91,9 +91,9 @@
 
 | Status          | Count |
 |-----------------|-------|
-| Not Implemented | 26    |
+| Not Implemented | 25    |
 | Partial         | 6     |
-| Implemented     | 6 (moved to `GAP_ANALYSIS_RESOLVED.md`) |
+| Implemented     | 7 (moved to `GAP_ANALYSIS_RESOLVED.md`) |
 | Won't Do        | 1 (GAP-OTLP-PROFILES-EXPORT #25 — moved to `GAP_ANALYSIS_RESOLVED.md`) |
 | Unknown         | 0     |
 
@@ -101,7 +101,7 @@
 
 | Gap-ID | Title | Status | Severity | Issue |
 |--------|-------|--------|----------|-------|
-| GAP-EXPORTER-FACTORY | OTEL_*_EXPORTER env vars parsed but never construct an exporter | Not Implemented | Critical | [#4](https://gitlab.com/devnw/zig/otel/-/issues/4) |
+| GAP-EXPORTER-FACTORY | OTEL_*_EXPORTER env vars parsed but never construct an exporter | Closed (`src/sdk/exporter_factory.zig` `Owned{Span,Metric,Log}Exporter` + `{span,metric,log}ExporterFromConfig` factories cover `none`/`stdout`/`in_memory`/`otlp_http`/`otlp_grpc`/`prometheus` mapping with protocol normalisation; `src/sdk/trace.zig:initFromConfig` + `src/sdk/logs.zig:initFromConfig` + `src/sdk/metrics.zig:initFromConfig` provider helpers; `MetricsConfig.default_exporter` + `MeterProvider.owned_exporter` + `TracerProvider.owned_exporter` + `LoggerProvider.owned_exporter` ownership tracking; `src/otel.zig` re-export `sdk.exporter_factory`; regression `test/exporter_factory.zig` covers env-var → kind dispatch, prometheus signal compatibility, lifecycle (testing-allocator leak detection), and `*Provider.initFromConfig` integration) | Critical | [#4](https://gitlab.com/devnw/zig/otel/-/issues/4) |
 | GAP-OTLP-LOG-EXPORT | No OTLP log export path (HTTP /v1/logs or gRPC LogsService/Export) | Closed (`src/exporters/otlp_http/encode_logs.zig` `encodeLogsProto` + `groupLogsByScope`, `src/exporters/otlp_http/encode_json.zig:encodeLogsJson` (DevNW + stdlib paths), `src/exporters/otlp_http/logs.zig:expLogs` HTTP route at `/v1/logs`, `src/exporters/otlp_http/exporter.zig:logExporter` factory; gRPC route `src/exporters/otlp_grpc.zig:expLogs` at `/opentelemetry.proto.collector.logs.v1.LogsService/Export` + `logExporter` factory; DevNW parity `src/exporters/otlp_http/encode_proto_devnw.zig:encodeLogsProtoDevnw`; field-number constants `src/generated/otlp.zig:fn_resource_logs..fn_lr_event_name`; regression `test/otlp_logs_wire.zig`) | Critical | [#8](https://gitlab.com/devnw/zig/otel/-/issues/8) |
 | GAP-OTLP-WIRE-EVENTS-LINKS | Span events (field 11) and links (field 13) never written to OTLP wire | Closed (`src/exporters/otlp_http/encode_proto.zig:281-291` Span.events at field 11 + dropped_events_count at field 12 + Span.links at field 13 + dropped_links_count at field 14, `:310-323` `writeEvent` helper, `:332-344` `writeLink` helper; `src/exporters/otlp_http/encode_proto_devnw.zig:124-156` Event/Link descriptors, `:173-191` Span.events / dropped_events_count / Span.links / dropped_links_count fields with field-numbers 11-14, `:312-340` populating events/links in `encodeSpansProtoDevnw`; regression `test/otlp_span_events_links.zig`) | Critical | [#9](https://gitlab.com/devnw/zig/otel/-/issues/9) |
 | GAP-PROPAGATOR-B3 | B3 propagator never constructed even when OTEL_PROPAGATORS=b3 | Closed (`src/propagation/b3.zig` single + multi header propagators, `src/sdk/config.zig:propagatorBundleFromConfig` factory + `b3multi`/`none` env tokens, `src/propagation/propagator.zig` pluggable Composite; regression `test/propagator_b3.zig` covers 5+ positive + 4+ negative vectors per mode + 4 round-trip + composite end-to-end) | High | [#23](https://gitlab.com/devnw/zig/otel/-/issues/23) |

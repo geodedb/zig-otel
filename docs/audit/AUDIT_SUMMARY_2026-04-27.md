@@ -20,7 +20,7 @@
 | Not Implemented | 73 | 67% |
 | Unknown | 12 | 11% |
 
-**Open gaps post-sync:** 52 — Critical: 3, High: 11, Medium: 18, Low: 20.
+**Open gaps post-sync:** 51 — Critical: 2, High: 11, Medium: 18, Low: 20.
 
 ### Code Quality
 
@@ -207,6 +207,7 @@ Eight-item Day-1 batch from the 22-item Critical+High top-queue sweep landed aga
 | 10 | GAP-OTLP-PROFILES-EXPORT | [#25](https://gitlab.com/devnw/zig/otel/-/issues/25) | `c116d3e` | **Won't Do** | Functional / Exporters | Upstream proto under `/v1development/`; README + SPEC_COMPLIANCE flipped to NOT IMPLEMENTED; inert `error.UnsupportedTransport` stub preserved as forward-compat insurance. Re-open trigger: upstream `/v1/` promotion |
 | 11 | GAP-GRPC-STATUS-PROPAGATION | [#32](https://gitlab.com/devnw/zig/otel/-/issues/32) | `9eaeec2` (docs flip only) | **Blocked (upstream)** — issue stays OPEN | Functional / Exporters | Pinned `grpc_zig.client.call(...) ![]u8` returns only response bytes; trailers (`grpc-status`, `grpc-message`, `Retry-After`) not surfaced. Source: `zig-pkg/grpc_zig-…/src/client.zig:43-64` + consumer-side `src/exporters/otlp_grpc.zig:291-295`. **Unblock runbook:** `docs/runbooks/upstream-asks.md` § ASK-GRPC-ZIG-TRAILERS (6-step checklist) |
 | 12 | GAP-OTLP-LOG-EXPORT — wire OTLP/HTTP `/v1/logs` + gRPC `LogsService/Export` | [#8](https://gitlab.com/devnw/zig/otel/-/issues/8) | (Stage E) | Closed | Functional / Exporters (Critical) | Proto encoder `src/exporters/otlp_http/encode_logs.zig` (`encodeLogsProto` + `groupLogsByScope`); JSON `src/exporters/otlp_http/encode_json.zig:encodeLogsJson` (DevNW + stdlib); HTTP route `src/exporters/otlp_http/logs.zig:expLogs` at `/v1/logs`, exposed via `src/exporters/otlp_http/exporter.zig:logExporter`; gRPC route `src/exporters/otlp_grpc.zig:expLogs` at `/opentelemetry.proto.collector.logs.v1.LogsService/Export` + `logExporter`; DevNW protobuf parity `src/exporters/otlp_http/encode_proto_devnw.zig:encodeLogsProtoDevnw`; field-number constants `src/generated/otlp.zig:fn_resource_logs..fn_lr_event_name`; `test/otlp_logs_wire.zig` (12 tests). Closes OTEL-Q-003 (#152) — same item, different tracker view. |
+| 13 | GAP-EXPORTER-FACTORY — `OTEL_*_EXPORTER` env vars → typed exporter dispatch | [#4](https://gitlab.com/devnw/zig/otel/-/issues/4) | (Stage F) | Closed | Functional / SDK (Critical) | `src/sdk/exporter_factory.zig` (`Owned{Span,Metric,Log}Exporter` bundles + `{span,metric,log}ExporterFromConfig` factories cover `none`/`stdout`/`in_memory`/`otlp_http`/`otlp_grpc`/`prometheus` with protocol normalisation); provider helpers `src/sdk/trace.zig:initFromConfig`, `src/sdk/logs.zig:initFromConfig`, `src/sdk/metrics.zig:initFromConfig`; `MetricsConfig.default_exporter` + `*Provider.owned_exporter` ownership tracking; `src/exporters/stdout_json.zig:48` (`std.posix.write` → `std.posix.system.write` Zig 0.16 fix); regression `test/exporter_factory.zig` (22 tests). Unblocks per-signal env-var hub gaps #60/#63/#64/#66/#96 (NOT closed in this stage — separate work). SLO Rule 3 p99=25.728 ns/op, Rule 4 allocs/op=0.00150. |
 
 **Issues closed on tracker:** 9 (#7, #9, #25, #26, #33, #35, #101, #141, #143, #144 — note #7 and #101 were already closed as tracker drift).
 **Issues kept open with status comment:** 1 (#32 — Blocked-upstream).

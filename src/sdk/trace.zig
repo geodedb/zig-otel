@@ -12,6 +12,8 @@ const attrs_mod = @import("../internal/attributes.zig");
 const Resource = @import("resource.zig").Resource;
 const exp = @import("export.zig");
 const span_pool = @import("span_pool.zig");
+const config_mod = @import("config.zig");
+const exporter_factory = @import("exporter_factory.zig");
 
 pub const SamplingDecision = enum {
     drop,
@@ -157,6 +159,12 @@ pub const TracerProvider = struct {
     /// recycler's `ctx` pointer stays valid if the TracerProvider
     /// value is moved.
     pool: *span_pool.Pool,
+    /// GAP-EXPORTER-FACTORY (#4): when the provider is built via
+    /// `initFromConfig`, the factory-allocated exporter is stored here
+    /// so `deinit` can free it. Stays `null` for the legacy
+    /// manually-wired-`default_exporter` path so existing callers don't
+    /// see a behaviour change.
+    owned_exporter: ?exporter_factory.OwnedSpanExporter = null,
 
     pub const DefaultProcessor = union(enum) {
         none,
@@ -240,11 +248,60 @@ pub const TracerProvider = struct {
             .simple => |sp| self.allocator.destroy(sp),
             .batch => |bsp| bsp.deinit(),
         }
+        // Order: free the factory-allocated exporter LAST among the
+        // export-pipeline pieces so the processor's `shutdown` can
+        // observe a live exporter. By this point all processors have
+        // shut down and we hold the only reference.
+        if (self.owned_exporter) |*owned| owned.deinit();
+        self.owned_exporter = null;
         if (self.default_random) |r| self.allocator.destroy(r);
         if (self.owns_resource) {
             self.resource.deinit();
             self.allocator.destroy(self.resource);
         }
+    }
+
+    /// Build a `TracerProvider` from a resolved `Config`.
+    ///
+    /// GAP-EXPORTER-FACTORY (#4). Constructs the right exporter from
+    /// `cfg.traces.exporter` + `cfg.traces.otlp` via the
+    /// `exporter_factory`, then wires everything via the existing
+    /// `init(allocator, TraceConfig)` path. The resulting provider
+    /// owns the factory-allocated exporter and frees it on `deinit`.
+    ///
+    /// When `cfg.traces.exporter == .none`, the provider has no
+    /// processors and span exports become a runtime no-op (matches the
+    /// behaviour of leaving `default_exporter = null` on a manual
+    /// `init` call).
+    ///
+    /// `cfg` is borrowed; the caller owns its lifetime. The provider
+    /// only reads enum/numeric fields off `cfg.traces` plus the OTLP
+    /// configuration — no string slices are retained.
+    ///
+    /// Optional knobs are sourced from `cfg.bsp` — same env-var family
+    /// (`OTEL_BSP_*`) the manual path uses (GAP-ENV-BSP, #33).
+    pub fn initFromConfig(allocator: std.mem.Allocator, cfg: *const config_mod.Config) !TracerProvider {
+        var owned = try exporter_factory.spanExporterFromConfig(allocator, cfg);
+        errdefer if (owned) |*o| o.deinit();
+
+        const trace_cfg: TraceConfig = .{
+            .default_exporter = if (owned) |o| o.exporter else null,
+            .bsp_options = .{
+                .schedule_delay_ms = cfg.bsp.schedule_delay_ms,
+                .export_timeout_ms = cfg.bsp.export_timeout_ms,
+                .max_queue_size = cfg.bsp.max_queue_size,
+                .max_export_batch_size = cfg.bsp.max_export_batch_size,
+                .async_workers = 1,
+            },
+            .disabled = cfg.disabled,
+        };
+        var self = try init(allocator, trace_cfg);
+        // Ownership transfer: provider now owns the bundle's lifetime.
+        // Move the optional out of the local so the errdefer above
+        // doesn't re-deinit it.
+        self.owned_exporter = owned;
+        owned = null;
+        return self;
     }
 
     pub fn shutdown(self: *TracerProvider) void {

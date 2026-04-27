@@ -13,6 +13,8 @@ const clock_mod = @import("../internal/clock.zig");
 const trace_api = @import("../api/trace.zig");
 const Resource = @import("resource.zig").Resource;
 const exp = @import("export.zig");
+const config_mod = @import("config.zig");
+const exporter_factory = @import("exporter_factory.zig");
 
 /// DevNW metrics module — only resolved when the build flag is on. The
 /// in-repo aggregation pipeline owns the OpenTelemetry data-point shape;
@@ -61,6 +63,13 @@ pub const MetricsConfig = struct {
     clock: clock_mod.Clock = clock_mod.default,
     readers: []const MetricReader = &.{},
     backend: Backend = .in_repo,
+    /// Default metric exporter. Stored on the provider so callers wiring
+    /// a reader (PeriodicExportingMetricReader, #29 Stage G) can read
+    /// it back via `MeterProvider.default_exporter`. Without a reader
+    /// the exporter sits idle — symmetry with `TraceConfig` /
+    /// `LogsConfig` is preserved so `OTEL_METRICS_EXPORTER=otlp_http`
+    /// constructs an exporter even before the periodic reader lands.
+    default_exporter: ?exp.MetricExporter = null,
     /// Runtime kill-switch. When `true`, `meter()` returns an API-layer
     /// noop Meter so every `counter`/`histogram`/`gauge` call collapses
     /// to a no-op without touching the aggregation pipeline. Mirrors the
@@ -189,6 +198,12 @@ pub const MeterProvider = struct {
     instruments: std.ArrayList(*InstrumentBackend),
     clock: clock_mod.Clock,
     devnw: DevnwRegistryHolder = .{},
+    /// GAP-EXPORTER-FACTORY (#4): when the provider is built via
+    /// `initFromConfig`, the factory-allocated exporter is stored here
+    /// so `deinit` can free it. Stays `null` for the legacy
+    /// manually-wired path so existing callers don't see a behaviour
+    /// change.
+    owned_exporter: ?exporter_factory.OwnedMetricExporter = null,
 
     pub fn init(allocator: std.mem.Allocator, config: MetricsConfig) !MeterProvider {
         var owns = false;
@@ -230,10 +245,42 @@ pub const MeterProvider = struct {
             self.allocator.destroy(inst);
         }
         self.instruments.deinit(self.allocator);
+        // Free the factory-allocated exporter (if any) AFTER the
+        // readers have been shut down — readers may still hold the
+        // exporter handle through their `forceFlush` path.
+        if (self.owned_exporter) |*owned| owned.deinit();
+        self.owned_exporter = null;
         if (self.owns_resource) {
             self.resource.deinit();
             self.allocator.destroy(self.resource);
         }
+    }
+
+    /// Build a `MeterProvider` from a resolved `Config`.
+    ///
+    /// GAP-EXPORTER-FACTORY (#4). Constructs the right exporter from
+    /// `cfg.metrics.exporter` + `cfg.metrics.otlp` via the
+    /// `exporter_factory` and stores it on `config.default_exporter`.
+    /// Until the periodic reader (#29 Stage G) lands the exporter sits
+    /// idle; the cleanup path still frees it on `deinit`.
+    ///
+    /// `cfg.metrics.exporter == .prometheus` returns
+    /// `error.PrometheusRequiresPullEndpoint` per the factory contract
+    /// — prometheus is a pull exporter and must be wired against an
+    /// already-built `*MeterProvider` via
+    /// `exporters.prometheus.Prometheus.init`.
+    pub fn initFromConfig(allocator: std.mem.Allocator, cfg: *const config_mod.Config) !MeterProvider {
+        var owned = try exporter_factory.metricExporterFromConfig(allocator, cfg);
+        errdefer if (owned) |*o| o.deinit();
+
+        const metrics_cfg: MetricsConfig = .{
+            .default_exporter = if (owned) |o| o.exporter else null,
+            .disabled = cfg.disabled,
+        };
+        var self = try init(allocator, metrics_cfg);
+        self.owned_exporter = owned;
+        owned = null;
+        return self;
     }
 
     pub fn meter(self: *MeterProvider, scope: trace_api.InstrumentationScope) metrics_api.Meter {

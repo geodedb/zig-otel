@@ -10,6 +10,8 @@ const trace_api = @import("../api/trace.zig");
 const ctx_mod = @import("../api/context.zig");
 const Resource = @import("resource.zig").Resource;
 const exp = @import("export.zig");
+const config_mod = @import("config.zig");
+const exporter_factory = @import("exporter_factory.zig");
 
 pub const LogsConfig = struct {
     resource: ?*Resource = null,
@@ -62,6 +64,12 @@ pub const LoggerProvider = struct {
     /// Heap-allocated so its internal `ctx` pointer survives the
     /// `LoggerProvider` value being moved by the caller.
     default_processor: ?*SimpleLogProcessor = null,
+    /// GAP-EXPORTER-FACTORY (#4): when the provider is built via
+    /// `initFromConfig`, the factory-allocated exporter is stored here
+    /// so `deinit` can free it. Stays `null` for the legacy
+    /// manually-wired path so existing callers don't see a behaviour
+    /// change.
+    owned_exporter: ?exporter_factory.OwnedLogExporter = null,
 
     pub fn init(allocator: std.mem.Allocator, config: LogsConfig) !LoggerProvider {
         var owns = false;
@@ -102,10 +110,41 @@ pub const LoggerProvider = struct {
         for (self.processors) |p| p.shutdown();
         self.allocator.free(self.processors);
         if (self.default_processor) |lp| self.allocator.destroy(lp);
+        // Free the factory-allocated exporter LAST so processors can
+        // observe a live exporter through their `shutdown` path.
+        if (self.owned_exporter) |*owned| owned.deinit();
+        self.owned_exporter = null;
         if (self.owns_resource) {
             self.resource.deinit();
             self.allocator.destroy(self.resource);
         }
+    }
+
+    /// Build a `LoggerProvider` from a resolved `Config`.
+    ///
+    /// GAP-EXPORTER-FACTORY (#4). Constructs the right exporter from
+    /// `cfg.logs.exporter` + `cfg.logs.otlp` via the `exporter_factory`,
+    /// then runs the standard `init` path which wires a
+    /// `SimpleLogProcessor` around the exporter when `processors` is
+    /// empty. The provider owns the factory-allocated exporter and
+    /// frees it on `deinit`.
+    ///
+    /// When `cfg.logs.exporter == .none`, the provider has no
+    /// processors and emits become a runtime no-op (matches the
+    /// behaviour of leaving `default_exporter = null` on a manual
+    /// `init` call).
+    pub fn initFromConfig(allocator: std.mem.Allocator, cfg: *const config_mod.Config) !LoggerProvider {
+        var owned = try exporter_factory.logExporterFromConfig(allocator, cfg);
+        errdefer if (owned) |*o| o.deinit();
+
+        const logs_cfg: LogsConfig = .{
+            .default_exporter = if (owned) |o| o.exporter else null,
+            .disabled = cfg.disabled,
+        };
+        var self = try init(allocator, logs_cfg);
+        self.owned_exporter = owned;
+        owned = null;
+        return self;
     }
 
     pub fn forceFlush(self: *LoggerProvider, timeout_ms: u64) !void {

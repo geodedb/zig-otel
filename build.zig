@@ -278,6 +278,10 @@ pub fn build(b: *std.Build) void {
         "test/propagator_b3.zig",
         // GAP-PROPAGATOR-JAEGER (#24): uber-trace-id + uberctx baggage.
         "test/propagator_jaeger.zig",
+        // GAP-EXPORTER-FACTORY (#4): OTEL_*_EXPORTER env vars → typed
+        // exporter dispatch, plus *Provider.initFromConfig helpers and
+        // factory lifecycle (deinit frees backing allocations).
+        "test/exporter_factory.zig",
     };
     for (test_files) |path| {
         const m = b.createModule(.{

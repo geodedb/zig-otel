@@ -524,7 +524,11 @@ fn counterAdd(ctx: ?*anyopaque, value: u64, attributes: []const attrs_mod.Entry)
         .sum_uint => |*v| v.* +%= value,
         else => {},
     }
-    pt.last_unix_nano = provider_ptr.clock.now();
+    // PR-8 (#141): reuse the timestamp captured before the lock — calling
+    // `clock.now()` a second time here doubled the syscall budget per
+    // record op without changing semantics (the lock holder's view of
+    // "now" is monotonic from `pointIndexFor`'s perspective anyway).
+    pt.last_unix_nano = now;
 
     mirrorCounterAdd(inst, value);
 }
@@ -557,7 +561,8 @@ fn udcAdd(ctx: ?*anyopaque, value: i64, attributes: []const attrs_mod.Entry) voi
         .sum_int => |*v| v.* +%= value,
         else => {},
     }
-    pt.last_unix_nano = provider_ptr.clock.now();
+    // PR-8 (#141): single `clock.now()` per record path — see counterAdd.
+    pt.last_unix_nano = now;
 
     mirrorGaugeAdd(inst, value);
 }
@@ -592,7 +597,8 @@ fn histRecord(ctx: ?*anyopaque, value: f64, attributes: []const attrs_mod.Entry)
         },
         else => {},
     }
-    pt.last_unix_nano = provider_ptr.clock.now();
+    // PR-8 (#141): single `clock.now()` per record path — see counterAdd.
+    pt.last_unix_nano = now;
 
     mirrorHistogramObserve(inst, value);
 }
@@ -616,7 +622,8 @@ fn gaugeSet(ctx: ?*anyopaque, value: f64, attributes: []const attrs_mod.Entry) v
         .gauge_double => |*v| v.* = value,
         else => {},
     }
-    pt.last_unix_nano = provider_ptr.clock.now();
+    // PR-8 (#141): single `clock.now()` per record path — see counterAdd.
+    pt.last_unix_nano = now;
 
     mirrorGaugeSet(inst, value);
 }

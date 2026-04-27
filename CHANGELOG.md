@@ -94,6 +94,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **Single `clock.now()` per metric record (PR-8, gitlab #141).**
+  `counterAdd` / `udcAdd` / `histRecord` / `gaugeSet` in
+  `src/sdk/metrics.zig` were calling `provider.clock.now()` twice per
+  record — once before the lock to feed `pointIndexFor`, then again
+  to stamp `pt.last_unix_nano`. The second call is now elided; the
+  pre-lock timestamp is reused for both purposes. SLO gate clean
+  (Rule 3 attr_put_update p99=28.97 ns/op; Rule 4 counter_add
+  allocs/op=0.00150).
+
 - **OTLP encoder is now O(N) on nested submessages.**
   `Writer.commitSubMessage` (`src/generated/otlp.zig`) used to
   `copyForwards`-shift the payload tail on every commit so the varint

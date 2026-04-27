@@ -69,7 +69,7 @@
 | 5 | **P1** | **76** | **PR-4** | exporters | `src/exporters/otlp_http.zig:243` | confirmed | [#47](https://gitlab.com/devnw/zig/otel/-/work_items/47) | triage |
 | 6 | **P1** | **72** | **PR-5** | exporters | `src/exporters/otlp_http.zig:402-423` | confirmed | [#138](https://gitlab.com/devnw/zig/otel/-/work_items/138) | triage |
 | 7 | **P1** | **72** | **PR-6** | api | `src/api/baggage.zig:56-73` | confirmed | [#139](https://gitlab.com/devnw/zig/otel/-/work_items/139) | triage |
-| 8 | **P1** | **64** | **PR-8** | sdk | `src/sdk/metrics.zig` (clock.now ×2) | confirmed | [#141](https://gitlab.com/devnw/zig/otel/-/work_items/141) | triage |
+| 8 | **P1** | **64** | **PR-8** | sdk | `src/sdk/metrics.zig` (clock.now ×2) | confirmed | [#141](https://gitlab.com/devnw/zig/otel/-/work_items/141) | **closed 2026-04-27** — single `provider.clock.now()` captured before the lock and reused for `pt.last_unix_nano`; `src/sdk/metrics.zig:527,560,595,619`; SLO gate clean (Rule 3 attr_put_update p99=28.97 ns/op; Rule 4 counter allocs/op=0.00150). |
 | 9 | **P1** | **58** | **PR-9** | exporters | `src/exporters/otlp_grpc.zig:65,129,177` | confirmed | [#143](https://gitlab.com/devnw/zig/otel/-/work_items/143) | triage |
 | 10 | **P1** | **56** | **PR-10** | api/internal | `src/internal/json_codec.zig:50,75,100` | confirmed | [#144](https://gitlab.com/devnw/zig/otel/-/work_items/144) | triage |
 | 11 | P0 | 48 | P0-5 | sdk | `src/sdk/metrics.zig:314-329` | confirmed | [#17](https://gitlab.com/devnw/zig/otel/-/work_items/17) | triage — folded into P0-4 |

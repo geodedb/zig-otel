@@ -20,6 +20,7 @@ const config_mod = @import("../../sdk/config.zig");
 const id_mod = @import("../../internal/id.zig");
 
 const transport_mod = @import("transport.zig");
+const compression_mod = @import("compression.zig");
 const spans_mod = @import("spans.zig");
 const metrics_mod = @import("metrics.zig");
 const logs_mod = @import("logs.zig");
@@ -158,6 +159,15 @@ pub const OtlpHttpExporter = struct {
     /// (replaces the pre-refactor fn-pointer-identity check that
     /// compared the transport pointer against an `httpTransport`
     /// marker).
+    ///
+    /// GAP-OTLP-COMPRESSION (#27): when `OtlpConfig.compression == .gzip`
+    /// the body is gzipped here (via `compression_mod.gzipBody`) and a
+    /// `content-encoding=gzip` header is appended to the user-supplied
+    /// header string. The `parseHeaderString` parser already accepts
+    /// arbitrary RFC 7230 token names — `content-encoding` rides through
+    /// unchanged. The compressed buffer is owned by `arena_alloc`, which
+    /// the retry loop owns for the duration of the export call, so it
+    /// survives any retry without leaking.
     fn dispatchTransport(
         self: *OtlpHttpExporter,
         arena_alloc: std.mem.Allocator,
@@ -165,15 +175,22 @@ pub const OtlpHttpExporter = struct {
         content_type: []const u8,
         body: []const u8,
     ) anyerror!TransportResult {
+        const wire_body, const wire_headers = try maybeGzip(
+            arena_alloc,
+            self.config.compression,
+            self.config.headers,
+            body,
+        );
+
         return switch (self.transport) {
             .stdlib_io => transport_mod.httpTransportImpl(
                 arena_alloc,
                 self.io,
                 self.config.endpoint,
-                self.config.headers,
+                wire_headers,
                 path,
                 content_type,
-                body,
+                wire_body,
                 &self.last_response_body,
                 &self.last_response_body_len,
                 &self.last_response_status,
@@ -182,14 +199,50 @@ pub const OtlpHttpExporter = struct {
                 arena_alloc,
                 self.config.endpoint,
                 path,
-                self.config.headers,
+                wire_headers,
                 content_type,
-                body,
+                wire_body,
                 self.config.timeout_ms,
             ),
         };
     }
 };
+
+/// GAP-OTLP-COMPRESSION (#27): if compression is gzip, return gzipped
+/// body bytes plus a header string with `content-encoding=gzip`
+/// appended. Otherwise return the inputs unchanged. The returned slices
+/// are owned by `arena` (the per-call arena allocator). Allocations
+/// only happen on the gzip branch, so the `.none` path stays
+/// allocation-free.
+fn maybeGzip(
+    arena: std.mem.Allocator,
+    compression: @TypeOf(@as(OtlpConfig, .{}).compression),
+    headers: ?[]const u8,
+    body: []const u8,
+) !struct { []const u8, ?[]const u8 } {
+    switch (compression) {
+        .none => return .{ body, headers },
+        .gzip => {
+            const gz = try compression_mod.gzipBody(arena, body);
+            // Append `content-encoding=gzip` to the user-supplied
+            // headers string. Format: `k=v[, k=v...]` per
+            // OTEL_EXPORTER_OTLP_HEADERS. `parseHeaderString` trims
+            // whitespace and skips empty entries, so a leading "," on
+            // the empty-headers branch would also be tolerated — we
+            // emit a clean form regardless to keep wire-tap traces
+            // readable.
+            const header_pair: []const u8 = "content-encoding=gzip";
+            const merged: []const u8 = if (headers) |existing|
+                if (existing.len == 0)
+                    try arena.dupe(u8, header_pair)
+                else
+                    try std.fmt.allocPrint(arena, "{s}, {s}", .{ existing, header_pair })
+            else
+                try arena.dupe(u8, header_pair);
+            return .{ gz, merged };
+        },
+    }
+}
 
 fn doShutdown(ctx: ?*anyopaque) void {
     const self: *OtlpHttpExporter = @ptrCast(@alignCast(ctx.?));

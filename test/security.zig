@@ -341,7 +341,7 @@ test "M-7: frameBoundCheck rejects body larger than u32 max" {
 }
 
 test "M-7: frame() accepts a small body" {
-    const out = try otel.exporters.otlp_grpc.frame(std.testing.allocator, "hello");
+    const out = try otel.exporters.otlp_grpc.frame(std.testing.allocator, "hello", false);
     defer std.testing.allocator.free(out);
     try std.testing.expectEqualSlices(u8, "hello", out[5..]);
 }

@@ -12,6 +12,7 @@ const std = @import("std");
 const exp = @import("../sdk/export.zig");
 const config_mod = @import("../sdk/config.zig");
 const otlp_http = @import("otlp_http.zig");
+const compression_mod = @import("otlp_http/compression.zig");
 const id_mod = @import("../internal/id.zig");
 const build_options = @import("build_options");
 
@@ -158,7 +159,7 @@ fn expSpans(ctx: ?*anyopaque, items: []const exp.SpanData) anyerror!exp.SpanExpo
 
     var retry: exp.RetryState = .{};
     while (true) {
-        const status = unaryExport(aa, io, parsed.host, parsed.port, trace_export_method, body) catch |err| {
+        const status = unaryExport(aa, io, parsed.host, parsed.port, trace_export_method, body, self.config.compression) catch |err| {
             switch (err) {
                 error.ConnectionRefused,
                 error.ConnectionResetByPeer,
@@ -207,7 +208,7 @@ fn expMetrics(ctx: ?*anyopaque, items: []const exp.MetricData) anyerror!exp.Span
 
     var retry: exp.RetryState = .{};
     while (true) {
-        const status = unaryExport(aa, io, parsed.host, parsed.port, metrics_export_method, body) catch |err| {
+        const status = unaryExport(aa, io, parsed.host, parsed.port, metrics_export_method, body, self.config.compression) catch |err| {
             switch (err) {
                 error.ConnectionRefused,
                 error.ConnectionResetByPeer,
@@ -252,7 +253,7 @@ fn expLogs(ctx: ?*anyopaque, items: []const exp.LogData) anyerror!exp.SpanExport
 
     var retry: exp.RetryState = .{};
     while (true) {
-        const status = unaryExport(aa, io, parsed.host, parsed.port, logs_export_method, body) catch |err| {
+        const status = unaryExport(aa, io, parsed.host, parsed.port, logs_export_method, body, self.config.compression) catch |err| {
             switch (err) {
                 error.ConnectionRefused,
                 error.ConnectionResetByPeer,
@@ -324,6 +325,16 @@ fn parseGrpcEndpoint(endpoint: []const u8) !ParsedEndpoint {
 /// would produce double-framed output that the server would reject.
 /// The `frame()` helper below is kept exposed for external callers that
 /// drive a custom transport (and is exercised by its own unit test).
+///
+/// GAP-OTLP-COMPRESSION (#27): when `compression == .gzip` is requested,
+/// `.gzip` is passed to `client.call` so grpc-zig's zlib-backed
+/// `compression.compress` runs over the body. The matching
+/// `grpc-encoding: gzip` request metadata header is NOT set —
+/// grpc-zig's `client.call` does not yet expose a request-metadata
+/// surface, so the header would be silently dropped. This is tracked
+/// as a follow-up: real OTLP collectors require the metadata header to
+/// route the compressed framing flag correctly. Until then,
+/// `compression == .gzip` is honoured at the body-encoding level only.
 fn unaryExport(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -331,18 +342,28 @@ fn unaryExport(
     port: u16,
     method: []const u8,
     body: []const u8,
+    compression: @TypeOf(@as(config_mod.OtlpConfig, .{}).compression),
 ) !GrpcStatus {
     if (!build_options.use_devnw_grpc) return error.UnsupportedTransport;
 
     var client = try grpc_zig.GrpcClient.init(allocator, io, host, port);
     defer client.deinit();
 
+    // Map our `OtlpConfig.compression` to grpc-zig's algorithm enum.
+    // Only `.gzip` and `.none` are exposed at the OtlpConfig surface;
+    // `.deflate` is intentionally omitted (no spec mandate, and the
+    // OTel docs only list `gzip`).
+    const alg: grpc_zig.client.compression.Compression.Algorithm = switch (compression) {
+        .none => .none,
+        .gzip => .gzip,
+    };
+
     // The method path is informational from grpc-zig's perspective — the
     // server routes to `handlers.items[0]` regardless (upstream
     // `server.zig:122-128`). Real collectors route by path, so the
     // caller is responsible for passing the right service method
     // (`TraceService/Export` vs `MetricsService/Export`).
-    const reply = client.call(method, body, .none) catch |err| return err;
+    const reply = client.call(method, body, alg) catch |err| return err;
     defer allocator.free(reply);
 
     // grpc-zig's client surfaces neither the trailers nor the
@@ -353,10 +374,23 @@ fn unaryExport(
     return .ok;
 }
 
-/// Frame `body` with the gRPC 5-byte length prefix (compressed=0, length).
+/// Frame `body` with the gRPC 5-byte length prefix.
+///
+///     [compressed_flag (1 byte)] [length (4 bytes, big-endian)] [body]
+///
+/// `compressed` selects the compressed-flag byte (`0` for uncompressed,
+/// `1` for compressed). The body bytes are passed through verbatim —
+/// when `compressed = true` the caller is responsible for already
+/// having gzipped (or otherwise compressed) the payload.
+///
 /// Exposed for callers that drive a transport other than `grpc-zig`'s
-/// `GrpcClient` (which frames internally). The unit test below pins the
-/// wire shape against the OTLP spec.
+/// `GrpcClient` (which frames internally). The unit tests below pin
+/// both compressed and uncompressed wire shapes against the OTLP spec.
+///
+/// GAP-OTLP-COMPRESSION (#27): the `compressed` parameter was added so
+/// callers can emit a wire-correct compressed frame (RFC 8932 § 4 of
+/// the gRPC HTTP/2 spec). Pre-fix the helper hardcoded the flag to
+/// `0`, which silently mis-framed gzipped bodies on the wire.
 ///
 /// GAP-SEC-M-7: refuses bodies larger than `std.math.maxInt(u32)`
 /// (4 GiB - 1) with `error.MessageTooLarge` so the implicit
@@ -364,13 +398,23 @@ fn unaryExport(
 /// prefix produces a frame the server interprets as much shorter than
 /// the actual payload, which the receiver then misroutes — at best a
 /// parse error, at worst a smuggling primitive.
-pub fn frame(allocator: std.mem.Allocator, body: []const u8) ![]u8 {
+pub fn frame(allocator: std.mem.Allocator, body: []const u8, compressed: bool) ![]u8 {
     if (body.len > std.math.maxInt(u32)) return error.MessageTooLarge;
     const out = try allocator.alloc(u8, body.len + 5);
-    out[0] = 0; // compression: none
+    out[0] = if (compressed) 1 else 0;
     std.mem.writeInt(u32, out[1..5], @intCast(body.len), .big);
     @memcpy(out[5..], body);
     return out;
+}
+
+/// GAP-OTLP-COMPRESSION (#27): gzip `body` and frame the result with
+/// the gRPC compressed-flag byte set to `1`. Equivalent to
+/// `frame(alloc, gzipBody(body), true)`. Returns a single arena-owned
+/// slice; the intermediate gzip buffer is freed before return.
+pub fn frameGzip(allocator: std.mem.Allocator, body: []const u8) ![]u8 {
+    const compressed = try compression_mod.gzipBody(allocator, body);
+    defer allocator.free(compressed);
+    return frame(allocator, compressed, true);
 }
 
 /// Helper for tests — checks the bounds without allocating a 4 GiB
@@ -380,12 +424,40 @@ pub fn frameBoundCheck(body_len: u64) !void {
     if (body_len > std.math.maxInt(u32)) return error.MessageTooLarge;
 }
 
-test "frame prepends 5-byte length prefix" {
-    const out = try frame(std.testing.allocator, "hello");
+test "frame prepends 5-byte length prefix uncompressed" {
+    const out = try frame(std.testing.allocator, "hello", false);
     defer std.testing.allocator.free(out);
     try std.testing.expectEqual(@as(u8, 0), out[0]);
     try std.testing.expectEqual(@as(u32, 5), std.mem.readInt(u32, out[1..5], .big));
     try std.testing.expectEqualSlices(u8, "hello", out[5..]);
+}
+
+test "frame prepends 5-byte length prefix compressed" {
+    // GAP-OTLP-COMPRESSION (#27): when the caller passes
+    // `compressed = true`, the framing flag byte must be `1`. The body
+    // bytes are passed through verbatim — the caller is responsible
+    // for the gzip step.
+    const out = try frame(std.testing.allocator, "hello", true);
+    defer std.testing.allocator.free(out);
+    try std.testing.expectEqual(@as(u8, 1), out[0]);
+    try std.testing.expectEqual(@as(u32, 5), std.mem.readInt(u32, out[1..5], .big));
+    try std.testing.expectEqualSlices(u8, "hello", out[5..]);
+}
+
+test "frameGzip emits compressed framing flag and gzip-encoded body" {
+    // GAP-OTLP-COMPRESSION (#27): integrated helper — gzip + frame.
+    // Decompressing the body must round-trip to the original input.
+    const original = "the quick brown fox jumps over the lazy dog" ** 8;
+    const out = try frameGzip(std.testing.allocator, original);
+    defer std.testing.allocator.free(out);
+
+    try std.testing.expectEqual(@as(u8, 1), out[0]); // compressed flag
+    const len = std.mem.readInt(u32, out[1..5], .big);
+    try std.testing.expectEqual(@as(u32, @intCast(out.len - 5)), len);
+
+    const decompressed = try compression_mod.gunzipBody(std.testing.allocator, out[5..]);
+    defer std.testing.allocator.free(decompressed);
+    try std.testing.expectEqualSlices(u8, original, decompressed);
 }
 
 test "init rejects non-grpc protocol" {

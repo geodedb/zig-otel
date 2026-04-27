@@ -96,7 +96,7 @@ test "OTLP exporter returns PartialSuccess on 207" {
 }
 
 test "gRPC frame prefix" {
-    const out = try otel.exporters.otlp_grpc.frame(std.testing.allocator, "abc");
+    const out = try otel.exporters.otlp_grpc.frame(std.testing.allocator, "abc", false);
     defer std.testing.allocator.free(out);
     try std.testing.expectEqual(@as(u8, 0), out[0]);
     try std.testing.expectEqual(@as(u32, 3), std.mem.readInt(u32, out[1..5], .big));

@@ -29,6 +29,7 @@
 const exporter_mod = @import("otlp_http/exporter.zig");
 const transport_mod = @import("otlp_http/transport.zig");
 const headers_mod = @import("otlp_http/headers.zig");
+const compression_mod = @import("otlp_http/compression.zig");
 const encode_proto_mod = @import("otlp_http/encode_proto.zig");
 const encode_proto_devnw_mod = @import("otlp_http/encode_proto_devnw.zig");
 const encode_json_mod = @import("otlp_http/encode_json.zig");
@@ -58,6 +59,10 @@ pub const max_header_name_len = headers_mod.max_header_name_len;
 pub const max_header_value_len = headers_mod.max_header_value_len;
 pub const parseHeaderString = headers_mod.parseHeaderString;
 
+// ---- gzip helpers (GAP-OTLP-COMPRESSION #27, re-exported for tests) ----
+pub const gzipBody = compression_mod.gzipBody;
+pub const gunzipBody = compression_mod.gunzipBody;
+
 // ---- Encoders (used by tests + `otlp_grpc.zig`) ----
 pub const encodeSpansProto = encode_proto_mod.encodeSpansProto;
 pub const encodeSpansProtoDevnw = encode_proto_devnw_mod.encodeSpansProtoDevnw;
@@ -85,6 +90,7 @@ test {
     std.testing.refAllDecls(exporter_mod);
     std.testing.refAllDecls(transport_mod);
     std.testing.refAllDecls(headers_mod);
+    std.testing.refAllDecls(compression_mod);
     std.testing.refAllDecls(encode_proto_mod);
     std.testing.refAllDecls(encode_proto_devnw_mod);
     std.testing.refAllDecls(encode_json_mod);

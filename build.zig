@@ -290,6 +290,12 @@ pub fn build(b: *std.Build) void {
         // interval cadence, force-flush, prompt shutdown (<100ms target
         // even at 60s interval), and observable-instrument integration.
         "test/periodic_metric_reader.zig",
+        // GAP-OTLP-COMPRESSION (#27): gzip body for OTLP/HTTP and
+        // framing-flag byte for OTLP/gRPC. Pins Content-Encoding header,
+        // gzip magic, gzip<->raw round-trip on representative payloads
+        // (including >= 64 KiB), and the [1, len_be, gzipped] gRPC
+        // framing shape via the `frame()` / `frameGzip()` helpers.
+        "test/otlp_compression.zig",
     };
     for (test_files) |path| {
         const m = b.createModule(.{

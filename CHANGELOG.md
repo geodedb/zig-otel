@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **File JSONL exporter no longer follows symlinks (NEW-M-2, gitlab
+  #140, CONFIDENTIAL).** `src/exporters/file.zig::FileJsonl.open` was
+  delegating to `std.Io.Dir.createFile`, which on Zig 0.16.0 follows
+  symlinks unconditionally — `lib/std/Io/Dir.zig:586`
+  `CreateFileOptions` has no `follow_symlinks` field at all (compare
+  `OpenFileOptions:551` which does expose the toggle). An attacker with
+  write access to the exporter's trusted base dir could plant
+  `spans.jsonl -> /etc/cron.d/x` and have the exporter clobber the
+  target. CWE-59 / OWASP A01:2021. Fix: `open()` now first attempts
+  `Dir.openFile(.{ .follow_symlinks = false, .mode = .write_only })`;
+  on `error.SymLinkLoop` (POSIX `ELOOP` from `O_NOFOLLOW`) the open is
+  refused. On `error.FileNotFound` the call falls through to
+  `Dir.createFile(.{ .exclusive = true })`, so even a TOCTOU symlink
+  plant between the existence check and the create call is rejected
+  atomically (`O_CREAT | O_EXCL` returns `error.PathAlreadyExists`
+  against any existing entry, including a symlink). Three regression
+  tests in `test/file_exporter_symlink.zig` cover the symlink refusal
+  (with sentinel-bytes-preserved assertion), the fresh-create path,
+  and the existing-regular-file restart path.
 - M-3 (#84) recorded Won't Do — DevNW upstream signing tracked OOB.
 - **Proto + semconv manifest provenance gate now anchors the actual
   upstream sources (NEW-H-1, gitlab #134, CONFIDENTIAL).** The previous

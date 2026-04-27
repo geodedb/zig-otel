@@ -249,6 +249,10 @@ pub fn build(b: *std.Build) void {
         "test/tls_loopback.zig",
         "test/batch_async.zig",
         "test/comptime_disabled.zig",
+        // NEW-M-2 (#140, CONFIDENTIAL): regression test for CWE-59
+        // symlink following in `src/exporters/file.zig`. See the file
+        // header for the Zig 0.16 stdlib evidence.
+        "test/file_exporter_symlink.zig",
     };
     for (test_files) |path| {
         const m = b.createModule(.{

@@ -152,7 +152,7 @@ Build Summary: 30/30 steps succeeded; 33/43 tests passed (10 skipped)
 ### High-priority spec compliance
 
 - **GAP-PROPAGATOR-B3** — Closed (#23). `src/propagation/b3.zig` implements the single + multi header forms; `src/sdk/config.zig propagatorBundleFromConfig` wires `OTEL_PROPAGATORS={b3,b3multi}` (and comma-separated lists) onto a runtime-dispatched `Composite`; regression `test/propagator_b3.zig` covers positive (canonical, debug, parent-id, padded 16-hex), negative (empty/missing/all-zero/non-hex/bad-sampled), round-trip, and end-to-end via the env-var driven factory.
-- **GAP-PROPAGATOR-JAEGER** — `jaeger` propagator declared in config + env, no implementation. `src/sdk/config.zig:84,186` only.
+- **GAP-PROPAGATOR-JAEGER** — Closed (#24). `src/propagation/jaeger.zig` implements `uber-trace-id` SpanContext (16/32-hex trace-id padding, debug-flag collapse to sampled, parent-id shape-validate-and-discard, firehose drop) + `uberctx-<key>` per-entry baggage with RFC 3986 percent-encoding. `src/propagation/trace_context.zig` gained `Carrier.iter`/`MapCarrier.iterFn` so the `uberctx-` scan can run on any carrier that surfaces an iterator. Factory wiring in `src/sdk/config.zig propagatorBundleFromConfig`; regression `test/propagator_jaeger.zig` (20 tests) covers positive + negative + round-trip + composite end-to-end.
 - **GAP-OTLP-METRIC-EXPORT** — `OtlpHttpExporter`/`OtlpGrpcExporter` have no `metricExporter()`; `/v1/metrics` path unreachable; SPEC_COMPLIANCE.md claim contradicted by `src/exporters/otlp_http.zig`.
 - **GAP-OTLP-LOG-EXPORT** — Same: no `logExporter()`; `/v1/logs` unreachable.
 - **GAP-OTLP-PROFILES-EXPORT** — `/v1development/profiles` claimed, never wired; `src/api/profiles.zig:59` always returns `error.UnsupportedTransport`.

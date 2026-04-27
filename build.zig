@@ -271,6 +271,8 @@ pub fn build(b: *std.Build) void {
         "test/propagator.zig",
         // GAP-PROPAGATOR-B3 (#23): B3 single + multi header coverage.
         "test/propagator_b3.zig",
+        // GAP-PROPAGATOR-JAEGER (#24): uber-trace-id + uberctx baggage.
+        "test/propagator_jaeger.zig",
     };
     for (test_files) |path| {
         const m = b.createModule(.{

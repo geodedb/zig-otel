@@ -12,6 +12,7 @@ const build_options = @import("build_options");
 const devnw_yaml = if (build_options.use_devnw_config) @import("yaml") else struct {};
 const propagator_mod = @import("../propagation/propagator.zig");
 const b3_propagator = @import("../propagation/b3.zig");
+const jaeger_propagator = @import("../propagation/jaeger.zig");
 
 pub const ExporterKind = enum {
     in_memory,
@@ -839,8 +840,7 @@ pub fn propagatorBundleFromEnum(
         .baggage => try members.append(allocator, propagator_mod.baggage),
         .b3 => try members.append(allocator, b3_propagator.single_header),
         .b3multi => try members.append(allocator, b3_propagator.multi_header),
-        // jaeger arm lands in the next commit (#24).
-        .jaeger => {},
+        .jaeger => try members.append(allocator, jaeger_propagator.propagator),
         .composite => {
             try members.append(allocator, propagator_mod.trace_context);
             try members.append(allocator, propagator_mod.baggage);
@@ -878,8 +878,7 @@ pub fn propagatorBundleFromEnvList(
         } else if (std.mem.eql(u8, token, "b3multi")) {
             try members.append(allocator, b3_propagator.multi_header);
         } else if (std.mem.eql(u8, token, "jaeger")) {
-            // jaeger arm lands in the next commit (#24); accept the
-            // token without poisoning sibling propagators.
+            try members.append(allocator, jaeger_propagator.propagator);
         } else {
             // Unknown token — spec says to ignore, not error. Continue.
         }

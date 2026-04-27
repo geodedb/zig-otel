@@ -21,10 +21,19 @@ pub const max_tracestate_members: usize = 32;
 pub const traceparent_header: []const u8 = "traceparent";
 pub const tracestate_header: []const u8 = "tracestate";
 
+/// Carrier abstraction over the wire-level header / metadata map.
+///
+/// `getFn` / `setFn` are required. `iterFn` is optional — propagators
+/// that need to scan all entries (e.g. Jaeger's `uberctx-*` baggage)
+/// fall back gracefully when it's null. The iterator semantics:
+/// - The visitor is called once per key/value pair currently in the
+///   carrier; ordering is not specified.
+/// - The visitor MUST NOT mutate the carrier during iteration.
 pub const Carrier = struct {
     ctx: ?*anyopaque,
     getFn: *const fn (?*anyopaque, []const u8) ?[]const u8,
     setFn: *const fn (?*anyopaque, []const u8, []const u8) anyerror!void,
+    iterFn: ?*const fn (?*anyopaque, *const fn (?*anyopaque, []const u8, []const u8) anyerror!void, ?*anyopaque) anyerror!void = null,
 
     pub fn get(self: Carrier, key: []const u8) ?[]const u8 {
         return self.getFn(self.ctx, key);
@@ -32,6 +41,20 @@ pub const Carrier = struct {
 
     pub fn set(self: Carrier, key: []const u8, value: []const u8) !void {
         try self.setFn(self.ctx, key, value);
+    }
+
+    /// Walk every key/value pair currently in the carrier. The visitor
+    /// callback receives a borrowed `visitor_ctx` plus the key and
+    /// value slices (also borrowed; lifetime tied to the carrier).
+    /// Returns `error.IterationUnsupported` when the carrier doesn't
+    /// implement `iterFn`.
+    pub fn iter(
+        self: Carrier,
+        visitor: *const fn (?*anyopaque, []const u8, []const u8) anyerror!void,
+        visitor_ctx: ?*anyopaque,
+    ) !void {
+        const f = self.iterFn orelse return error.IterationUnsupported;
+        try f(self.ctx, visitor, visitor_ctx);
     }
 };
 
@@ -42,7 +65,7 @@ pub const MapCarrier = struct {
     map: *std.StringHashMap([]const u8),
 
     pub fn carrier(self: *MapCarrier) Carrier {
-        return .{ .ctx = self, .getFn = mapGet, .setFn = mapSet };
+        return .{ .ctx = self, .getFn = mapGet, .setFn = mapSet, .iterFn = mapIter };
     }
 };
 
@@ -54,6 +77,18 @@ fn mapGet(ctx: ?*anyopaque, key: []const u8) ?[]const u8 {
 fn mapSet(ctx: ?*anyopaque, key: []const u8, value: []const u8) anyerror!void {
     const self: *MapCarrier = @ptrCast(@alignCast(ctx.?));
     try self.map.put(key, value);
+}
+
+fn mapIter(
+    ctx: ?*anyopaque,
+    visitor: *const fn (?*anyopaque, []const u8, []const u8) anyerror!void,
+    visitor_ctx: ?*anyopaque,
+) anyerror!void {
+    const self: *MapCarrier = @ptrCast(@alignCast(ctx.?));
+    var it = self.map.iterator();
+    while (it.next()) |entry| {
+        try visitor(visitor_ctx, entry.key_ptr.*, entry.value_ptr.*);
+    }
 }
 
 /// Inject the active SpanContext into `carrier`. No-op if the span

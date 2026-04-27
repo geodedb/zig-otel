@@ -59,6 +59,9 @@ pub const propagation = struct {
     /// (#23). See `propagator.single_header` / `propagator.multi_header`
     /// for the registered TextMapPropagator handles.
     pub const b3 = @import("propagation/b3.zig");
+    /// Jaeger propagator: `uber-trace-id` for SpanContext + per-entry
+    /// `uberctx-<key>` headers for baggage. GAP-PROPAGATOR-JAEGER (#24).
+    pub const jaeger = @import("propagation/jaeger.zig");
 };
 
 pub const sdk = struct {

@@ -54,7 +54,7 @@
 ### Bench / SLO gaps (now tracked)
 
 - **BENCH-BASELINES-MISSING** ([#166](https://gitlab.com/devnw/zig/otel/-/work_items/166)) — pre-fix baselines missing for P0-3, P0-5, P0-7, P0-8, P-N3..P-N7, P1-1..P1-13, and the new PR-1..PR-13.
-- **PERF-SLO-DEFINE** ([#167](https://gitlab.com/devnw/zig/otel/-/work_items/167)) — no service-level p99 export latency or RPS SLO; no allocation-HWM bench; Makefile lacks `--json` diff CI gate; no flamegraph capture.
+- **PERF-SLO-DEFINE** ([#167](https://gitlab.com/devnw/zig/otel/-/work_items/167)) — **closed 2026-04-27.** `docs/performance/SLO.md` defines per-op latency (`attr-update` p99 ≤ 50 ns/op) and per-op allocation (`counter-add 4-attrs hit` ≤ 0.005 allocs/op) ceilings; `benchmarks/check_hard_criteria.zig` extended with the matching runtime rules; `make slo-check` (and `make ci`) gate regressions. Deferred drain-side / OTLP-encode SLO rows tracked under #166.
 
 ---
 
@@ -97,7 +97,7 @@
 | 33 | P1 | 4 | P1-12 | sdk | `src/sdk/resource.zig:30-38` | confirmed | [#75](https://gitlab.com/devnw/zig/otel/-/work_items/75) | triage — auto-fixed by P0-1 |
 | 34 | P1 | 4 | P1-13 | api | `src/api/trace.zig:71-101` | suspected | [#82](https://gitlab.com/devnw/zig/otel/-/work_items/82) | triage |
 | — | — | — | BENCH-BASELINES-MISSING | bench | `benchmarks/**`, `Makefile`, `scripts/` | confirmed | [#166](https://gitlab.com/devnw/zig/otel/-/work_items/166) | triage (tracking) |
-| — | — | — | PERF-SLO-DEFINE | bench | `docs/performance/SLOs.md` (new) | confirmed | [#167](https://gitlab.com/devnw/zig/otel/-/work_items/167) | triage (tracking) |
+| — | — | — | PERF-SLO-DEFINE | bench | `docs/performance/SLO.md` + `benchmarks/check_hard_criteria.zig:65-77` | confirmed | [#167](https://gitlab.com/devnw/zig/otel/-/work_items/167) | **closed 2026-04-27** — `docs/performance/SLO.md` (~290 lines) defines per-op latency + alloc SLOs anchored to the 2026-04-26 P0-1/P0-4 baselines; `benchmarks/check_hard_criteria.zig` extended with two new runtime rules (Rule 3: `micro_attr_put_update` p99 ≤ 50 ns/op; Rule 4: `micro_counter_add_4_attrs_hit` allocs/op ≤ 0.005); `make slo-check` (Makefile) drives `bench-micro -Doptimize=ReleaseFast` + the gate; `make ci` includes `slo-check` so SLO regressions break the build. Verified `make slo-check` passes against fresh ReleaseFast bench-micro output (28.24 ns/op p99 attr-update; 0.0015 allocs/op counter-add hit). |
 
 ### Validated (closed, no further action this sweep)
 
@@ -164,7 +164,7 @@
 ### `area::bench` (5 + tracking)
 
 - **BENCH-BASELINES-MISSING** ([#166](https://gitlab.com/devnw/zig/otel/-/work_items/166)) — tracking
-- **PERF-SLO-DEFINE** ([#167](https://gitlab.com/devnw/zig/otel/-/work_items/167)) — tracking
+- **PERF-SLO-DEFINE** ([#167](https://gitlab.com/devnw/zig/otel/-/work_items/167)) — **closed 2026-04-27** — `docs/performance/SLO.md` + `benchmarks/check_hard_criteria.zig` Rules 3-4 + `make slo-check`
 - **P-N3** loopback keep-alive ([#128](https://gitlab.com/devnw/zig/otel/-/work_items/128)) — score 24
 - **P-N4** loopback concurrency ([#129](https://gitlab.com/devnw/zig/otel/-/work_items/129)) — score 16
 - **P-N5** stack buffers (folds with P-N3) ([#130](https://gitlab.com/devnw/zig/otel/-/work_items/130)) — score 8

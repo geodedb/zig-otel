@@ -12,6 +12,7 @@ CURRENT ?= benchmarks/results/latest.json
 .PHONY: pre-commit-install pre-commit pre-commit-run
 .PHONY: bench bench-save bench-compare bench-micro scale-bench tools
 .PHONY: verify-proto-manifest verify-semconv-manifest verify-manifests
+.PHONY: slo-check hard-criterion-check
 
 all: build test-unit
 
@@ -93,9 +94,32 @@ verify-semconv-manifest:
 verify-manifests:
 	$(ZIG) build verify-manifests
 
+# PERF-SLO-DEFINE (#167) — service-level performance gate.
+#
+# `slo-check` runs the bench-micro suite and feeds the resulting JSON
+# into the hard-criterion checker. Trips the build on regressions
+# against the per-op latency / allocation SLOs documented in
+# `docs/performance/SLO.md`. The bench is forced under
+# `-Doptimize=ReleaseFast` because every committed baseline JSON in
+# `docs/performance/<date>-p0-*/results/` was captured under
+# ReleaseFast — comparing a Debug run against a ReleaseFast floor
+# would trip on roughly an order-of-magnitude per-op cost gap that
+# is *not* a real regression.
+#
+# `hard-criterion-check` is the lower-level escape hatch — useful when
+# you already have a captured JSON and want to re-check the rules
+# without re-running the bench (e.g., during baseline re-pin work).
+slo-check:
+	mkdir -p benchmarks/results
+	$(ZIG) build bench-micro -Doptimize=ReleaseFast -- --output benchmarks/results/micro-latest.json
+	$(ZIG) build hard-criterion-check -- --micro benchmarks/results/micro-latest.json
+
+hard-criterion-check:
+	$(ZIG) build hard-criterion-check $(if $(REF_A),-- --ref-a $(REF_A))$(if $(REF_B), --ref-b $(REF_B))$(if $(MICRO), --micro $(MICRO))
+
 dev: fmt check test-unit
 
-ci: clean check test-all verify-manifests
+ci: clean check test-all verify-manifests slo-check
 
 clean:
 	rm -rf .zig-cache zig-cache zig-out
@@ -153,6 +177,10 @@ help:
 	@echo "  verify-proto-manifest    Verify docs/proto-manifest.txt vs vendored proto tree"
 	@echo "  verify-semconv-manifest  Verify docs/semconv-manifest.txt vs vendored semconv tree"
 	@echo "  verify-manifests         Run both verifiers (NEW-H-1 supply-chain gate)"
+	@echo ""
+	@echo "Performance SLOs:"
+	@echo "  slo-check                Run bench-micro + hard-criterion-check (PERF-SLO #167)"
+	@echo "  hard-criterion-check     Re-check existing JSON (REF_A=, REF_B=, MICRO= optional)"
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  clean                Remove build artifacts"

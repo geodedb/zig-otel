@@ -136,6 +136,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Service-level performance SLOs + runtime hard-criterion gate
+  (PERF-SLO-DEFINE, gitlab #167).** New `docs/performance/SLO.md`
+  (~290 lines) defines per-op latency and allocation ceilings
+  anchored to the verified 2026-04-26 P0-1 / P0-4 baselines under
+  `docs/performance/2026-04-26-p0-*/results/after.json`.
+  `benchmarks/check_hard_criteria.zig` is extended with two new
+  runtime rules: Rule 3 caps `micro_attr_put_update` p99 at 50 ns/op
+  (1.6x headroom over the 31.92 ns/op floor); Rule 4 caps
+  `micro_counter_add_4_attrs_hit` allocations at 0.005 allocs/op
+  (3.3x headroom over the post-PR-1 / post-P0-4 0.0015 allocs/op
+  floor). The checker accepts an optional `--micro <path>` JSON in
+  addition to the pre-existing `--ref-a` / `--ref-b` comparison
+  inputs; missing inputs skip cleanly so the step is safe to wire
+  before every baseline is captured. New `make slo-check` target
+  drives a fresh `bench-micro -Doptimize=ReleaseFast` + checker pass;
+  `make ci` now includes `slo-check`. Verified against fresh
+  ReleaseFast bench-micro output (28.24 ns/op p99 attr-update;
+  0.0015 allocs/op counter-add hit) — both new rules PASS.
+  Deferred drain-side / OTLP-encode SLO rows tracked under
+  BENCH-BASELINES-MISSING (#166).
 - **OTLP metric export path.** `OtlpHttpExporter.metricExporter()`
   posts `ExportMetricsServiceRequest` to `/v1/metrics`;
   `OtlpGrpcExporter.metricExporter()` routes through

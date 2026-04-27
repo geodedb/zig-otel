@@ -57,6 +57,7 @@ coverage/
 benchmarks/results/.tmp/
 benchmarks/results/latest.json
 benchmarks/results/scale-latest.json
+benchmarks/results/micro-latest.json
 
 # Local toolchains
 zig-*/

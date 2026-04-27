@@ -8,6 +8,7 @@ zig-out/
 # Editor directories
 .vscode/
 .idea/
+.claude/
 *.swp
 *.swo
 *~

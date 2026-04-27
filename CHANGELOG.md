@@ -94,6 +94,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **JSON encoders use `toOwnedSlice` instead of redundant `arena.dupe`
+  (PR-10, gitlab #144).** `json_codec.spanToJson` /
+  `metricToJson` / `logToJson` were ending each call with
+  `try arena.dupe(u8, buf.items)`, double-copying the entire
+  serialized payload right before returning. They now
+  `try buf.toOwnedSlice(arena)`, transferring the buffer's
+  ownership in O(1) for the common arena `remap` case (and falling
+  back to a single alloc + memcpy + free, never two). The defunct
+  `defer buf.deinit(arena)` lines are dropped too — the caller's
+  arena owns the lifetime. Wire-parity tests still byte-identical.
+
 - **OTLP/gRPC endpoint parsed once at `init` (PR-9, gitlab #143).**
   `OtlpGrpcExporter.checkExportPreconditions`, `expSpans`, and
   `expMetrics` were each calling `parseGrpcEndpoint(self.config.endpoint)`

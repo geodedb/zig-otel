@@ -19,8 +19,11 @@ const Resource = @import("../sdk/resource.zig").Resource;
 const redact = @import("redact.zig");
 
 pub fn spanToJson(arena: std.mem.Allocator, span: exp.SpanData) ![]u8 {
+    // PR-10 (#144): build into a local ArrayList over the caller's
+    // arena, then `toOwnedSlice` to hand the allocation off without a
+    // second copy. The arena handles cleanup of any partial buffer on
+    // an early `try` return — no explicit defer needed.
     var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(arena);
 
     try buf.append(arena, '{');
     try writeKeyString(arena, &buf, "trace_id", &hexBuf32(span.span_context.trace_id));
@@ -47,12 +50,13 @@ pub fn spanToJson(arena: std.mem.Allocator, span: exp.SpanData) ![]u8 {
     try writeKey(arena, &buf, "attributes");
     try writeAttributes(arena, &buf, span.attributes);
     try buf.append(arena, '}');
-    return try arena.dupe(u8, buf.items);
+    return try buf.toOwnedSlice(arena);
 }
 
 pub fn metricToJson(arena: std.mem.Allocator, metric: exp.MetricData) ![]u8 {
+    // PR-10 (#144): see spanToJson — toOwnedSlice replaces a
+    // redundant arena.dupe pass.
     var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(arena);
     try buf.append(arena, '{');
     try writeKeyString(arena, &buf, "name", metric.name);
     try buf.append(arena, ',');
@@ -72,12 +76,13 @@ pub fn metricToJson(arena: std.mem.Allocator, metric: exp.MetricData) ![]u8 {
     }
     try buf.append(arena, ']');
     try buf.append(arena, '}');
-    return try arena.dupe(u8, buf.items);
+    return try buf.toOwnedSlice(arena);
 }
 
 pub fn logToJson(arena: std.mem.Allocator, l: exp.LogData) ![]u8 {
+    // PR-10 (#144): see spanToJson — toOwnedSlice replaces a
+    // redundant arena.dupe pass.
     var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(arena);
     try buf.append(arena, '{');
     try writeKeyString(arena, &buf, "trace_id", &hexBuf32(l.record.trace_id));
     try buf.append(arena, ',');
@@ -97,7 +102,7 @@ pub fn logToJson(arena: std.mem.Allocator, l: exp.LogData) ![]u8 {
         try buf.appendSlice(arena, "{}");
     }
     try buf.append(arena, '}');
-    return try arena.dupe(u8, buf.items);
+    return try buf.toOwnedSlice(arena);
 }
 
 pub fn writePoint(arena: std.mem.Allocator, buf: *std.ArrayList(u8), pt: exp.DataPoint) !void {

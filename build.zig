@@ -249,6 +249,9 @@ pub fn build(b: *std.Build) void {
         "test/instrumentation_slog.zig",
         "test/otlp_wire_parity.zig",
         "test/otlp_spans_multi_scope.zig",
+        // GAP-OTLP-WIRE-SCHEMA-URL (#26): pins Resource.schema_url
+        // emission at ResourceSpans field 3 / ResourceMetrics field 3.
+        "test/otlp_resource_schema_url.zig",
         "test/tls_loopback.zig",
         "test/batch_async.zig",
         "test/comptime_disabled.zig",

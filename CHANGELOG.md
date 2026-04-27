@@ -245,6 +245,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`Resource.schema_url` now lands on the OTLP wire
+  (GAP-OTLP-WIRE-SCHEMA-URL, gitlab #26).** Pre-fix the SDK tracked
+  the value on the `Resource` struct (`src/sdk/resource.zig:15`) but
+  both encoder paths dropped it on the floor — collectors saw an
+  unset `ResourceSpans.schema_url` and `ResourceMetrics.schema_url`
+  even when applications populated it via a detector. The in-repo
+  encoder (`src/exporters/otlp_http/encode_proto.zig`) now writes
+  `ResourceSpans.schema_url` (proto field 3 — see
+  `third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/trace/v1/trace.proto:64`)
+  and `ResourceMetrics.schema_url` (field 3 — see
+  `third_party/.../metrics/v1/metrics.proto:82`) once per batch at
+  the parent message, after all `ScopeSpans` / `ScopeMetrics`
+  sub-messages. The DevNW encoder
+  (`src/exporters/otlp_http/encode_proto_devnw.zig`) declares the
+  matching descriptor entry on `ProtoMessages.ResourceSpans` so its
+  reflective walk produces byte-identical output. `Writer.writeString`
+  short-circuits on empty input (proto3 default-omit), so the common
+  case where no detector populated `schema_url` stays byte-identical
+  to the pre-fix wire shape — the existing `test/otlp_wire_parity.zig`
+  parity assertions continue to hold. Logs path is intentionally not
+  wired here: there is no logs OTLP exporter yet (#8 Day-2); the
+  future implementer should mirror this pattern and emit
+  `ResourceLogs.schema_url` (field 3 — see
+  `third_party/.../logs/v1/logs.proto:64`). New regression tests in
+  `test/otlp_resource_schema_url.zig` (5 tests: span/metric set,
+  span/metric empty-default-omit, DevNW byte parity) FAIL on `main`
+  pre-fix and PASS post-fix. (#26)
 - **Trace OTLP encoder now groups spans by `instrumentation_scope`.**
   `encodeSpansProto` (and the parallel `encodeSpansProtoDevnw` path)
   in `src/exporters/otlp_http.zig` previously took

@@ -102,6 +102,15 @@ pub fn encodeMetricsProto(allocator: std.mem.Allocator, items: []const exp.Metri
             }
             try w.commitSubMessage(sm_start);
         }
+
+        // ResourceMetrics.schema_url (field 3) — closes
+        // GAP-OTLP-WIRE-SCHEMA-URL (#26). Mirrors the trace path; the
+        // value is shared by every ScopeMetrics in this batch. Empty
+        // string is dropped by `writeString` (proto3 default-omit) so
+        // pre-fix wire bytes are unchanged when no detector set
+        // `schema_url`. See
+        // `third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/metrics/v1/metrics.proto:82`.
+        try w.writeString(otlp.fn_rm_schema_url, resource.schema_url);
     }
     try w.commitSubMessage(rm_start);
     return try w.toOwnedSlice();
@@ -320,6 +329,17 @@ pub fn encodeSpansProto(allocator: std.mem.Allocator, items: []const exp.SpanDat
             try w.writeString(otlp.fn_schema_url, bucket.scope.schema_url);
             try w.commitSubMessage(ss_start);
         }
+
+        // ResourceSpans.schema_url (field 3) — closes
+        // GAP-OTLP-WIRE-SCHEMA-URL (#26). The Resource is shared across
+        // every ScopeSpans in this batch, so the value is emitted once
+        // at the parent message. `writeString` skips empty values
+        // (proto3 default-omit), preserving byte-parity for the
+        // common case where no detector populated `schema_url`.
+        // Same field number (3) as `ScopeSpans.schema_url`; the
+        // constant is shared. See
+        // `third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/trace/v1/trace.proto:64`.
+        try w.writeString(otlp.fn_schema_url, resource.schema_url);
     }
     try w.commitSubMessage(rs_start);
 

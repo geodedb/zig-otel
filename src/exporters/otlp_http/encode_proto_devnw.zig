@@ -157,10 +157,18 @@ const ProtoMessages = if (build_options.use_devnw_protobuf) struct {
     pub const ResourceSpans = struct {
         resource: Resource = .{},
         scope_spans: std.ArrayListUnmanaged(ScopeSpans) = .empty,
+        // ResourceSpans.schema_url (field 3) — closes
+        // GAP-OTLP-WIRE-SCHEMA-URL (#26). Field number per
+        // `third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/trace/v1/trace.proto:64`.
+        // The DevNW writer skips empty strings (proto3 default-omit),
+        // so single-resource batches without a schema_url stay byte-
+        // identical to the in-repo encoder's output.
+        schema_url: []const u8 = "",
 
         pub const _desc_table = .{
             .resource = fd(1, .submessage),
             .scope_spans = fd(2, .{ .repeated = .submessage }),
+            .schema_url = fd(3, .{ .scalar = .string }),
         };
     };
 
@@ -190,6 +198,11 @@ pub fn encodeSpansProtoDevnw(allocator: std.mem.Allocator, items: []const exp.Sp
     for (resource.attributes.entries.items) |kv| {
         try rs.resource.attributes.append(aa, buildKeyValue(kv));
     }
+    // ResourceSpans.schema_url — closes GAP-OTLP-WIRE-SCHEMA-URL (#26).
+    // Mirrors the in-repo encoder so the parity test
+    // (`test/otlp_wire_parity.zig` + `test/otlp_resource_schema_url.zig`)
+    // sees byte-identical output on both paths.
+    rs.schema_url = resource.schema_url;
 
     // Group by `(scope.name, scope.version, scope.schema_url)` so the
     // DevNW path mirrors the in-repo encoder's per-scope ScopeSpans

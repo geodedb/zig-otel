@@ -53,7 +53,7 @@
 | GAP-PROPAGATOR-B3 | B3 propagator never constructed even when OTEL_PROPAGATORS=b3 | Not Implemented | High | [#23](https://gitlab.com/devnw/zig/otel/-/issues/23) |
 | GAP-PROPAGATOR-JAEGER | Jaeger uber-trace-id propagator never constructed when OTEL_PROPAGATORS=jaeger | Not Implemented | High | [#24](https://gitlab.com/devnw/zig/otel/-/issues/24) |
 | GAP-OTLP-PROFILES-EXPORT | docs claim /v1development/profiles support but API returns UnsupportedTransport | Not Implemented | High | [#25](https://gitlab.com/devnw/zig/otel/-/issues/25) |
-| GAP-OTLP-WIRE-SCHEMA-URL | schema_url tracked on Resource but never emitted on the wire | Not Implemented | High | [#26](https://gitlab.com/devnw/zig/otel/-/issues/26) |
+| GAP-OTLP-WIRE-SCHEMA-URL | schema_url tracked on Resource but never emitted on the wire | Closed (`src/exporters/otlp_http/encode_proto.zig:333-342` ResourceSpans field 3, `:106-113` ResourceMetrics field 3, `src/exporters/otlp_http/encode_proto_devnw.zig:160-172,201-205`; regression `test/otlp_resource_schema_url.zig`) | High | [#26](https://gitlab.com/devnw/zig/otel/-/issues/26) |
 | GAP-OTLP-COMPRESSION | gzip enum declared but encoder never applies it (HTTP or gRPC) | Not Implemented | High | [#27](https://gitlab.com/devnw/zig/otel/-/issues/27) |
 | GAP-PERIODIC-METRIC-READER | PeriodicExportingMetricReader missing — long-running services emit no metrics until shutdown | Not Implemented | High | [#29](https://gitlab.com/devnw/zig/otel/-/issues/29) |
 | GAP-OBSERVABLE-INSTRUMENTS | Observable Counter/UpDownCounter/Gauge API absent | Not Implemented | High | [#30](https://gitlab.com/devnw/zig/otel/-/issues/30) |

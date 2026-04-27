@@ -78,6 +78,13 @@ pub const sdk = struct {
     /// concrete typed exporter. See `sdk/exporter_factory.zig` for
     /// the contract.
     pub const exporter_factory = @import("sdk/exporter_factory.zig");
+    /// GAP-PERIODIC-METRIC-READER (#29): timer-driven reader that calls
+    /// `MeterProvider.collect()` on a fixed cadence and hands the
+    /// snapshot to a `MetricExporter`. Honours
+    /// `MetricReaderConfig.export_interval_ms` /
+    /// `export_timeout_ms` (env: `OTEL_METRIC_EXPORT_INTERVAL` /
+    /// `OTEL_METRIC_EXPORT_TIMEOUT`).
+    pub const periodic_metric_reader = @import("sdk/periodic_metric_reader.zig");
 };
 
 pub const exporters = struct {

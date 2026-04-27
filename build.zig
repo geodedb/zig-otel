@@ -286,6 +286,10 @@ pub fn build(b: *std.Build) void {
         // UpDownCounter / Gauge — callback registration, multi-callback
         // ordering, idempotent unregister, cumulative semantics.
         "test/observable_instruments.zig",
+        // GAP-PERIODIC-METRIC-READER (#29): timer-driven reader pinning
+        // interval cadence, force-flush, prompt shutdown (<100ms target
+        // even at 60s interval), and observable-instrument integration.
+        "test/periodic_metric_reader.zig",
     };
     for (test_files) |path| {
         const m = b.createModule(.{

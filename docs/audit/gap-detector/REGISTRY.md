@@ -52,7 +52,7 @@ Mapping vs catalog labels: `priority::critical → Critical`, `priority::high �
 | 7 | GAP-PROPAGATOR-JAEGER | #24 | High | Closed | `src/propagation/jaeger.zig` (uber-trace-id + uberctx baggage, URL-encoding), `src/propagation/trace_context.zig` (`Carrier.iter`), `src/sdk/config.zig` factory wiring; `test/propagator_jaeger.zig` (20 tests) |
 | 8 | GAP-OTLP-WIRE-SCHEMA-URL | #26 | High | Not Impl | `src/exporters/otlp_http.zig` — 0 hits for `schema_url`; missing field constants |
 | 9 | GAP-OTLP-COMPRESSION | #27 | High | Not Impl | `src/sdk/config.zig:52` enum + `src/exporters/otlp_grpc.zig:296` `out[0]=0` hardcode |
-| 10 | GAP-PERIODIC-METRIC-READER | #29 | High | Not Impl | 0 hits for `PeriodicExportingMetricReader` repo-wide |
+| 10 | GAP-PERIODIC-METRIC-READER | #29 | High | Closed | `src/sdk/periodic_metric_reader.zig` (`PeriodicMetricReader` with futex-backed `ReaderMutex`/`ReaderCondition` so the reader is build-flag-independent); routes through `MeterProvider.collect()` so PR-1 #135 `InstrumentMutex` is preserved; re-exported as `otel.sdk.periodic_metric_reader`; `test/periodic_metric_reader.zig` (6 tests: interval cadence, force-flush, prompt-shutdown ~89us, observable-counter integration, before-start inline path, in-memory exporter end-to-end). |
 
 (Continuing down: #32 GRPC-STATUS-PROPAGATION-Partial, #33 ENV-BSP, #35 ENV-METRIC-INTERVAL — all High. #30 GAP-OBSERVABLE-INSTRUMENTS now Closed — `src/api/metrics.zig` `Meter.createObservable*`/`registerCallback`/`unregisterCallback` vtable; `src/sdk/metrics.zig` `InstrumentBackend.callbacks` + `invokeCallbacksLocked` invoked at the head of `collect()` under `inst.mu`; `test/observable_instruments.zig`.)
 

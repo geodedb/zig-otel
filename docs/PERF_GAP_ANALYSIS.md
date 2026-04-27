@@ -53,7 +53,7 @@
 
 ### Bench / SLO gaps (now tracked)
 
-- **BENCH-BASELINES-MISSING** ([#166](https://gitlab.com/devnw/zig/otel/-/work_items/166)) — pre-fix baselines missing for P0-3, P0-5, P0-7, P0-8, P-N3..P-N7, P1-1..P1-13, and the new PR-1..PR-13.
+- **BENCH-BASELINES-MISSING** ([#166](https://gitlab.com/devnw/zig/otel/-/work_items/166)) — **Partial 2026-04-27.** PR-2 nested-encode baseline captured at `docs/performance/2026-04-27-pr-2-encoder/results/{baseline,latest}.json` + `results.md`. Combined with the existing P0-1/P0-2/P0-4 dirs, every micro-scenario currently in `benchmarks/micro/main.zig` has a captured ReleaseFast snapshot. Remaining work — bench probes still need to be **authored** for P0-3, P0-5, P0-7, P0-8, P-N3..P-N7, P1-1..P1-3, P1-6..P1-13 — is reissued under the deferred-probes table below.
 - **PERF-SLO-DEFINE** ([#167](https://gitlab.com/devnw/zig/otel/-/work_items/167)) — **closed 2026-04-27.** `docs/performance/SLO.md` defines per-op latency (`attr-update` p99 ≤ 50 ns/op) and per-op allocation (`counter-add 4-attrs hit` ≤ 0.005 allocs/op) ceilings; `benchmarks/check_hard_criteria.zig` extended with the matching runtime rules; `make slo-check` (and `make ci`) gate regressions. Deferred drain-side / OTLP-encode SLO rows tracked under #166.
 
 ---
@@ -96,7 +96,7 @@
 | 32 | P2 | 8 | P-N5 | bench | `benchmarks/integration/loopback_server.zig:159-184` | confirmed | [#130](https://gitlab.com/devnw/zig/otel/-/work_items/130) | triage |
 | 33 | P1 | 4 | P1-12 | sdk | `src/sdk/resource.zig:30-38` | confirmed | [#75](https://gitlab.com/devnw/zig/otel/-/work_items/75) | triage — auto-fixed by P0-1 |
 | 34 | P1 | 4 | P1-13 | api | `src/api/trace.zig:71-101` | suspected | [#82](https://gitlab.com/devnw/zig/otel/-/work_items/82) | triage |
-| — | — | — | BENCH-BASELINES-MISSING | bench | `benchmarks/**`, `Makefile`, `scripts/` | confirmed | [#166](https://gitlab.com/devnw/zig/otel/-/work_items/166) | triage (tracking) |
+| — | — | — | BENCH-BASELINES-MISSING | bench | `benchmarks/**`, `docs/performance/**` | confirmed | [#166](https://gitlab.com/devnw/zig/otel/-/work_items/166) | **Partial 2026-04-27** — captured PR-2 nested-encode under `docs/performance/2026-04-27-pr-2-encoder/`. All 18 micro scenarios currently in `benchmarks/micro/main.zig` are covered by a frozen ReleaseFast snapshot when combined with the 2026-04-26 P0-1/P0-2/P0-4 dirs. Remaining work — authoring bench probes for the 14 untracked gaps — reissued in §"Deferred bench probes" below. |
 | — | — | — | PERF-SLO-DEFINE | bench | `docs/performance/SLO.md` + `benchmarks/check_hard_criteria.zig:65-77` | confirmed | [#167](https://gitlab.com/devnw/zig/otel/-/work_items/167) | **closed 2026-04-27** — `docs/performance/SLO.md` (~290 lines) defines per-op latency + alloc SLOs anchored to the 2026-04-26 P0-1/P0-4 baselines; `benchmarks/check_hard_criteria.zig` extended with two new runtime rules (Rule 3: `micro_attr_put_update` p99 ≤ 50 ns/op; Rule 4: `micro_counter_add_4_attrs_hit` allocs/op ≤ 0.005); `make slo-check` (Makefile) drives `bench-micro -Doptimize=ReleaseFast` + the gate; `make ci` includes `slo-check` so SLO regressions break the build. Verified `make slo-check` passes against fresh ReleaseFast bench-micro output (28.24 ns/op p99 attr-update; 0.0015 allocs/op counter-add hit). |
 
 ### Validated (closed, no further action this sweep)
@@ -114,6 +114,54 @@
 | P-N2 | [#126](https://gitlab.com/devnw/zig/otel/-/work_items/126) | **closed 2026-04-27** — retry backoff sleeps |
 | P0-9 | [#22](https://gitlab.com/devnw/zig/otel/-/work_items/22) | CHANGELOG-validated (`schedule_delay_ms` wired); leave open until A/B captured |
 | P0-10 | [#28](https://gitlab.com/devnw/zig/otel/-/work_items/28) | CHANGELOG-validated (default flipped to BSP); leave open until A/B captured |
+
+### Deferred bench probes (BENCH-BASELINES-MISSING #166 — Partial close, remaining work)
+
+Each row below is a perf gap whose **bench probe has not been authored yet**.
+Until a probe lands in `benchmarks/micro/main.zig` (or `benchmarks/integration/main.zig`)
+and the harness emits a stable `wall_ns_p50/p95/p99 + alloc_count` row, no
+A/B baseline can be captured under `docs/performance/`. The probe-authoring
+work is the unblocker; the baseline capture is mechanical (re-run
+`make slo-check`, dump the relevant rows under
+`docs/performance/<date>-<id>/results/`).
+
+| Gap | Issue | Subject of the missing probe | Probe layer |
+|---|---|---|---|
+| **P0-3** | [#10](https://gitlab.com/devnw/zig/otel/-/work_items/10) | `Span.setName` arena-only path — re-name overwrite cost on a long-lived span (compare bytes-overwritten vs new-arena-alloc) | micro |
+| **P0-5** | [#17](https://gitlab.com/devnw/zig/otel/-/work_items/17) | `attributeKey` scratch buffer — folded into P0-4 closure, but no dedicated probe captured the per-op delta | micro (folded) |
+| **P0-7** | [#18](https://gitlab.com/devnw/zig/otel/-/work_items/18) | `Histogram.record` bucket binary-search — currently linear; needs `record` probe under varying bucket counts (8 / 32 / 128) | micro |
+| **P0-8** | [#21](https://gitlab.com/devnw/zig/otel/-/work_items/21) | BSP queue contention — N producers × 1 drainer; needs `bench-integration` scenario, not micro | integration |
+| **P-N3** | [#128](https://gitlab.com/devnw/zig/otel/-/work_items/128) | Loopback HTTP keep-alive cost — needs `bench-integration` round-trip probe | integration |
+| **P-N4** | [#129](https://gitlab.com/devnw/zig/otel/-/work_items/129) | Loopback concurrency (multiple in-flight POST) — `bench-integration` | integration |
+| **P-N5** | [#130](https://gitlab.com/devnw/zig/otel/-/work_items/130) | Loopback stack-buffer reuse — folds with P-N3 | integration |
+| **P-N6** | [#131](https://gitlab.com/devnw/zig/otel/-/work_items/131) | `stdout_json` exporter arena hoist — needs `bench-micro` "encode + write to /dev/null" probe | micro |
+| **P-N7** | [#132](https://gitlab.com/devnw/zig/otel/-/work_items/132) | File exporter arena hoist — same shape as P-N6, different sink | micro |
+| **P1-1** | [#36](https://gitlab.com/devnw/zig/otel/-/work_items/36) | Alias of PR-2; covered by `2026-04-27-pr-2-encoder/` baseline (this commit) — close as duplicate | — |
+| **P1-2** | [#40](https://gitlab.com/devnw/zig/otel/-/work_items/40) | `writeVarint` stack buffer — needs micro-probe over varint widths (1B / 5B / 10B) | micro |
+| **P1-3** | [#41](https://gitlab.com/devnw/zig/otel/-/work_items/41) | `drainLocked` allocation — `bench-integration` BSP-drain probe | integration |
+| **P1-6** | [#44](https://gitlab.com/devnw/zig/otel/-/work_items/44) | `collect()` pre-sizing — micro probe at varying instrument fan-out (8 / 32 / 128 attrs) | micro |
+| **P1-7** | [#45](https://gitlab.com/devnw/zig/otel/-/work_items/45) | `sortedEntries` cache — needs probe that exercises both encode and JSON paths back-to-back | micro |
+| **P1-8** | [#46](https://gitlab.com/devnw/zig/otel/-/work_items/46) | `Prometheus.render` pre-sizing — needs render-many-metrics micro probe | micro |
+| **P1-10** | [#56](https://gitlab.com/devnw/zig/otel/-/work_items/56) | UnsupportedTransport fail-fast — micro probe verifying error-path latency floor | micro |
+| **P1-11** | [#70](https://gitlab.com/devnw/zig/otel/-/work_items/70) | Persistent `GrpcClient` — `bench-integration` cold-start vs warm-call probe | integration |
+| **P1-13** | [#82](https://gitlab.com/devnw/zig/otel/-/work_items/82) | `SpanState` layout — needs cache-line probe (steady-state span p99 with deliberately-mis-aligned struct) | micro |
+
+**Unblock steps for each row:**
+
+1. Author the probe in `benchmarks/{micro,integration}/main.zig` per the
+   `framework.Scenario` shape.
+2. Commit the probe + verify `make ci` (which includes `slo-check`) still passes.
+3. Run `make slo-check` (or `zig build bench-integration -Doptimize=ReleaseFast`).
+4. Extract the relevant rows from `benchmarks/results/micro-latest.json`
+   (or the integration JSON) into `docs/performance/<YYYY-MM-DD>-<id>/results/{baseline,latest}.json`.
+5. Author `docs/performance/<YYYY-MM-DD>-<id>/results.md` documenting subject, build flags,
+   capture date, source PR / gap pointer, and a numbers table (see
+   `docs/performance/2026-04-27-pr-2-encoder/results.md` for the canonical layout).
+
+**Won't-do row:** P1-12 (#75) — auto-closed by P0-1; no probe to author.
+P1-4 (#42) — subsumed by P0-2; no probe to author.
+PR-* and P0-9 / P0-10 — already covered by 2026-04-26 P0-2/P0-4 + the
+P0-9/P0-10 CHANGELOG-validated A/B follow-up tracker.
 
 ---
 

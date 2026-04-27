@@ -109,6 +109,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wire-parity tests pass byte-identical against the DevNW protobuf
   encoder. (PR-2, gitlab #36)
 
+- **Bench baselines: PR-2 nested-encode captured.** Frozen
+  `ReleaseFast` baseline for `micro_encode_spans_proto_{64,512,4096}`
+  committed at `docs/performance/2026-04-27-pr-2-encoder/results/{baseline,latest}.json`
+  with results.md (subject, build flags, capture date, source PR
+  pointer, numbers table). Combined with the 2026-04-26 P0-1/P0-2/P0-4
+  dirs, every micro-scenario in `benchmarks/micro/main.zig` now has a
+  captured snapshot. **Partial close** of BENCH-BASELINES-MISSING — the
+  remaining 14 perf gaps still need a bench probe authored before a
+  baseline can be captured; reissued in `docs/PERF_GAP_ANALYSIS.md`
+  §"Deferred bench probes". (BENCH-BASELINES-MISSING #166, partial)
+
 ### Changed
 
 - **BREAKING:** `TracerProvider`'s `default_exporter` now wraps the

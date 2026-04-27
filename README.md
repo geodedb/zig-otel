@@ -5,8 +5,15 @@
 
 Production-grade OpenTelemetry client library for Zig 0.16. Implements the
 stable surface of OpenTelemetry Specification 1.56.0 (traces, metrics, logs,
-events, propagation, resources, semantic conventions, and OTLP export) with
-the experimental profiles signal behind a build flag.
+events, propagation, resources, semantic conventions, and OTLP export).
+
+> **Profiles signal: NOT IMPLEMENTED.** The upstream OTLP profiles proto is
+> still under `opentelemetry/proto/profiles/v1development/` (unstable). This
+> repo ships an inert API stub that returns
+> `error.UnsupportedTransport`; no exporter wire path exists. Tracking under
+> [GAP-OTLP-PROFILES-EXPORT (#25)](https://gitlab.com/devnw/zig/otel/-/issues/25)
+> — closed Won't Do until the upstream proto reaches `v1`. Will revisit when
+> the spec stabilizes.
 
 | Layer            | Spec version |
 |------------------|--------------|
@@ -42,7 +49,10 @@ the experimental profiles signal behind a build flag.
   `authorization`, `credential`) with separator-aware matching.
 - `std.log` bridge, HTTP client/server helpers, runtime/process metric
   helper.
-- Experimental profiles signal behind `-Dotel_profiles=true`.
+- Profiles signal: NOT IMPLEMENTED — upstream proto is `/v1development/`
+  (unstable). The `-Dotel_profiles=true` build flag compiles the API
+  scaffolding but every emit returns `error.UnsupportedTransport`.
+  Tracking under issue #25; will revisit when proto reaches v1.
 - Deterministic tests — fixed IDs, stepped clocks, in-memory exporter.
 
 ## Install
@@ -154,7 +164,10 @@ zig build run-basic                                # examples/basic.zig
 zig build run-http-client                          # examples/http_client.zig
 ```
 
-`-Dotel_profiles=true` enables the experimental profiles signal.
+`-Dotel_profiles=true` compiles the experimental profiles API surface but
+the export path is **not** implemented — every emit returns
+`error.UnsupportedTransport`. The upstream proto is still under
+`/v1development/` (unstable); see issue #25.
 `-Ddeprecated_span_events=true` re-enables the legacy `Span.addEvent` shim
 (bridged to logs).
 

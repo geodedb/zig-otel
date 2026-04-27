@@ -146,6 +146,45 @@ The Phase 3 gap-detector registry (`docs/audit/gap-detector/REGISTRY.md`) identi
 
 ---
 
+## Functional / Won't Do (closed 2026-04-27)
+
+### GAP-OTLP-PROFILES-EXPORT: docs claimed `/v1development/profiles` support but API returns UnsupportedTransport [WON'T DO — upstream proto unstable]
+
+- **Issue:** [#25](https://gitlab.com/devnw/zig/otel/-/issues/25)
+- **Category:** Feature / Exporter / Profiles signal
+- **Severity:** High (downgraded to Won't Do via documented downgrade path — see issue body)
+- **Reason:** The OpenTelemetry Profiles signal proto is still under
+  `opentelemetry/proto/profiles/v1development/` upstream
+  (`third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/profiles/v1development/`)
+  — **not part of the stable proto v1 spec**. Implementing experimental
+  wire formats now creates churn risk when the spec stabilizes (the
+  package path itself will change, as will field numbers and message
+  shapes). The tracker issue body explicitly permits closure via a
+  "downgrade docs and have the API surface return a clearer 'not yet
+  supported' error" path; that is what this closure executes.
+- **Resolution / Action taken:**
+  - `README.md` — Highlights and Build sections now state Profiles is
+    **NOT IMPLEMENTED** with a forward-pointing reference to issue #25.
+  - `docs/SPEC_COMPLIANCE.md` — `/v1development/profiles` row marked
+    NOT IMPLEMENTED with strikethrough; "Profiles" entry under
+    *Limitations & deferred work* rewritten to reflect the Won't Do
+    closure.
+  - `src/api/profiles.zig` — left unchanged. The inert API stub
+    (`noopEmit` returning `error.UnsupportedTransport`) is preserved
+    intentionally so dependent code can keep referring to the surface
+    when the upstream proto stabilizes; this is forward-compatibility
+    insurance.
+  - `src/sdk/config.zig` — verified there is no `profiles` enum branch
+    in the env-var `ExporterKind` to remove (none exists today).
+- **Re-open trigger:** When upstream `opentelemetry-proto` promotes the
+  profiles proto from `/v1development/` to `/v1/` (i.e., the proto
+  package becomes `opentelemetry.proto.profiles.v1`), reopen #25 and
+  implement the encoder + HTTP/`/v1/profiles` + gRPC
+  `ProfilesService/Export` paths.
+- **Resolved date:** 2026-04-27
+
+---
+
 ## GAP-DEPRECATED-SPAN-EVENTS-FLAG: docs note for -Ddeprecated_span_events build gate [RESOLVED — note-only, by design]
 
 - **Issue:** [#101](https://gitlab.com/devnw/zig/otel/-/issues/101) (open as a docs follow-up; no code change required)

@@ -64,6 +64,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (e.g. `opentelemetry/proto/trace/v1/trace.proto`,
   `model/version.properties`) are present.
 
+### Notes
+
+- **GAP-OTLP-PROFILES-EXPORT (#25) recorded Won't Do — upstream proto
+  is unstable (`/v1development/`).** The OTLP profiles proto remains
+  under `opentelemetry/proto/profiles/v1development/` in the vendored
+  `third_party/opentelemetry-proto-v1.10.0/`; it has not been promoted
+  to `v1`. Implementing the experimental wire format now would create
+  churn when the spec stabilizes. README.md and docs/SPEC_COMPLIANCE.md
+  now state Profiles is NOT IMPLEMENTED; the inert
+  `error.UnsupportedTransport` stub at `src/api/profiles.zig` is left
+  in place as forward-compatibility insurance. Re-open trigger: when
+  upstream promotes the proto package to `opentelemetry.proto.profiles.v1`.
+  Row moved from `docs/GAP_ANALYSIS.md` to
+  `docs/GAP_ANALYSIS_RESOLVED.md` (Won't Do section, 2026-04-27).
+
 ### Refactor
 
 - **OTLP/HTTP exporter split into a module tree.** `src/exporters/otlp_http.zig`

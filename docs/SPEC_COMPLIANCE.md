@@ -85,8 +85,8 @@ optional sections are listed under "Limitations" with a short rationale.
 |--------------------------------------------------------|--------------------------------------|------|
 | HTTP endpoint default `http://localhost:4318`          | `src/sdk/config.zig: OtlpConfig`     | unit |
 | gRPC endpoint default `http://localhost:4317`          | same                                 | unit |
-| Paths `/v1/traces`, `/v1/metrics`, `/v1/logs`,         | `src/exporters/otlp_http.zig`        | code review |
-| `/v1development/profiles` (experimental)               | `src/exporters/otlp_http.zig`        | profile gate |
+| Paths `/v1/traces`, `/v1/metrics`, `/v1/logs`          | `src/exporters/otlp_http.zig`        | code review |
+| ~~`/v1development/profiles`~~ — **NOT IMPLEMENTED** (upstream proto is `/v1development/`, unstable; tracked as Won't Do under issue #25) | n/a | n/a |
 | Timeout 10 s default                                   | `src/sdk/config.zig: OtlpConfig`     | unit |
 | Retry backoff 100 ms initial, x2, max 5 s, max 30 s, full jitter | `src/sdk/export.zig: nextBackoff` | unit + `test/otlp.zig: retries on 503` |
 | Partial success returns `error.PartialSuccess`         | `src/exporters/otlp_http.zig`        | `test/otlp.zig: PartialSuccess on 207` |
@@ -138,9 +138,15 @@ optional sections are listed under "Limitations" with a short rationale.
   required by `tracer_provider`, `meter_provider`, `logger_provider`, and
   the top-level scalars (`disabled`, `log_level`, `file_format`). Anchors,
   multi-document streams, and complex flow nodes are not supported.
-- **Profiles**: signal types and the OTLP exporter path are wired but
-  gated behind `-Dotel_profiles=true`. The default build ships an inert
-  stub that returns `error.UnsupportedTransport`.
+- **Profiles**: **NOT IMPLEMENTED.** The upstream OTLP profiles proto is
+  still under `opentelemetry/proto/profiles/v1development/` (unstable —
+  not part of the stable proto v1 spec). This repo ships only an inert
+  API stub: with or without `-Dotel_profiles=true`, every emit returns
+  `error.UnsupportedTransport` and there is no encoder, no HTTP path,
+  and no gRPC path. Tracking under
+  [GAP-OTLP-PROFILES-EXPORT (#25)](https://gitlab.com/devnw/zig/otel/-/issues/25)
+  — recorded **Won't Do** on 2026-04-27 until the upstream proto reaches
+  `v1`; will revisit when the spec stabilizes.
 
 ## Bench
 

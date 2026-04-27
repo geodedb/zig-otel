@@ -78,6 +78,14 @@ pub const OtlpGrpcExporter = struct {
     pub fn spanExporter(self: *OtlpGrpcExporter) exp.SpanExporter {
         return .{ .ctx = self, .exportFn = expSpans, .shutdownFn = doShutdown, .forceFlushFn = doFlush };
     }
+
+    /// OTLP/gRPC metric exporter (GAP-OTLP-METRIC-EXPORT, gitlab #7).
+    /// Routes through `MetricsService/Export` instead of
+    /// `TraceService/Export`. Reuses the same retry, header, and
+    /// pre-flight pipeline as `spanExporter`.
+    pub fn metricExporter(self: *OtlpGrpcExporter) exp.MetricExporter {
+        return .{ .ctx = self, .exportFn = expMetrics, .shutdownFn = doShutdown, .forceFlushFn = doFlush };
+    }
 };
 
 fn doShutdown(ctx: ?*anyopaque) void {
@@ -86,6 +94,9 @@ fn doShutdown(ctx: ?*anyopaque) void {
 }
 
 fn doFlush(_: ?*anyopaque, _: u64) anyerror!void {}
+
+const trace_export_method = "/opentelemetry.proto.collector.trace.v1.TraceService/Export";
+const metrics_export_method = "/opentelemetry.proto.collector.metrics.v1.MetricsService/Export";
 
 fn expSpans(ctx: ?*anyopaque, items: []const exp.SpanData) anyerror!exp.SpanExportResult {
     const self: *OtlpGrpcExporter = @ptrCast(@alignCast(ctx.?));
@@ -119,7 +130,55 @@ fn expSpans(ctx: ?*anyopaque, items: []const exp.SpanData) anyerror!exp.SpanExpo
 
     var retry: exp.RetryState = .{};
     while (true) {
-        const status = unaryExport(aa, io, parsed.host, parsed.port, body) catch |err| {
+        const status = unaryExport(aa, io, parsed.host, parsed.port, trace_export_method, body) catch |err| {
+            switch (err) {
+                error.ConnectionRefused,
+                error.ConnectionResetByPeer,
+                error.UnsupportedTransport,
+                error.NetworkUnreachable,
+                error.WouldBlock,
+                => {},
+                else => return err,
+            }
+            if (!retry.shouldRetry(&self.prng)) return error.RetryExhausted;
+            continue;
+        };
+        switch (status) {
+            .ok => return .success,
+            .partial_success => return error.PartialSuccess,
+            .retryable => {
+                if (!retry.shouldRetry(&self.prng)) return error.RetryExhausted;
+                continue;
+            },
+            .fatal => return error.RetryExhausted,
+        }
+    }
+}
+
+fn expMetrics(ctx: ?*anyopaque, items: []const exp.MetricData) anyerror!exp.SpanExportResult {
+    const self: *OtlpGrpcExporter = @ptrCast(@alignCast(ctx.?));
+    if (self.closed) return error.RetryExhausted;
+    if (items.len == 0) return .success;
+
+    // Same C-2 / C-3 pre-flight as `expSpans` — refuse https:// without
+    // insecure flag, refuse non-empty headers (grpc-zig has no TLS or
+    // metadata API yet, so silently dropping these would export unauth
+    // data over plaintext).
+    try self.checkExportPreconditions();
+
+    if (!build_options.use_devnw_grpc) return error.UnsupportedTransport;
+    const io = self.io orelse return error.UnsupportedTransport;
+
+    var arena = std.heap.ArenaAllocator.init(self.allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const body = try otlp_http.encodeMetricsProto(aa, items);
+    const parsed = try parseGrpcEndpoint(self.config.endpoint);
+
+    var retry: exp.RetryState = .{};
+    while (true) {
+        const status = unaryExport(aa, io, parsed.host, parsed.port, metrics_export_method, body) catch |err| {
             switch (err) {
                 error.ConnectionRefused,
                 error.ConnectionResetByPeer,
@@ -196,6 +255,7 @@ fn unaryExport(
     io: std.Io,
     host: []const u8,
     port: u16,
+    method: []const u8,
     body: []const u8,
 ) !GrpcStatus {
     if (!build_options.use_devnw_grpc) return error.UnsupportedTransport;
@@ -205,13 +265,10 @@ fn unaryExport(
 
     // The method path is informational from grpc-zig's perspective — the
     // server routes to `handlers.items[0]` regardless (upstream
-    // `server.zig:122-128`). For OTLP this is acceptable: real
-    // collectors expose exactly one handler per gRPC service.
-    const reply = client.call(
-        "/opentelemetry.proto.collector.trace.v1.TraceService/Export",
-        body,
-        .none,
-    ) catch |err| return err;
+    // `server.zig:122-128`). Real collectors route by path, so the
+    // caller is responsible for passing the right service method
+    // (`TraceService/Export` vs `MetricsService/Export`).
+    const reply = client.call(method, body, .none) catch |err| return err;
     defer allocator.free(reply);
 
     // grpc-zig's client surfaces neither the trailers nor the

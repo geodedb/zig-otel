@@ -79,6 +79,13 @@ pub const OtlpHttpExporter = struct {
     pub fn spanExporter(self: *OtlpHttpExporter) exp.SpanExporter {
         return .{ .ctx = self, .exportFn = expSpans, .shutdownFn = doShutdown, .forceFlushFn = doFlush };
     }
+
+    /// OTLP/HTTP metric exporter (GAP-OTLP-METRIC-EXPORT, gitlab #7).
+    /// Posts an `ExportMetricsServiceRequest` to `/v1/metrics` using the
+    /// same transport/retry/headers plumbing as `spanExporter`.
+    pub fn metricExporter(self: *OtlpHttpExporter) exp.MetricExporter {
+        return .{ .ctx = self, .exportFn = expMetrics, .shutdownFn = doShutdown, .forceFlushFn = doFlush };
+    }
 };
 
 pub const TransportResult = struct {
@@ -313,6 +320,720 @@ fn expSpans(ctx: ?*anyopaque, items: []const exp.SpanData) anyerror!exp.SpanExpo
         }
         return error.RetryExhausted;
     }
+}
+
+// ---------------------------------------------------------------- Metric export
+//
+// GAP-OTLP-METRIC-EXPORT (gitlab #7): OTLP/HTTP metric path. Wire layout
+// follows OTLP 1.10.0 `ExportMetricsServiceRequest` and the `metrics.v1`
+// message family. The encoder mirrors the conservative defaults the span
+// path uses:
+//
+//   - One ResourceMetrics per export call (caller drives batching at the
+//     `MetricExporter` boundary; a single call carries one Resource).
+//   - One ScopeMetrics per InstrumentationScope present in the batch.
+//     Metrics with the same `(scope.name, scope.version)` are coalesced
+//     so the wire reflects the OTLP grouping contract.
+//   - `Sum` is emitted for `counter` / `up_down_counter` (and the
+//     observable variants). `Gauge` for `gauge` / `observable_gauge`.
+//     `Histogram` for `histogram`. Other instrument kinds are silently
+//     skipped (no spec-defined OTLP shape yet).
+//   - `aggregationTemporality` carries the SDK temporality verbatim
+//     (cumulative=2, delta=1).
+//   - `is_monotonic` is emitted on `Sum` only (proto3 omits `false`).
+//   - Histogram `count` and `bucket_counts` use packed `fixed64`
+//     encoding (proto3 repeated-scalar default). `explicit_bounds` is
+//     packed `double`.
+
+fn expMetrics(ctx: ?*anyopaque, items: []const exp.MetricData) anyerror!exp.SpanExportResult {
+    const self: *OtlpHttpExporter = @ptrCast(@alignCast(ctx.?));
+    if (self.closed) return error.RetryExhausted;
+    if (items.len == 0) return .success;
+
+    var arena = std.heap.ArenaAllocator.init(self.allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+    const path = "/v1/metrics";
+
+    const body = switch (self.config.protocol) {
+        .http_protobuf, .grpc => try encodeMetricsProto(aa, items),
+        .http_json => try encodeMetricsJson(aa, items),
+    };
+    const content_type: []const u8 = switch (self.config.protocol) {
+        .http_protobuf, .grpc => "application/x-protobuf",
+        .http_json => "application/json",
+    };
+
+    var retry: exp.RetryState = .{};
+    while (true) {
+        // Sentinel dispatch — same shape as `expSpans`. Tests inject a
+        // fake transport via the function pointer; production routes
+        // through `httpTransportImpl` so it can read `self.io`.
+        const result = (if (self.transport == httpTransport)
+            httpTransportImpl(self, aa, path, content_type, body)
+        else
+            self.transport(aa, self.config.endpoint, path, self.config.headers, content_type, body, self.config.timeout_ms)) catch |err| {
+            switch (err) {
+                error.ConnectionRefused, error.ConnectionResetByPeer, error.UnsupportedTransport, error.NetworkUnreachable => {},
+                else => return err,
+            }
+            if (!retry.shouldRetry(&self.prng)) return error.RetryExhausted;
+            continue;
+        };
+        if (result.status == 207) return error.PartialSuccess;
+        if (result.status >= 200 and result.status < 300) return .success;
+        if (result.status >= 400 and result.status < 500) return error.RetryExhausted;
+        if (result.status >= 500 or result.status == 429) {
+            if (!retry.shouldRetry(&self.prng)) return error.RetryExhausted;
+            continue;
+        }
+        return error.RetryExhausted;
+    }
+}
+
+/// Group metrics by `(scope.name, scope.version)` so the wire emits one
+/// `ScopeMetrics` per scope. Returns arena-owned slices of `MetricData`
+/// referencing the input batch (no payload copy).
+const ScopeBucket = struct {
+    scope: trace_api.InstrumentationScope,
+    metrics: std.ArrayList(*const exp.MetricData),
+};
+
+fn groupByScope(arena: std.mem.Allocator, items: []const exp.MetricData) ![]ScopeBucket {
+    var buckets: std.ArrayList(ScopeBucket) = .empty;
+    for (items) |*m| {
+        var found: ?usize = null;
+        for (buckets.items, 0..) |b, i| {
+            if (std.mem.eql(u8, b.scope.name, m.instrumentation_scope.name) and
+                std.mem.eql(u8, b.scope.version, m.instrumentation_scope.version))
+            {
+                found = i;
+                break;
+            }
+        }
+        if (found) |idx| {
+            try buckets.items[idx].metrics.append(arena, m);
+        } else {
+            var b: ScopeBucket = .{ .scope = m.instrumentation_scope, .metrics = .empty };
+            try b.metrics.append(arena, m);
+            try buckets.append(arena, b);
+        }
+    }
+    return buckets.toOwnedSlice(arena);
+}
+
+pub fn encodeMetricsProto(allocator: std.mem.Allocator, items: []const exp.MetricData) ![]u8 {
+    var w = otlp.Writer.init(allocator);
+    defer w.deinit();
+    if (items.len == 0) return try w.toOwnedSlice();
+
+    // Bucket bookkeeping is short-lived; route it through an internal
+    // arena so direct callers (tests, custom exporters) don't have to
+    // manage it. The returned slice is still `allocator`-owned.
+    var bucket_arena = std.heap.ArenaAllocator.init(allocator);
+    defer bucket_arena.deinit();
+    const ba = bucket_arena.allocator();
+
+    const resource = items[0].resource;
+    const buckets = try groupByScope(ba, items);
+
+    const rm_start = try w.beginSubMessage(otlp.fn_resource_metrics);
+    {
+        // Resource (field 1) — same Resource shape as ResourceSpans.
+        const r_start = try w.beginSubMessage(otlp.fn_rm_resource);
+        for (resource.attributes.entries.items) |kv| {
+            try writeKeyValue(&w, otlp.fn_resource_attributes, kv);
+        }
+        try w.commitSubMessage(r_start);
+
+        // ScopeMetrics — one per InstrumentationScope.
+        for (buckets) |bucket| {
+            const sm_start = try w.beginSubMessage(otlp.fn_rm_scope_metrics);
+            const sc_start = try w.beginSubMessage(otlp.fn_sm_scope);
+            try w.writeString(otlp.fn_scope_name, bucket.scope.name);
+            try w.writeString(otlp.fn_scope_version, bucket.scope.version);
+            try w.commitSubMessage(sc_start);
+
+            for (bucket.metrics.items) |m_ptr| {
+                const m = m_ptr.*;
+                const m_start = try w.beginSubMessage(otlp.fn_sm_metrics);
+                try w.writeString(otlp.fn_metric_name, m.name);
+                try w.writeString(otlp.fn_metric_description, m.description);
+                try w.writeString(otlp.fn_metric_unit, m.unit);
+                try writeMetricBody(&w, m);
+                try w.commitSubMessage(m_start);
+            }
+            try w.commitSubMessage(sm_start);
+        }
+    }
+    try w.commitSubMessage(rm_start);
+    return try w.toOwnedSlice();
+}
+
+fn writeMetricBody(w: *otlp.Writer, m: exp.MetricData) !void {
+    const temporality_value: u64 = switch (m.temporality) {
+        .cumulative => otlp.aggregation_temporality_cumulative,
+        .delta => otlp.aggregation_temporality_delta,
+    };
+
+    switch (m.kind) {
+        .counter, .up_down_counter, .observable_counter, .observable_up_down_counter => {
+            const sum_start = try w.beginSubMessage(otlp.fn_metric_sum);
+            for (m.points) |pt| try writeNumberDataPoint(w, otlp.fn_sum_data_points, pt);
+            try w.writeUint64(otlp.fn_sum_aggregation_temporality, temporality_value);
+            try w.writeBool(otlp.fn_sum_is_monotonic, m.is_monotonic);
+            try w.commitSubMessage(sum_start);
+        },
+        .gauge, .observable_gauge => {
+            const g_start = try w.beginSubMessage(otlp.fn_metric_gauge);
+            for (m.points) |pt| try writeNumberDataPoint(w, otlp.fn_gauge_data_points, pt);
+            try w.commitSubMessage(g_start);
+        },
+        .histogram => {
+            const h_start = try w.beginSubMessage(otlp.fn_metric_histogram);
+            for (m.points) |pt| try writeHistogramDataPoint(w, otlp.fn_hist_data_points, pt);
+            try w.writeUint64(otlp.fn_hist_aggregation_temporality, temporality_value);
+            try w.commitSubMessage(h_start);
+        },
+    }
+}
+
+fn writeNumberDataPoint(w: *otlp.Writer, field_number: u32, pt: exp.DataPoint) !void {
+    const ndp_start = try w.beginSubMessage(field_number);
+    if (pt.attributes) |a| {
+        for (a.entries.items) |kv| {
+            try writeKeyValue(w, otlp.fn_ndp_attributes, kv);
+        }
+    }
+    try w.writeFixed64Field(otlp.fn_ndp_start_time_unix_nano, pt.start_unix_nano);
+    try w.writeFixed64Field(otlp.fn_ndp_time_unix_nano, pt.time_unix_nano);
+    switch (pt.value) {
+        .number => |n| switch (n) {
+            // OTLP: oneof value { double as_double = 4; sfixed64 as_int = 6; }
+            .int => |v| try w.writeSfixed64Field(otlp.fn_ndp_as_int, v),
+            // proto3 omits zero doubles by default; OTLP collectors expect
+            // the field present when this branch was selected (otherwise
+            // the oneof is unset and the value is ambiguous). Force-emit.
+            .double => |v| {
+                try w.writeTag(otlp.fn_ndp_as_double, .fixed64);
+                const bits: u64 = @bitCast(v);
+                try w.writeFixed64(bits);
+            },
+        },
+        .histogram => {}, // unreachable for number-shaped instruments
+    }
+    try w.commitSubMessage(ndp_start);
+}
+
+fn writeHistogramDataPoint(w: *otlp.Writer, field_number: u32, pt: exp.DataPoint) !void {
+    const hdp_start = try w.beginSubMessage(field_number);
+    if (pt.attributes) |a| {
+        for (a.entries.items) |kv| {
+            try writeKeyValue(w, otlp.fn_hdp_attributes, kv);
+        }
+    }
+    try w.writeFixed64Field(otlp.fn_hdp_start_time_unix_nano, pt.start_unix_nano);
+    try w.writeFixed64Field(otlp.fn_hdp_time_unix_nano, pt.time_unix_nano);
+    switch (pt.value) {
+        .histogram => |h| {
+            // count + sum are always emitted (proto3 explicit-presence
+            // optionals — collectors expect them populated even when 0).
+            try w.writeTag(otlp.fn_hdp_count, .fixed64);
+            try w.writeFixed64(h.count);
+            try w.writeTag(otlp.fn_hdp_sum, .fixed64);
+            const sum_bits: u64 = @bitCast(h.sum);
+            try w.writeFixed64(sum_bits);
+            try w.writePackedFixed64(otlp.fn_hdp_bucket_counts, h.counts);
+            try w.writePackedDouble(otlp.fn_hdp_explicit_bounds, h.bounds);
+            if (h.min) |min_v| {
+                try w.writeTag(otlp.fn_hdp_min, .fixed64);
+                const bits: u64 = @bitCast(min_v);
+                try w.writeFixed64(bits);
+            }
+            if (h.max) |max_v| {
+                try w.writeTag(otlp.fn_hdp_max, .fixed64);
+                const bits: u64 = @bitCast(max_v);
+                try w.writeFixed64(bits);
+            }
+        },
+        .number => {}, // unreachable for histogram-shaped instruments
+    }
+    try w.commitSubMessage(hdp_start);
+}
+
+// OTLP/JSON metric encoder. Routes through DevNW `../json` (the sibling
+// dependency) when `-Dotel_use_devnw_json=true`; otherwise falls back to
+// a small hand-written writer that produces the same shape. Every large
+// integer (start_time_unix_nano, time_unix_nano, as_int, count,
+// bucket_counts) is serialized as a JSON string per OTLP/JSON
+// recommendation — JSON's 53-bit number range can't carry a u64 without
+// loss.
+fn encodeMetricsJson(allocator: std.mem.Allocator, items: []const exp.MetricData) ![]u8 {
+    if (build_options.use_devnw_json) {
+        return encodeMetricsJsonDevnw(allocator, items);
+    }
+    return encodeMetricsJsonStd(allocator, items);
+}
+
+fn encodeMetricsJsonDevnw(allocator: std.mem.Allocator, items: []const exp.MetricData) ![]u8 {
+    var bucket_arena = std.heap.ArenaAllocator.init(allocator);
+    defer bucket_arena.deinit();
+    const ba = bucket_arena.allocator();
+
+    var aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer aw.deinit();
+
+    var enc = devnw_json.streamingEncoder(allocator, &aw.writer, .{});
+    defer enc.deinit();
+
+    try enc.beginObject();
+    try enc.writeKey("resourceMetrics");
+    try enc.beginArray();
+    if (items.len > 0) {
+        try enc.beginObject();
+
+        try enc.writeKey("resource");
+        try enc.beginObject();
+        try enc.writeKey("attributes");
+        try enc.beginArray();
+        for (items[0].resource.attributes.entries.items) |kv| {
+            try writeJsonAttributeStreaming(&enc, kv);
+        }
+        try enc.endArray();
+        try enc.endObject();
+
+        const buckets = try groupByScope(ba, items);
+        try enc.writeKey("scopeMetrics");
+        try enc.beginArray();
+        for (buckets) |bucket| {
+            try enc.beginObject();
+            try enc.writeKey("scope");
+            try enc.beginObject();
+            try enc.writeKey("name");
+            try enc.writeString(bucket.scope.name);
+            try enc.writeKey("version");
+            try enc.writeString(bucket.scope.version);
+            try enc.endObject();
+
+            try enc.writeKey("metrics");
+            try enc.beginArray();
+            for (bucket.metrics.items) |m_ptr| {
+                try writeMetricJsonStreaming(&enc, m_ptr.*);
+            }
+            try enc.endArray();
+            try enc.endObject();
+        }
+        try enc.endArray();
+
+        try enc.endObject();
+    }
+    try enc.endArray();
+    try enc.endObject();
+    return try aw.toOwnedSlice();
+}
+
+fn writeJsonAttributeStreaming(enc: anytype, kv: attrs_mod.Entry) !void {
+    try enc.beginObject();
+    try enc.writeKey("key");
+    try enc.writeString(kv.key);
+    try enc.writeKey("value");
+    try enc.beginObject();
+    switch (kv.value) {
+        .string => |s| {
+            try enc.writeKey("stringValue");
+            try enc.writeString(redact.maskString(kv.key, s));
+        },
+        .bool => |b| {
+            try enc.writeKey("boolValue");
+            try enc.writeBool(b);
+        },
+        .int => |i| {
+            // OTLP/JSON: int64 fields are encoded as strings.
+            try enc.writeKey("intValue");
+            var buf: [24]u8 = undefined;
+            const s = try std.fmt.bufPrint(&buf, "{d}", .{i});
+            try enc.writeString(s);
+        },
+        .double => |d| {
+            try enc.writeKey("doubleValue");
+            try enc.writeFloat(d);
+        },
+        else => {},
+    }
+    try enc.endObject();
+    try enc.endObject();
+}
+
+fn writeMetricJsonStreaming(enc: anytype, m: exp.MetricData) !void {
+    try enc.beginObject();
+    try enc.writeKey("name");
+    try enc.writeString(m.name);
+    try enc.writeKey("description");
+    try enc.writeString(m.description);
+    try enc.writeKey("unit");
+    try enc.writeString(m.unit);
+
+    const temp_value: u8 = switch (m.temporality) {
+        .cumulative => @intCast(otlp.aggregation_temporality_cumulative),
+        .delta => @intCast(otlp.aggregation_temporality_delta),
+    };
+
+    switch (m.kind) {
+        .counter, .up_down_counter, .observable_counter, .observable_up_down_counter => {
+            try enc.writeKey("sum");
+            try enc.beginObject();
+            try writeNumberPointsJson(enc, m.points);
+            try enc.writeKey("aggregationTemporality");
+            try enc.writeInt(temp_value);
+            try enc.writeKey("isMonotonic");
+            try enc.writeBool(m.is_monotonic);
+            try enc.endObject();
+        },
+        .gauge, .observable_gauge => {
+            try enc.writeKey("gauge");
+            try enc.beginObject();
+            try writeNumberPointsJson(enc, m.points);
+            try enc.endObject();
+        },
+        .histogram => {
+            try enc.writeKey("histogram");
+            try enc.beginObject();
+            try enc.writeKey("dataPoints");
+            try enc.beginArray();
+            for (m.points) |pt| try writeHistogramPointJson(enc, pt);
+            try enc.endArray();
+            try enc.writeKey("aggregationTemporality");
+            try enc.writeInt(temp_value);
+            try enc.endObject();
+        },
+    }
+    try enc.endObject();
+}
+
+fn writeNumberPointsJson(enc: anytype, points: []const exp.DataPoint) !void {
+    try enc.writeKey("dataPoints");
+    try enc.beginArray();
+    for (points) |pt| try writeNumberPointJson(enc, pt);
+    try enc.endArray();
+}
+
+fn writeNumberPointJson(enc: anytype, pt: exp.DataPoint) !void {
+    try enc.beginObject();
+    if (pt.attributes) |a| {
+        try enc.writeKey("attributes");
+        try enc.beginArray();
+        for (a.entries.items) |kv| try writeJsonAttributeStreaming(enc, kv);
+        try enc.endArray();
+    }
+    try writeJsonU64String(enc, "startTimeUnixNano", pt.start_unix_nano);
+    try writeJsonU64String(enc, "timeUnixNano", pt.time_unix_nano);
+    switch (pt.value) {
+        .number => |n| switch (n) {
+            .int => |v| {
+                try enc.writeKey("asInt");
+                var buf: [24]u8 = undefined;
+                const s = try std.fmt.bufPrint(&buf, "{d}", .{v});
+                try enc.writeString(s);
+            },
+            .double => |v| {
+                try enc.writeKey("asDouble");
+                try enc.writeFloat(v);
+            },
+        },
+        .histogram => {},
+    }
+    try enc.endObject();
+}
+
+fn writeHistogramPointJson(enc: anytype, pt: exp.DataPoint) !void {
+    try enc.beginObject();
+    if (pt.attributes) |a| {
+        try enc.writeKey("attributes");
+        try enc.beginArray();
+        for (a.entries.items) |kv| try writeJsonAttributeStreaming(enc, kv);
+        try enc.endArray();
+    }
+    try writeJsonU64String(enc, "startTimeUnixNano", pt.start_unix_nano);
+    try writeJsonU64String(enc, "timeUnixNano", pt.time_unix_nano);
+    switch (pt.value) {
+        .histogram => |h| {
+            try writeJsonU64String(enc, "count", h.count);
+            try enc.writeKey("sum");
+            try enc.writeFloat(h.sum);
+            try enc.writeKey("bucketCounts");
+            try enc.beginArray();
+            for (h.counts) |c| {
+                var buf: [24]u8 = undefined;
+                const s = try std.fmt.bufPrint(&buf, "{d}", .{c});
+                try enc.writeString(s);
+            }
+            try enc.endArray();
+            try enc.writeKey("explicitBounds");
+            try enc.beginArray();
+            for (h.bounds) |b| try enc.writeFloat(b);
+            try enc.endArray();
+            if (h.min) |m| {
+                try enc.writeKey("min");
+                try enc.writeFloat(m);
+            }
+            if (h.max) |m| {
+                try enc.writeKey("max");
+                try enc.writeFloat(m);
+            }
+        },
+        .number => {},
+    }
+    try enc.endObject();
+}
+
+fn writeJsonU64String(enc: anytype, key: []const u8, v: u64) !void {
+    try enc.writeKey(key);
+    var buf: [24]u8 = undefined;
+    const s = try std.fmt.bufPrint(&buf, "{d}", .{v});
+    try enc.writeString(s);
+}
+
+// Stdlib-only JSON fallback. Hand-rolled to avoid pulling in `../json` on
+// builds that opt out via `-Dotel_use_devnw_json=false`. The output shape
+// is byte-identical to the DevNW path for the same input (collectors care
+// about shape, not whitespace).
+fn encodeMetricsJsonStd(allocator: std.mem.Allocator, items: []const exp.MetricData) ![]u8 {
+    var bucket_arena = std.heap.ArenaAllocator.init(allocator);
+    defer bucket_arena.deinit();
+    const ba = bucket_arena.allocator();
+
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(allocator);
+    try buf.appendSlice(allocator, "{\"resourceMetrics\":[");
+    if (items.len > 0) {
+        try buf.append(allocator, '{');
+        try buf.appendSlice(allocator, "\"resource\":{\"attributes\":[");
+        for (items[0].resource.attributes.entries.items, 0..) |kv, i| {
+            if (i > 0) try buf.append(allocator, ',');
+            try writeJsonAttributeStd(allocator, &buf, kv);
+        }
+        try buf.appendSlice(allocator, "]},\"scopeMetrics\":[");
+        const buckets = try groupByScope(ba, items);
+        for (buckets, 0..) |bucket, i| {
+            if (i > 0) try buf.append(allocator, ',');
+            try buf.appendSlice(allocator, "{\"scope\":{\"name\":");
+            try writeJsonStringStd(allocator, &buf, bucket.scope.name);
+            try buf.appendSlice(allocator, ",\"version\":");
+            try writeJsonStringStd(allocator, &buf, bucket.scope.version);
+            try buf.appendSlice(allocator, "},\"metrics\":[");
+            for (bucket.metrics.items, 0..) |m_ptr, j| {
+                if (j > 0) try buf.append(allocator, ',');
+                try writeMetricJsonStd(allocator, &buf, m_ptr.*);
+            }
+            try buf.appendSlice(allocator, "]}");
+        }
+        try buf.appendSlice(allocator, "]}");
+    }
+    try buf.appendSlice(allocator, "]}");
+    return try allocator.dupe(u8, buf.items);
+}
+
+fn writeJsonStringStd(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), s: []const u8) !void {
+    try buf.append(allocator, '"');
+    for (s) |c| {
+        switch (c) {
+            '"' => try buf.appendSlice(allocator, "\\\""),
+            '\\' => try buf.appendSlice(allocator, "\\\\"),
+            '\n' => try buf.appendSlice(allocator, "\\n"),
+            '\r' => try buf.appendSlice(allocator, "\\r"),
+            '\t' => try buf.appendSlice(allocator, "\\t"),
+            0x00...0x07, 0x0b, 0x0c, 0x0e...0x1f => {
+                var tmp: [8]u8 = undefined;
+                const out = try std.fmt.bufPrint(&tmp, "\\u{x:0>4}", .{c});
+                try buf.appendSlice(allocator, out);
+            },
+            else => try buf.append(allocator, c),
+        }
+    }
+    try buf.append(allocator, '"');
+}
+
+fn writeJsonU64StringStd(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), key: []const u8, v: u64) !void {
+    try buf.append(allocator, '"');
+    try buf.appendSlice(allocator, key);
+    try buf.appendSlice(allocator, "\":\"");
+    var num_buf: [24]u8 = undefined;
+    const s = try std.fmt.bufPrint(&num_buf, "{d}", .{v});
+    try buf.appendSlice(allocator, s);
+    try buf.append(allocator, '"');
+}
+
+fn writeJsonAttributeStd(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), kv: attrs_mod.Entry) !void {
+    try buf.appendSlice(allocator, "{\"key\":");
+    try writeJsonStringStd(allocator, buf, kv.key);
+    try buf.appendSlice(allocator, ",\"value\":{");
+    switch (kv.value) {
+        .string => |s| {
+            try buf.appendSlice(allocator, "\"stringValue\":");
+            try writeJsonStringStd(allocator, buf, redact.maskString(kv.key, s));
+        },
+        .bool => |b| try buf.appendSlice(allocator, if (b) "\"boolValue\":true" else "\"boolValue\":false"),
+        .int => |i| {
+            try buf.appendSlice(allocator, "\"intValue\":\"");
+            var num_buf: [24]u8 = undefined;
+            const s = try std.fmt.bufPrint(&num_buf, "{d}", .{i});
+            try buf.appendSlice(allocator, s);
+            try buf.append(allocator, '"');
+        },
+        .double => |d| {
+            try buf.appendSlice(allocator, "\"doubleValue\":");
+            var num_buf: [40]u8 = undefined;
+            const s = try std.fmt.bufPrint(&num_buf, "{d}", .{d});
+            try buf.appendSlice(allocator, s);
+        },
+        else => {},
+    }
+    try buf.appendSlice(allocator, "}}");
+}
+
+fn writeMetricJsonStd(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), m: exp.MetricData) !void {
+    try buf.append(allocator, '{');
+    try buf.appendSlice(allocator, "\"name\":");
+    try writeJsonStringStd(allocator, buf, m.name);
+    try buf.appendSlice(allocator, ",\"description\":");
+    try writeJsonStringStd(allocator, buf, m.description);
+    try buf.appendSlice(allocator, ",\"unit\":");
+    try writeJsonStringStd(allocator, buf, m.unit);
+
+    const temp_value: u8 = switch (m.temporality) {
+        .cumulative => @intCast(otlp.aggregation_temporality_cumulative),
+        .delta => @intCast(otlp.aggregation_temporality_delta),
+    };
+
+    switch (m.kind) {
+        .counter, .up_down_counter, .observable_counter, .observable_up_down_counter => {
+            try buf.appendSlice(allocator, ",\"sum\":{\"dataPoints\":[");
+            for (m.points, 0..) |pt, i| {
+                if (i > 0) try buf.append(allocator, ',');
+                try writeNumberPointJsonStd(allocator, buf, pt);
+            }
+            try buf.appendSlice(allocator, "],\"aggregationTemporality\":");
+            var num_buf: [8]u8 = undefined;
+            const s = try std.fmt.bufPrint(&num_buf, "{d}", .{temp_value});
+            try buf.appendSlice(allocator, s);
+            try buf.appendSlice(allocator, ",\"isMonotonic\":");
+            try buf.appendSlice(allocator, if (m.is_monotonic) "true" else "false");
+            try buf.append(allocator, '}');
+        },
+        .gauge, .observable_gauge => {
+            try buf.appendSlice(allocator, ",\"gauge\":{\"dataPoints\":[");
+            for (m.points, 0..) |pt, i| {
+                if (i > 0) try buf.append(allocator, ',');
+                try writeNumberPointJsonStd(allocator, buf, pt);
+            }
+            try buf.appendSlice(allocator, "]}");
+        },
+        .histogram => {
+            try buf.appendSlice(allocator, ",\"histogram\":{\"dataPoints\":[");
+            for (m.points, 0..) |pt, i| {
+                if (i > 0) try buf.append(allocator, ',');
+                try writeHistogramPointJsonStd(allocator, buf, pt);
+            }
+            try buf.appendSlice(allocator, "],\"aggregationTemporality\":");
+            var num_buf: [8]u8 = undefined;
+            const s = try std.fmt.bufPrint(&num_buf, "{d}", .{temp_value});
+            try buf.appendSlice(allocator, s);
+            try buf.append(allocator, '}');
+        },
+    }
+    try buf.append(allocator, '}');
+}
+
+fn writeNumberPointJsonStd(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), pt: exp.DataPoint) !void {
+    try buf.append(allocator, '{');
+    var first = true;
+    if (pt.attributes) |a| {
+        try buf.appendSlice(allocator, "\"attributes\":[");
+        for (a.entries.items, 0..) |kv, i| {
+            if (i > 0) try buf.append(allocator, ',');
+            try writeJsonAttributeStd(allocator, buf, kv);
+        }
+        try buf.append(allocator, ']');
+        first = false;
+    }
+    if (!first) try buf.append(allocator, ',');
+    try writeJsonU64StringStd(allocator, buf, "startTimeUnixNano", pt.start_unix_nano);
+    try buf.append(allocator, ',');
+    try writeJsonU64StringStd(allocator, buf, "timeUnixNano", pt.time_unix_nano);
+    switch (pt.value) {
+        .number => |n| switch (n) {
+            .int => |v| {
+                try buf.appendSlice(allocator, ",\"asInt\":\"");
+                var num_buf: [24]u8 = undefined;
+                const s = try std.fmt.bufPrint(&num_buf, "{d}", .{v});
+                try buf.appendSlice(allocator, s);
+                try buf.append(allocator, '"');
+            },
+            .double => |v| {
+                try buf.appendSlice(allocator, ",\"asDouble\":");
+                var num_buf: [40]u8 = undefined;
+                const s = try std.fmt.bufPrint(&num_buf, "{d}", .{v});
+                try buf.appendSlice(allocator, s);
+            },
+        },
+        .histogram => {},
+    }
+    try buf.append(allocator, '}');
+}
+
+fn writeHistogramPointJsonStd(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), pt: exp.DataPoint) !void {
+    try buf.append(allocator, '{');
+    var first = true;
+    if (pt.attributes) |a| {
+        try buf.appendSlice(allocator, "\"attributes\":[");
+        for (a.entries.items, 0..) |kv, i| {
+            if (i > 0) try buf.append(allocator, ',');
+            try writeJsonAttributeStd(allocator, buf, kv);
+        }
+        try buf.append(allocator, ']');
+        first = false;
+    }
+    if (!first) try buf.append(allocator, ',');
+    try writeJsonU64StringStd(allocator, buf, "startTimeUnixNano", pt.start_unix_nano);
+    try buf.append(allocator, ',');
+    try writeJsonU64StringStd(allocator, buf, "timeUnixNano", pt.time_unix_nano);
+    switch (pt.value) {
+        .histogram => |h| {
+            try buf.append(allocator, ',');
+            try writeJsonU64StringStd(allocator, buf, "count", h.count);
+            try buf.appendSlice(allocator, ",\"sum\":");
+            var num_buf: [40]u8 = undefined;
+            var s = try std.fmt.bufPrint(&num_buf, "{d}", .{h.sum});
+            try buf.appendSlice(allocator, s);
+            try buf.appendSlice(allocator, ",\"bucketCounts\":[");
+            for (h.counts, 0..) |c, i| {
+                if (i > 0) try buf.append(allocator, ',');
+                try buf.append(allocator, '"');
+                s = try std.fmt.bufPrint(&num_buf, "{d}", .{c});
+                try buf.appendSlice(allocator, s);
+                try buf.append(allocator, '"');
+            }
+            try buf.appendSlice(allocator, "],\"explicitBounds\":[");
+            for (h.bounds, 0..) |b, i| {
+                if (i > 0) try buf.append(allocator, ',');
+                s = try std.fmt.bufPrint(&num_buf, "{d}", .{b});
+                try buf.appendSlice(allocator, s);
+            }
+            try buf.append(allocator, ']');
+            if (h.min) |mv| {
+                try buf.appendSlice(allocator, ",\"min\":");
+                s = try std.fmt.bufPrint(&num_buf, "{d}", .{mv});
+                try buf.appendSlice(allocator, s);
+            }
+            if (h.max) |mv| {
+                try buf.appendSlice(allocator, ",\"max\":");
+                s = try std.fmt.bufPrint(&num_buf, "{d}", .{mv});
+                try buf.appendSlice(allocator, s);
+            }
+        },
+        .number => {},
+    }
+    try buf.append(allocator, '}');
 }
 
 pub fn encodeSpansProto(allocator: std.mem.Allocator, items: []const exp.SpanData) ![]u8 {

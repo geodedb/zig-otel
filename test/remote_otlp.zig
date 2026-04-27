@@ -266,6 +266,104 @@ test "OTLP/HTTPS live export to remote collector" {
     }
 }
 
+test "OTLP/HTTPS live metric export to remote collector" {
+    if (!build_options.use_devnw_tls) return error.SkipZigTest;
+    var endpoint_buf: [512]u8 = undefined;
+    const endpoint = envInto(&endpoint_buf, "OTEL_INTEGRATION_HTTPS_ENDPOINT") orelse return error.SkipZigTest;
+
+    const allocator = std.testing.allocator;
+    var threaded = std.Io.Threaded.init(allocator, .{});
+    defer threaded.deinit();
+
+    var resource = try otel.sdk.resource.defaultResource(allocator);
+    defer resource.deinit();
+    try resource.attributes.putString(otel.semconv.service_name, "otel-zig-integration");
+    try resource.attributes.putString("service.namespace", "devnw.zig");
+    try resource.attributes.putString("service.version", otel.version);
+    try resource.attributes.putString("deployment.environment", "ci-or-local");
+
+    // Build a small metric snapshot: a counter with one data point and a
+    // histogram with three observations. Real wall-clock timestamps so
+    // the metric falls inside the backend's retention window (older
+    // points get silently dropped by Mimir).
+    var mp = try otel.sdk.metrics.MeterProvider.init(allocator, .{ .resource = &resource });
+    defer mp.deinit();
+
+    const m = mp.meter(.{ .name = "otel-zig.integration", .version = "0.1.0" });
+    const c = try m.counter(.{ .name = "remote_otlp.metric.requests", .description = "live remote-otlp metric integration test counter", .unit = "1", .kind = .counter });
+    c.add(1, &.{});
+    c.add(2, &.{});
+    c.add(4, &.{});
+
+    const h = try m.histogram(.{
+        .name = "remote_otlp.metric.duration_ms",
+        .description = "live remote-otlp metric integration test histogram",
+        .unit = "ms",
+        .kind = .histogram,
+        .explicit_buckets = .{ .boundaries = &.{ 1.0, 5.0, 10.0, 50.0 } },
+    });
+    h.record(0.5, &.{});
+    h.record(3.0, &.{});
+    h.record(20.0, &.{});
+
+    const snapshot = try otel.sdk.metrics.collect(&mp, allocator);
+    defer {
+        for (snapshot) |s| allocator.free(s.points);
+        allocator.free(snapshot);
+    }
+    try std.testing.expect(snapshot.len >= 2);
+
+    var headers_buf: [4096]u8 = undefined;
+    const headers = envInto(&headers_buf, "OTEL_EXPORTER_OTLP_HEADERS");
+
+    var exporter = try otel.exporters.otlp_http.OtlpHttpExporter.init(allocator, .{
+        .endpoint = endpoint,
+        .protocol = .http_protobuf,
+        .headers = headers,
+        .timeout_ms = 30_000,
+    });
+    defer exporter.deinit();
+    exporter.io = threaded.io();
+
+    std.debug.print("\n=== otel-zig live OTLP/HTTPS metric emission ===\n", .{});
+    if (isCi()) {
+        var ep_hash_buf: [32]u8 = undefined;
+        std.debug.print("  endpoint   = sha256:{s} (hashed in CI)\n", .{hashEndpoint(&ep_hash_buf, endpoint)});
+    } else {
+        std.debug.print("  endpoint   = {s}\n", .{endpoint});
+    }
+    std.debug.print("  metrics    = {d}\n", .{snapshot.len});
+    std.debug.print("  service    = otel-zig-integration\n", .{});
+
+    const result = try exporter.metricExporter().exportMetrics(snapshot);
+    std.debug.print("  http.status = {d}\n", .{exporter.lastResponseStatus()});
+    const resp_full = exporter.lastResponseBody();
+    std.debug.print("  resp.bytes  = {d}\n", .{resp_full.len});
+    const success = result == .success or result == .partial_success;
+    if (!success and resp_full.len > 0) {
+        if (scrubCredentials(resp_full)) {
+            std.debug.print("  resp.body   = (suppressed: credential pattern detected)\n", .{});
+        } else {
+            var head_hash_buf: [32]u8 = undefined;
+            const head = if (resp_full.len < 32) resp_full else resp_full[0..32];
+            const Sha256 = std.crypto.hash.sha2.Sha256;
+            var digest: [Sha256.digest_length]u8 = undefined;
+            Sha256.hash(head, &digest, .{});
+            std.debug.print("  resp.head_sha = {s}\n", .{hex(&head_hash_buf, digest[0..8])});
+        }
+    }
+    std.debug.print("=== /otel-zig live OTLP/HTTPS metric emission ===\n\n", .{});
+
+    if (result != .success and result != .partial_success) {
+        std.debug.print("unexpected metric export result: {s}\n", .{@tagName(result)});
+        return error.UnexpectedExportResult;
+    }
+    if (exporter.lastResponseBody().len > 32) {
+        std.debug.print("collector returned a long response body — likely a partial-success rejection. See body above.\n", .{});
+        return error.PartialSuccessReported;
+    }
+}
+
 test "OTLP/gRPCS live export to remote collector" {
     if (!build_options.use_devnw_grpc) return error.SkipZigTest;
     var endpoint_buf: [512]u8 = undefined;

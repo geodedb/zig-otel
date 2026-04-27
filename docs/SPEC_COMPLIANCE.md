@@ -94,6 +94,10 @@ optional sections are listed under "Limitations" with a short rationale.
 | HTTP/HTTPS transport (real client, not just vtable)    | `src/exporters/otlp_http.zig: httpTransportImpl` (uses `std.http.Client` + `std.crypto.tls`) | `test/tls_loopback.zig: round-trips a span` (gated on `-Dotel_use_devnw_tls=true`) |
 | Protobuf wire encoder for spans                        | `src/exporters/otlp_http.zig: encodeSpansProto` | unit |
 | JSON wire encoder for spans                            | `src/exporters/otlp_http.zig: encodeSpansJson`  | unit |
+| Protobuf wire encoder for metrics (`ExportMetricsServiceRequest`) | `src/exporters/otlp_http.zig: encodeMetricsProto` | `test/otlp_metrics.zig: golden field-tags + retry` |
+| JSON wire encoder for metrics (routes through `../json` when on) | `src/exporters/otlp_http.zig: encodeMetricsJson` | `test/otlp_metrics.zig: JSON protocol via /v1/metrics` |
+| OTLP/HTTP `/v1/metrics` POST                           | `src/exporters/otlp_http.zig: metricExporter`   | `test/otlp_metrics.zig: posts to /v1/metrics` + `test/remote_otlp.zig: HTTPS live metric export` |
+| OTLP/gRPC `MetricsService/Export`                      | `src/exporters/otlp_grpc.zig: metricExporter` (routes `/opentelemetry.proto.collector.metrics.v1.MetricsService/Export`) | shares `test/grpc_loopback.zig` retry/backoff harness |
 | gRPC unary 5-byte length prefix                        | `src/exporters/otlp_grpc.zig: frame` | `test/otlp.zig: gRPC frame prefix` |
 | OTLP/gRPC unary transport (real client)                | `src/exporters/otlp_grpc.zig: unaryExport` (uses DevNW `grpc-zig`) | `test/grpc_loopback.zig: round-trips a span` (gated on `-Dotel_use_devnw_grpc=true`) |
 

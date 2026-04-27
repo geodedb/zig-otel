@@ -10,19 +10,20 @@
 
 | Severity | Open | Resolved | Total |
 |----------|------|----------|-------|
-| Critical | 6 | 0 | 6 |
+| Critical | 5 | 1 | 6 |
 | High     | 11 | 0 | 11 |
 | Medium   | 12 | 1 | 13 |
 | Low      | 7  | 1 | 8 |
-| **Total**| **36** | **2** | **38** |
+| **Total**| **35** | **3** | **38** |
 
 > PM re-audit delta (2026-04-26): **GAP-BENCH-NOT-WIRED** (#78, Medium) closed — moved to GAP_ANALYSIS_RESOLVED.md. **GAP-BENCH-LOOPBACK-UNDOCUMENTED** (#112, Low) added.
+> 2026-04-27 closure: **GAP-OTLP-METRIC-EXPORT** (#7, Critical) closed — OTLP/HTTP `/v1/metrics` and OTLP/gRPC `MetricsService/Export` paths shipped. Moved to GAP_ANALYSIS_RESOLVED.md.
 
 | Status          | Count |
 |-----------------|-------|
-| Not Implemented | 30    |
+| Not Implemented | 29    |
 | Partial         | 6     |
-| Implemented     | 2 (moved to GAP_ANALYSIS_RESOLVED.md) |
+| Implemented     | 3 (moved to GAP_ANALYSIS_RESOLVED.md) |
 | Unknown         | 0     |
 
 ## Gap Index (Open)
@@ -32,7 +33,6 @@
 | GAP-INSTRUMENTATION-SCOPE-PROPAGATION | Tracer scope never reaches SpanState (one-line bug at src/sdk/trace.zig:254) | Not Implemented | Critical | [#1](https://gitlab.com/devnw/zig/otel/-/issues/1) |
 | GAP-OTLP-WIRE-INSTRUMENTATION-SCOPE | ScopeSpans.scope.name always empty in OTLP wire output | Not Implemented | Critical | [#3](https://gitlab.com/devnw/zig/otel/-/issues/3) |
 | GAP-EXPORTER-FACTORY | OTEL_*_EXPORTER env vars parsed but never construct an exporter | Not Implemented | Critical | [#4](https://gitlab.com/devnw/zig/otel/-/issues/4) |
-| GAP-OTLP-METRIC-EXPORT | No OTLP metric export path (HTTP /v1/metrics or gRPC MetricsService/Export) | Not Implemented | Critical | [#7](https://gitlab.com/devnw/zig/otel/-/issues/7) |
 | GAP-OTLP-LOG-EXPORT | No OTLP log export path (HTTP /v1/logs or gRPC LogsService/Export) | Not Implemented | Critical | [#8](https://gitlab.com/devnw/zig/otel/-/issues/8) |
 | GAP-OTLP-WIRE-EVENTS-LINKS | Span events (field 11) and links (field 13) never written to OTLP wire | Not Implemented | Critical | [#9](https://gitlab.com/devnw/zig/otel/-/issues/9) |
 | GAP-PROPAGATOR-B3 | B3 propagator never constructed even when OTEL_PROPAGATORS=b3 | Not Implemented | High | [#23](https://gitlab.com/devnw/zig/otel/-/issues/23) |

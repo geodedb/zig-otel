@@ -105,6 +105,38 @@ pub const Writer = struct {
         try self.buf.appendSlice(self.allocator, value);
     }
 
+    /// Emit a `sfixed64` field — same wire bytes as `fixed64` but the
+    /// schema declares signed two's-complement. Used for
+    /// `NumberDataPoint.as_int = 6` (sfixed64).
+    pub fn writeSfixed64Field(self: *Writer, field_number: u32, value: i64) !void {
+        try self.writeTag(field_number, .fixed64);
+        try self.writeFixed64(@bitCast(value));
+    }
+
+    /// Packed-repeated `fixed64` — proto3's default repeated-scalar
+    /// encoding. One tag, one length varint, then `values.len * 8` bytes
+    /// of little-endian payload. Used for
+    /// `HistogramDataPoint.bucket_counts = 6` (fixed64).
+    pub fn writePackedFixed64(self: *Writer, field_number: u32, values: []const u64) !void {
+        if (values.len == 0) return;
+        try self.writeTag(field_number, .length_delimited);
+        try self.writeVarint(@intCast(values.len * 8));
+        for (values) |v| try self.writeFixed64(v);
+    }
+
+    /// Packed-repeated `double` — same envelope shape as
+    /// `writePackedFixed64` (8-byte values, fixed64 wire-bytes). Used for
+    /// `HistogramDataPoint.explicit_bounds = 7`.
+    pub fn writePackedDouble(self: *Writer, field_number: u32, values: []const f64) !void {
+        if (values.len == 0) return;
+        try self.writeTag(field_number, .length_delimited);
+        try self.writeVarint(@intCast(values.len * 8));
+        for (values) |v| {
+            const bits: u64 = @bitCast(v);
+            try self.writeFixed64(bits);
+        }
+    }
+
     /// Begin a length-delimited submessage. The caller writes fields, then
     /// commits via `commitSubMessage` with the start length returned here.
     pub fn beginSubMessage(self: *Writer, field_number: u32) !usize {
@@ -205,6 +237,63 @@ pub const span_kind_server: u64 = 2;
 pub const span_kind_client: u64 = 3;
 pub const span_kind_producer: u64 = 4;
 pub const span_kind_consumer: u64 = 5;
+
+// ---------------- Metrics field numbers (OTLP 1.10.0) -------------------
+//
+// `opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest` and
+// downstream messages from `opentelemetry.proto.metrics.v1`. Field numbers
+// pinned by the protobuf wire format — changing them silently breaks every
+// collector in the world.
+
+pub const fn_resource_metrics = 1; // ExportMetricsServiceRequest.resource_metrics
+pub const fn_rm_resource = 1; // ResourceMetrics.resource
+pub const fn_rm_scope_metrics = 2; // ResourceMetrics.scope_metrics
+pub const fn_rm_schema_url = 3; // ResourceMetrics.schema_url
+
+pub const fn_sm_scope = 1; // ScopeMetrics.scope
+pub const fn_sm_metrics = 2; // ScopeMetrics.metrics
+pub const fn_sm_schema_url = 3; // ScopeMetrics.schema_url
+
+pub const fn_metric_name = 1;
+pub const fn_metric_description = 2;
+pub const fn_metric_unit = 3;
+// `data` oneof: gauge=5, sum=7, histogram=9 (4, 6, 8 are reserved).
+pub const fn_metric_gauge = 5;
+pub const fn_metric_sum = 7;
+pub const fn_metric_histogram = 9;
+
+// Sum / Gauge / Histogram bodies.
+pub const fn_sum_data_points = 1;
+pub const fn_sum_aggregation_temporality = 2;
+pub const fn_sum_is_monotonic = 3;
+pub const fn_gauge_data_points = 1;
+pub const fn_hist_data_points = 1;
+pub const fn_hist_aggregation_temporality = 2;
+
+// NumberDataPoint.
+pub const fn_ndp_start_time_unix_nano = 2;
+pub const fn_ndp_time_unix_nano = 3;
+pub const fn_ndp_as_double = 4;
+pub const fn_ndp_as_int = 6;
+pub const fn_ndp_attributes = 7;
+pub const fn_ndp_flags = 8;
+
+// HistogramDataPoint.
+pub const fn_hdp_start_time_unix_nano = 2;
+pub const fn_hdp_time_unix_nano = 3;
+pub const fn_hdp_count = 4;
+pub const fn_hdp_sum = 5;
+pub const fn_hdp_bucket_counts = 6;
+pub const fn_hdp_explicit_bounds = 7;
+pub const fn_hdp_attributes = 9;
+pub const fn_hdp_flags = 10;
+pub const fn_hdp_min = 11;
+pub const fn_hdp_max = 12;
+
+// AggregationTemporality enum (OTLP 1.10.0 metrics.proto).
+pub const aggregation_temporality_unspecified: u64 = 0;
+pub const aggregation_temporality_delta: u64 = 1;
+pub const aggregation_temporality_cumulative: u64 = 2;
 
 // ---------------- Smoke test --------------------------------------------
 

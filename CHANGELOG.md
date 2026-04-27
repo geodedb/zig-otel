@@ -34,6 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **OTLP metric export path.** `OtlpHttpExporter.metricExporter()`
+  posts `ExportMetricsServiceRequest` to `/v1/metrics`;
+  `OtlpGrpcExporter.metricExporter()` routes through
+  `MetricsService/Export`. The new
+  `encodeMetricsProto` emits OTLP 1.10.0 wire shape for
+  Sum (counter / up-down-counter), Gauge, and Histogram
+  (with packed `bucket_counts` and `explicit_bounds`). The JSON
+  variant routes through `../json` (DevNW `streamingEncoder`) when
+  `-Dotel_use_devnw_json=true`. (GAP-OTLP-METRIC-EXPORT, gitlab #7)
 - Runtime kill-switch on `Tracer`/`Meter`/`Logger` providers via
   `config.disabled` (mirrors the `OTEL_SDK_DISABLED` env var). (F-2)
 - Real-loopback HTTP integration bench at level 6. (F-5)

@@ -91,6 +91,14 @@ The PM re-audit verified one functional gap closed since the morning sync.
 
 ---
 
+## Functional (closed 2026-04-27)
+
+| Gap-ID | Title | Resolution | Issue URL |
+|--------|-------|------------|-----------|
+| GAP-OTLP-METRIC-EXPORT | No OTLP metric export path (HTTP `/v1/metrics` or gRPC `MetricsService/Export`) | OTLP/HTTP `metricExporter()` and OTLP/gRPC `metricExporter()` shipped. Encoder lives at `src/exporters/otlp_http.zig:encodeMetricsProto` and emits `ExportMetricsServiceRequest` per OTLP 1.10.0 (Sum / Gauge / Histogram with packed `bucket_counts`/`explicit_bounds`). HTTP path posts to `/v1/metrics` with retry/backoff parity to spans. gRPC path routes through `/opentelemetry.proto.collector.metrics.v1.MetricsService/Export`. JSON payload routes via `../json` (DevNW `streamingEncoder`) when `-Dotel_use_devnw_json=true`. New tests: 8 in `test/otlp_metrics.zig` (path/content-type assertions, retry behaviour, golden field-tag checks, JSON wire-shape) + a live-collector test in `test/remote_otlp.zig` ("OTLP/HTTPS live metric export to remote collector"). | <https://gitlab.com/devnw/zig/otel/-/issues/7> |
+
+---
+
 ## GAP-DEPRECATED-SPAN-EVENTS-FLAG: docs note for -Ddeprecated_span_events build gate [RESOLVED — note-only, by design]
 
 - **Issue:** [#101](https://gitlab.com/devnw/zig/otel/-/issues/101) (open as a docs follow-up; no code change required)

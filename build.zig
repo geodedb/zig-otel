@@ -226,6 +226,7 @@ pub fn build(b: *std.Build) void {
         "test/metrics.zig",
         "test/logs.zig",
         "test/otlp.zig",
+        "test/otlp_metrics.zig",
         "test/config.zig",
         "test/security.zig",
         "test/instrumentation_slog.zig",

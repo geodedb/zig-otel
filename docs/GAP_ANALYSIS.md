@@ -91,11 +91,15 @@
 
 | Status          | Count |
 |-----------------|-------|
-| Not Implemented | 25    |
-| Partial         | 6     |
-| Implemented     | 7 (moved to `GAP_ANALYSIS_RESOLVED.md`) |
-| Won't Do        | 1 (GAP-OTLP-PROFILES-EXPORT #25 — moved to `GAP_ANALYSIS_RESOLVED.md`) |
+| Not Implemented | 11    |
+| Partial         | 8     |
+| Closed (in-place, also mirrored to `GAP_ANALYSIS_RESOLVED.md`) | 10 |
+| Blocked (upstream) | 3 |
+| **Total open-file rows** | **32** |
+| Won't Do (moved to `GAP_ANALYSIS_RESOLVED.md`) | 1 (GAP-OTLP-PROFILES-EXPORT #25) |
 | Unknown         | 0     |
+
+> Tally refreshed 2026-04-27 after the Phase 4 closure run (commits `cda548a..1eb85eb`): 8 fully-closed gaps (#4, #8, #23, #24, #29, #30, #138, #139), 1 Partial (#27 GAP-OTLP-COMPRESSION — HTTP closed, gRPC body-only), 2 newly Blocked (#99 upstream Zig stdlib, #100 upstream devnw/ci-catalog), and 1 Won't Do (#146 closed-by-other: P0-1 #5, recorded in `PERF_GAP_ANALYSIS.md`). Closed gaps stay in-place in the Gap Index below for traceability — see `GAP_ANALYSIS_RESOLVED.md` for the resolved-section mirror.
 
 ## Gap Index (Open)
 

@@ -196,3 +196,39 @@ The Phase 3 gap-detector registry (`docs/audit/gap-detector/REGISTRY.md`) identi
   - Phase 3 GAP_DETECTION.md classification: `Status: Implemented (note-only — not actually a gap; called out in Phase 2 for visibility)`
 - **Follow-up:** A docs-only note in `docs/SPEC_COMPLIANCE.md` clarifying the deprecation gate and pointing readers to `EventBuilder.emit` is tracked as #101. No code change is required.
 - **Resolved date:** 2026-04-26 (carried over from Phase 3 classification)
+
+---
+
+## Functional / Performance (closed 2026-04-27 — Phase 4 closure run)
+
+The Phase 4 closure run shipped 13 commits in the range `cda548a..1eb85eb`, fully closing 8 functional/perf gaps. Verification: `zig build test --summary all` → 242 PASS / 27 SKIP / 0 FAIL; with `-Dotel_use_devnw_protobuf=true -Dotel_use_devnw_json=true` → 253 PASS / 16 SKIP / 0 FAIL; `zig fmt --check src/ test/ benchmarks/ tools/` → clean; `zig build` and `zig build -Doptimize=Debug` → exit 0; `make slo-check` → all rules PASS (Rule 3 = 31.082 ns/op vs 50, Rule 4 = 0.00150 vs 0.005). Verifier security boundary-surface review: no findings.
+
+| Gap-ID | Title | Resolution Commit | Issue URL |
+|--------|-------|-------------------|-----------|
+| GAP-EXPORTER-FACTORY | OTEL_*_EXPORTER env vars parsed but never construct an exporter | `cf827bd` | <https://gitlab.com/devnw/zig/otel/-/issues/4> |
+| GAP-OTLP-LOG-EXPORT | No OTLP log export path (HTTP `/v1/logs` or gRPC `LogsService/Export`) | `00c8e2c` | <https://gitlab.com/devnw/zig/otel/-/issues/8> |
+| GAP-PROPAGATOR-B3 | B3 propagator never constructed even when `OTEL_PROPAGATORS=b3` | `d0e3b81` (prep `e98d30d`) | <https://gitlab.com/devnw/zig/otel/-/issues/23> |
+| GAP-PROPAGATOR-JAEGER | Jaeger `uber-trace-id` propagator never constructed when `OTEL_PROPAGATORS=jaeger` | `e5904d2` (prep `e98d30d`) | <https://gitlab.com/devnw/zig/otel/-/issues/24> |
+| GAP-PERIODIC-METRIC-READER | `PeriodicExportingMetricReader` missing — long-running services emit no metrics until shutdown | `b76e367` | <https://gitlab.com/devnw/zig/otel/-/issues/29> |
+| GAP-OBSERVABLE-INSTRUMENTS | Observable Counter / UpDownCounter / Gauge API absent | `09312e8` | <https://gitlab.com/devnw/zig/otel/-/issues/30> |
+| GAP-PERF-PR-5 | scope grouping rebuilt as O(n²) per export — hash-keyed groupByScope | `3ebb0d1` | <https://gitlab.com/devnw/zig/otel/-/issues/138> |
+| GAP-PERF-PR-6 | `Baggage.put` allocates duplicate keys on hot path — search-then-dupe | `991e426` | <https://gitlab.com/devnw/zig/otel/-/issues/139> |
+
+### Partial — code shipped, follow-ups tracked
+
+| Gap-ID | Title | What shipped | What remains | Issue URL |
+|--------|-------|--------------|--------------|-----------|
+| GAP-OTLP-COMPRESSION | gzip enum declared but encoder never applies it (HTTP or gRPC) | HTTP path closed end-to-end (`gzipBody`/`gunzipBody` + `dispatchTransport.maybeGzip` + `content-encoding: gzip` header). gRPC `frame()` now takes a `compressed: bool` flag and emits the wire-correct framing-flag byte; `frameGzip()` integrated helper gzips + frames in one shot; `unaryExport` passes `OtlpConfig.compression` through to `client.call(..., .gzip)` so upstream zlib runs over the body. Regression `test/otlp_compression.zig`. Commit `1eb85eb`. | (a) `grpc-encoding: gzip` request metadata header — blocked on `grpc_zig` `client.call` not exposing user-supplied request metadata. (b) `transport.writeMessage` framing-flag-byte upstream bug (uses server-style framing on the client side) — pre-existing; gRPC loopback test self-skips for that reason. Both tracked in `docs/runbooks/upstream-asks.md`. | <https://gitlab.com/devnw/zig/otel/-/issues/27> |
+
+### Won't Do (this run)
+
+| Gap-ID | Title | Reason | Resolution Commit | Issue URL |
+|--------|-------|--------|-------------------|-----------|
+| GAP-PERF-PR-7 | Prometheus per-bucket label re-sort | Closed-by-other (P0-1 #5). Re-investigation against the current Prometheus exporter shows no in-loop sort exists; insertion-order is stable by construction via `AttributeSet`. Evidence: `src/exporters/prometheus.zig:67-77,159-189`, `src/internal/attributes.zig:31-44`. `grep -n "std.sort\|std.mem.sort\|sortFn\|lessThan" src/exporters/prometheus.zig` returns nothing. Detail captured in `docs/PERF_GAP_ANALYSIS.md` (the "PR-7 dropped from this list" callout). | `30a3647` | <https://gitlab.com/devnw/zig/otel/-/issues/146> |
+
+### Blocked (upstream — leave Open)
+
+| Gap-ID | Title | Blocker | Unblock Steps | Issue URL |
+|--------|-------|---------|---------------|-----------|
+| GAP-FUZZ-DISABLED | `zig-fuzz` CI job disabled pending Zig 0.16 stdlib bug fix | Upstream Zig 0.16 stdlib `std.testing.fuzz` corpus-reseed crash; candidate issues `ziglang/zig#26040`, `ziglang/zig#21410` need verification. | (1) confirm/file the upstream issue and record link in `docs/runbooks/upstream-asks.md`; (2) when fix lands, flip `.gitlab-ci.yml:237-239` to `when: on_schedule`, run one full corpus, then close. | <https://gitlab.com/devnw/zig/otel/-/issues/99> |
+| GAP-WINDOWS-TESTS-DISABLED | Windows test jobs disabled pending devnw/ci-catalog fix | `gitlab.com/devnw/ci-catalog` PowerShell wrapper reports `NativeCommandError` on benign stderr writes even when zig exits 0. | (1) confirm/file the upstream ci-catalog issue and record link in `docs/runbooks/upstream-asks.md`; (2) when runner lands, set `rules: - when: on_success` at `.gitlab-ci.yml:241-251` and verify against a sample MR. | <https://gitlab.com/devnw/zig/otel/-/issues/100> |

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- **OTLP encoder is now O(N) on nested submessages.**
+  `Writer.commitSubMessage` (`src/generated/otlp.zig`) used to
+  `copyForwards`-shift the payload tail on every commit so the varint
+  length header could occupy fewer than its 10 reserved bytes. With
+  five-deep OTLP nesting (ResourceSpans → ScopeSpans → Span →
+  Event/Status/Link → KeyValue → AnyValue) every byte added at the
+  inner level got shifted up the stack five times, giving O(N²) wall
+  clock on body bytes. The encoder now records each commit and defers
+  all length-header rewrites to a single linear compaction sweep
+  inside `toOwnedSlice`. New `bench-micro` scenarios
+  `micro_encode_spans_proto_{64,512,4096}` measure flat ~50 K spans/s
+  throughput across the 64×–4096× batch range; the existing OTLP
+  wire-parity tests pass byte-identical against the DevNW protobuf
+  encoder. (PR-2, gitlab #36)
+
 ### Changed
 
 - **BREAKING:** `TracerProvider`'s `default_exporter` now wraps the

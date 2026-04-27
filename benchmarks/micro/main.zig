@@ -45,6 +45,14 @@ pub fn main(init: std.process.Init) !void {
         .{ .name = "micro_json_write_attrs_4", .layer = .micro, .ops_per_iteration = 10_000, .run = benchJsonWriteAttrs4 },
         .{ .name = "micro_json_write_attrs_32", .layer = .micro, .ops_per_iteration = 5_000, .run = benchJsonWriteAttrs32 },
         .{ .name = "micro_noop_vtable_dispatch", .layer = .micro, .ops_per_iteration = 1_000_000, .zero_alloc_expected = true, .run = benchNoopVtable },
+        // PR-2 (#36): nested-encode scaling probe. ops_per_iteration here
+        // is the batch size handed to `encodeSpansProto`; one iteration
+        // is one encode call producing one ResourceSpans payload. The
+        // three sizes pin O(N) wall-clock behaviour of the deferred-
+        // compaction encoder against the old quadratic `copyForwards`.
+        .{ .name = "micro_encode_spans_proto_64", .layer = .micro, .ops_per_iteration = 64, .run = benchEncodeSpansProto64 },
+        .{ .name = "micro_encode_spans_proto_512", .layer = .micro, .ops_per_iteration = 512, .run = benchEncodeSpansProto512 },
+        .{ .name = "micro_encode_spans_proto_4096", .layer = .micro, .ops_per_iteration = 4096, .run = benchEncodeSpansProto4096 },
     };
 
     switch (try framework.parseArgs(allocator, init.minimal.args)) {
@@ -298,4 +306,66 @@ fn benchNoopVtable(ctx: *framework.Context) anyerror!void {
         const span = try tracer.startSpan(.empty(), "x", .{});
         std.mem.doNotOptimizeAway(span.state);
     }
+}
+
+// ----------------------------------------------------------------------------
+// PR-2 (#36) — encodeSpansProto nested-encode scaling
+// ----------------------------------------------------------------------------
+//
+// `Writer.commitSubMessage` used to `copyForwards`-shift the payload tail
+// every time a submessage closed; nested OTLP messages (ResourceSpans →
+// ScopeSpans → Span → Event/Link/Status) made this O(N²) in body bytes.
+// The three sizes 64 / 512 / 4096 frame the regression: pre-fix the per-
+// span ns/op grew super-linearly with batch size; post-fix it is flat.
+// Each scenario runs a single `encodeSpansProto` call per iteration with
+// `ops_per_iteration = batch_size`, so `ns/op` reads as ns/span.
+
+fn benchEncodeSpansProto64(ctx: *framework.Context) anyerror!void {
+    return encodeSpansProtoBatch(ctx, 64);
+}
+
+fn benchEncodeSpansProto512(ctx: *framework.Context) anyerror!void {
+    return encodeSpansProtoBatch(ctx, 512);
+}
+
+fn benchEncodeSpansProto4096(ctx: *framework.Context) anyerror!void {
+    return encodeSpansProtoBatch(ctx, 4096);
+}
+
+fn encodeSpansProtoBatch(ctx: *framework.Context, batch: usize) !void {
+    var resource = try otel.sdk.resource.defaultResource(ctx.allocator);
+    defer resource.deinit();
+    var attr_set = attrs.AttributeSet.init(ctx.allocator);
+    defer attr_set.deinit();
+    try attr_set.putString("http.method", "GET");
+    try attr_set.putString("http.route", "/api/v1/items");
+    try attr_set.putInt("http.status_code", 200);
+    try attr_set.putString("service.name", "demo");
+
+    var spans = try ctx.allocator.alloc(otel.sdk.exporter.SpanData, batch);
+    defer ctx.allocator.free(spans);
+    var i: usize = 0;
+    while (i < batch) : (i += 1) {
+        spans[i] = .{
+            .name = "bench-span",
+            .span_context = .{
+                .trace_id = .{ .bytes = .{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 } },
+                .span_id = .{ .bytes = .{ 1, 2, 3, 4, 5, 6, 7, 8 } },
+            },
+            .start_unix_nano = @intCast(1_000 + i),
+            .end_unix_nano = @intCast(2_000 + i),
+            .attributes = &attr_set,
+            .events = &.{},
+            .links = &.{},
+            .instrumentation_scope = .{ .name = "bench" },
+            .resource = &resource,
+        };
+    }
+
+    // One encode call per iteration; the framework's `ops_per_iteration`
+    // is `batch`, so the reported ns/op equals ns-per-span. Sample
+    // multiple iterations for noise tolerance.
+    const out = try otel.exporters.otlp_http.encodeSpansProto(ctx.allocator, spans);
+    defer ctx.allocator.free(out);
+    std.mem.doNotOptimizeAway(out.len);
 }

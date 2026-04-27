@@ -15,28 +15,33 @@
 
 | PerfSeverity | Open Issues | Validated/Closed | Notes |
 |---|---:|---:|---:|
-| **P0** | 6 | 6 | New: PR-3 (#136). Validated: PR-1 (#135), P0-1 (#5), P0-2 (#6), P0-4 (#15), P-N1 (#122), P-N2 (#126). |
+| **P0** | 5 | 7 | New: PR-3 (#136). Validated: PR-1 (#135), PR-2 (#36), P0-1 (#5), P0-2 (#6), P0-4 (#15), P-N1 (#122), P-N2 (#126). |
 | **P1** | 18 | 1 | Adds PR-5/PR-6/PR-7/PR-8/PR-9/PR-10 + tracking issues BENCH-BASELINES-MISSING (#166), PERF-SLO-DEFINE (#167). |
 | **P2** | 3 | — | Adds PR-11 (#148), PR-12 (#153). |
 | **P3** | 1 | — | Adds PR-13 (#155). |
-| **Validated/Closed total** | — | **9** | #2 BENCH-HARNESS, #43 P1-5 forceFlush, #5/#6/#15/#122/#126/#135 + previously CHANGELOG'd P0-9/P0-10. |
-| **Total open** | **28** | **9** | — |
+| **Validated/Closed total** | — | **10** | #2 BENCH-HARNESS, #43 P1-5 forceFlush, #5/#6/#15/#36/#122/#126/#135 + previously CHANGELOG'd P0-9/P0-10. |
+| **Total open** | **27** | **10** | — |
 
 ### Top 5 risks (post-validation)
 
-1. **PR-2 — `commitSubMessage` `copyForwards` is quadratic** (P0 escalation, score 88) at `src/generated/otlp.zig:142-169`. Each commit re-shifts payload tail. Becomes load-bearing under default-BSP large batches. → [#36](https://gitlab.com/devnw/zig/otel/-/work_items/36)
-2. **PR-3 — trace encoder uses `items[0]` scope only** (P0, score 78) at `src/exporters/otlp_http.zig:1055-1093`. Multi-tracer batches mislabel N-1 of N spans. Compounds with default-BSP. → [#136](https://gitlab.com/devnw/zig/otel/-/work_items/136)
-3. **PR-7 — Prometheus per-bucket label re-sort** (P1, score 82) at `src/exporters/prometheus.zig:70-80,162-177`. Sort lives inside the bucket loop; should be hoisted. 5-10× scrape latency on histograms. → [#146](https://gitlab.com/devnw/zig/otel/-/work_items/146)
-4. **PR-4 — new `std.http.Client` per export, no keepalive** (P1, score 76) at `src/exporters/otlp_http.zig:243`. One TCP+TLS handshake per batch on the post-default-BSP hot path. → [#47](https://gitlab.com/devnw/zig/otel/-/work_items/47)
-5. **PR-5 — groupByScope linear scan** (P1, score 72) at `src/exporters/otlp_http.zig:402-423`. Replace post-PR-3 linear scope-bucket scan with a hash-keyed grouping. → [#138](https://gitlab.com/devnw/zig/otel/-/work_items/138)
+1. **PR-3 — trace encoder uses `items[0]` scope only** (P0, score 78) at `src/exporters/otlp_http.zig:1055-1093`. Multi-tracer batches mislabel N-1 of N spans. Compounds with default-BSP. → [#136](https://gitlab.com/devnw/zig/otel/-/work_items/136)
+2. **PR-7 — Prometheus per-bucket label re-sort** (P1, score 82) at `src/exporters/prometheus.zig:70-80,162-177`. Sort lives inside the bucket loop; should be hoisted. 5-10× scrape latency on histograms. → [#146](https://gitlab.com/devnw/zig/otel/-/work_items/146)
+3. **PR-4 — new `std.http.Client` per export, no keepalive** (P1, score 76) at `src/exporters/otlp_http.zig:243`. One TCP+TLS handshake per batch on the post-default-BSP hot path. → [#47](https://gitlab.com/devnw/zig/otel/-/work_items/47)
+4. **PR-5 — groupByScope linear scan** (P1, score 72) at `src/exporters/otlp_http.zig:402-423`. Replace post-PR-3 linear scope-bucket scan with a hash-keyed grouping. → [#138](https://gitlab.com/devnw/zig/otel/-/work_items/138)
+5. **PR-6 — Baggage.put dupe-before-dedup** (P1, score 72) at `src/api/baggage.zig:56-73`. Two arena dupes per put before the dedup check; collapse on the hit path. → [#139](https://gitlab.com/devnw/zig/otel/-/work_items/139)
 
-> **Closed top risk:** PR-1 ([#135](https://gitlab.com/devnw/zig/otel/-/work_items/135), score 92) — `MeterProvider.pointFor` concurrency race fixed 2026-04-27. Per-instrument `InstrumentMutex` wraps every record-path and the `collect()` snapshot loop; `pointIndexFor` now returns indices not pointers; `collect()` deep-copies attribute sets and histogram buffers so the snapshot fully detaches from `inst.points`. Coverage in `test/metrics_concurrency.zig` (3 tests, including a 2-thread writer stress and a writer-vs-collector stress). Pre-fix the writer-stress test reliably crashes with a HashMap pointer-stability assert; post-fix it passes deterministically.
+> **Closed top risks:**
+>
+> **PR-2** ([#36](https://gitlab.com/devnw/zig/otel/-/work_items/36), score 88) — `Writer.commitSubMessage` quadratic `copyForwards` fixed 2026-04-27. The encoder now defers length-header rewrites until `toOwnedSlice`, which performs a single linear compaction sweep — no O(N²) tail shift on every nested commit. Coverage in `src/generated/otlp.zig` (6 PR-2 tests, including a 5-deep nesting parity check and a closed-form size-formula scaling probe at N ∈ {8, 128, 1024}) plus the existing wire-parity gate `test/otlp_wire_parity.zig` (3 byte-equality tests against the DevNW protobuf encoder). The new `bench-micro` scenarios `micro_encode_spans_proto_{64,512,4096}` measure flat ~50 K spans/s throughput across the 64×–4096× batch range — pre-fix the same workload showed super-linear ns-per-span growth.
+>
+> **PR-1** ([#135](https://gitlab.com/devnw/zig/otel/-/work_items/135), score 92) — `MeterProvider.pointFor` concurrency race fixed 2026-04-27. Per-instrument `InstrumentMutex` wraps every record-path and the `collect()` snapshot loop; `pointIndexFor` now returns indices not pointers; `collect()` deep-copies attribute sets and histogram buffers so the snapshot fully detaches from `inst.points`. Coverage in `test/metrics_concurrency.zig` (3 tests, including a 2-thread writer stress and a writer-vs-collector stress). Pre-fix the writer-stress test reliably crashes with a HashMap pointer-stability assert; post-fix it passes deterministically.
 
-### Validated this sweep (6 issues closed)
+### Validated this sweep (7 issues closed)
 
 | ID | Issue | Validation source |
 |---|---|---|
 | PR-1 | [#135](https://gitlab.com/devnw/zig/otel/-/work_items/135) | CHANGELOG: per-instrument mutex on metric pointFor / collect — race-free under concurrent record + collect; `test/metrics_concurrency.zig` (3 tests). |
+| PR-2 | [#36](https://gitlab.com/devnw/zig/otel/-/work_items/36) | CHANGELOG: deferred-compaction `Writer.toOwnedSlice` — single O(N) sweep replaces per-commit `copyForwards`; `src/generated/otlp.zig` (6 PR-2 tests) + `test/otlp_wire_parity.zig` (3 byte-equality tests); `bench-micro` `micro_encode_spans_proto_{64,512,4096}` flat ~50 K spans/s. |
 | P-N1 | [#122](https://gitlab.com/devnw/zig/otel/-/work_items/122) | CHANGELOG: per-call retry backoff sleep added in OTLP/HTTP. |
 | P-N2 | [#126](https://gitlab.com/devnw/zig/otel/-/work_items/126) | CHANGELOG: per-call retry backoff sleep added in OTLP/gRPC. |
 | P0-1 | [#5](https://gitlab.com/devnw/zig/otel/-/work_items/5) | CHANGELOG: AttributeSet.put O(1) hash index — ~11× at 120-attr prefill. |
@@ -55,7 +60,7 @@
 | Rank | PerfSeverity | PerfScore | Finding ID | Component | File:Line | Confidence | Issue | Status |
 |---:|:---:|---:|:---|:---|:---|:---:|:---|:---|
 | 1 | **P0** | **92** | **PR-1** | sdk | `src/sdk/metrics.zig:55-100,268-330,624-790` | confirmed | [#135](https://gitlab.com/devnw/zig/otel/-/work_items/135) | **closed 2026-04-27** — per-instrument `InstrumentMutex`; `pointIndexFor` returns indices not pointers; `collect()` deep-copies attribute sets + histogram buffers under the lock; tests in `test/metrics_concurrency.zig` (3) confirm pre-fix crash, post-fix pass. |
-| 2 | **P0** | **88** | **PR-2** | exporters | `src/generated/otlp.zig:142-169` | confirmed | [#36](https://gitlab.com/devnw/zig/otel/-/work_items/36) | triage (escalated) |
+| 2 | **P0** | **88** | **PR-2** | exporters | `src/generated/otlp.zig:142-169` | confirmed | [#36](https://gitlab.com/devnw/zig/otel/-/work_items/36) | **closed 2026-04-27** — deferred-compaction `Writer.toOwnedSlice` (single O(N) sweep replaces per-commit `copyForwards`); `src/generated/otlp.zig` PR-2 tests (6) + `test/otlp_wire_parity.zig` (3); `bench-micro` `micro_encode_spans_proto_{64,512,4096}` flat ~50 K spans/s. |
 | 3 | **P1** | **82** | **PR-7** | exporters | `src/exporters/prometheus.zig:70-80,162-177` | confirmed | [#146](https://gitlab.com/devnw/zig/otel/-/work_items/146) | triage |
 | 4 | **P0** | **78** | **PR-3** | exporters | `src/exporters/otlp_http.zig:1055-1093` | confirmed | [#136](https://gitlab.com/devnw/zig/otel/-/work_items/136) | triage |
 | 5 | **P1** | **76** | **PR-4** | exporters | `src/exporters/otlp_http.zig:243` | confirmed | [#47](https://gitlab.com/devnw/zig/otel/-/work_items/47) | triage |
@@ -101,6 +106,7 @@
 | P0-2 | [#6](https://gitlab.com/devnw/zig/otel/-/work_items/6) | **closed 2026-04-27** — ~1.97× span record |
 | P0-4 | [#15](https://gitlab.com/devnw/zig/otel/-/work_items/15) | **closed 2026-04-27** — 3 → 0 allocs/metric |
 | PR-1 | [#135](https://gitlab.com/devnw/zig/otel/-/work_items/135) | **closed 2026-04-27** — per-instrument mutex; -2.6% counter / -0.4% histogram (within ±5%) |
+| PR-2 | [#36](https://gitlab.com/devnw/zig/otel/-/work_items/36) | **closed 2026-04-27** — deferred-compaction `Writer.toOwnedSlice`; flat 50 K spans/s at 64 / 512 / 4096 batch sizes (was super-linear) |
 | P-N1 | [#122](https://gitlab.com/devnw/zig/otel/-/work_items/122) | **closed 2026-04-27** — retry backoff sleeps |
 | P-N2 | [#126](https://gitlab.com/devnw/zig/otel/-/work_items/126) | **closed 2026-04-27** — retry backoff sleeps |
 | P0-9 | [#22](https://gitlab.com/devnw/zig/otel/-/work_items/22) | CHANGELOG-validated (`schedule_delay_ms` wired); leave open until A/B captured |
@@ -137,7 +143,7 @@
 
 ### `area::exporters` (12)
 
-- **PR-2** commitSubMessage copyForwards quadratic ([#36](https://gitlab.com/devnw/zig/otel/-/work_items/36)) — score 88 (escalated)
+- ~~**PR-2** commitSubMessage copyForwards quadratic~~ ✅ closed 2026-04-27 ([#36](https://gitlab.com/devnw/zig/otel/-/work_items/36)) — deferred-compaction `Writer.toOwnedSlice`; tests in `src/generated/otlp.zig` (6) + `test/otlp_wire_parity.zig` (3); bench `micro_encode_spans_proto_{64,512,4096}` flat ~50 K spans/s
 - **PR-3** items[0]-only scope encoder ([#136](https://gitlab.com/devnw/zig/otel/-/work_items/136)) — score 78
 - **PR-7** Prometheus per-bucket label re-sort ([#146](https://gitlab.com/devnw/zig/otel/-/work_items/146)) — score 82
 - **PR-4 / P1-9** Persistent `std.http.Client` ([#47](https://gitlab.com/devnw/zig/otel/-/work_items/47)) — score 76

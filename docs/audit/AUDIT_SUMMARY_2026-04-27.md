@@ -1,0 +1,171 @@
+# Full Codebase Audit Summary — 2026-04-27
+
+## Repository
+
+- **Project:** devnw/zig/otel (Zig 0.16 OpenTelemetry SDK)
+- **Platform:** GitLab (`gitlab.com/devnw/zig/otel`)
+- **Languages:** Zig 0.16.0
+- **Scope:** entire repo
+- **Toolchain:** zig fmt + zig build check + zig build test (gitleaks 8.21.2, semgrep 1.161.0)
+- **CI baseline:** `make ci` green (91 pass / 20 skip / 0 fail; fmt+check clean)
+
+## Domain Results
+
+### Gap Analysis
+
+| Status | Count | Percentage |
+|---|---:|---:|
+| Implemented (tracker-stale) | 5 | 5% |
+| Partial | 18 | 17% |
+| Not Implemented | 73 | 67% |
+| Unknown | 12 | 11% |
+
+**Open gaps post-sync:** 52 — Critical: 3, High: 11, Medium: 18, Low: 20.
+
+### Code Quality
+
+| Severity | Count |
+|---|---:|
+| Critical | 0 |
+| High | 3 |
+| Medium | 9 |
+| Low | 6 |
+
+**Top finding:** `OTEL-Q-001` split `src/exporters/otlp_http.zig` (1407 LOC, triple-encoder family) — **PriorityScore 85**.
+
+### Performance
+
+| PerfSeverity | Count |
+|---|---:|
+| P0 | 3 |
+| P1 | 7 |
+| P2 | 4 |
+| P3 | 2 |
+
+**Top finding:** `PR-1` MeterProvider.pointFor concurrency race (`src/sdk/metrics.zig:268-304,591-649`) — **PerfScore 92** (correctness + perf P0).
+
+### Security
+
+| Risk Level | Count |
+|---|---:|
+| Critical | 0 |
+| High | 1 |
+| Medium | 4 |
+| Low | 5 |
+| Info | 4 |
+
+**Top finding:** `NEW-H-1` proto/semconv manifests hash only LICENSE files — provenance gate is structurally toothless (CWE-345). Filed **confidential** as #134.
+
+**Immediate operator actions:** 1 — H-7 token rotation deadline 2026-05-03 (6 days).
+
+## Cross-Domain Summary
+
+| Domain | Findings | Issues Created | Issues Updated | Issues Closed |
+|---|---:|---:|---:|---:|
+| Gap Analysis | 105 (catalogued) | 1 | 0 | 3 |
+| Quality | 18 | 12 | 2 | 0 |
+| Performance | 16 | 13 (incl. 2 tracking) | 2 | 5 |
+| Security | 14 | 9 (3 confidential) | 0 | 9¹ |
+| **Total** | **153** | **35** | **4** | **17** |
+
+¹ Security closures are evidence-confirmation comments on already-closed items (H-1/H-3/H-4/H-5/M-1/M-5/C-2/C-3/H-6).
+
+## Docs Updated
+
+| File | Domain | Action |
+|---|---|---|
+| `docs/GAP_ANALYSIS.md` | Gap | rewritten — 33 open gaps, deltas applied |
+| `docs/GAP_ANALYSIS_RESOLVED.md` | Gap | appended — 3 tracker-stale closures (Phase 4) |
+| `docs/QUALITY_GAP_ANALYSIS.md` | Quality | 267 lines (+61) — Phase 3 ranked table + roadmap |
+| `docs/PERF_GAP_ANALYSIS.md` | Performance | 270 lines (+62) — PR-1..PR-13 + closures + by-area |
+| `docs/SECURITY_GAP_ANALYSIS.md` | Security | 262 lines (+40) — §6.2 re-audit + closure confirmations |
+| `docs/audit/AUDIT_SUMMARY_2026-04-27.md` | Unified | this file |
+
+Per-phase artifacts:
+
+- `docs/audit/gap-collector/{ORIENTATION.md,catalog.json,catalog.csv}`
+- `docs/audit/gap-scanner/SCAN_RESULTS.md`
+- `docs/audit/gap-detector/{REGISTRY.md,SYNC_PLAN.md}`
+- `/tmp/otel-{fmt,check,test}.log`, `/tmp/otel-fns.txt`, `/tmp/otel-quality-summary.txt`
+- `/tmp/perf-scan/{allocs,exporter_allocs,concurrency,loops,deep_review}.txt`
+- `/tmp/gitleaks.json`, `/tmp/semgrep.json`, `/tmp/grep-audit-{1..7}.txt`
+
+## Top 10 Findings (cross-domain, by severity then score)
+
+| # | Domain | ID | Finding | Severity | Score | File:Line |
+|---|---|---|---|---|---|---|
+| 1 | Perf+Correctness | **PR-1** (#135) | MeterProvider.pointFor concurrent record/collect race (torn ArrayList, dangling pointers after grow) | P0 | 92 | src/sdk/metrics.zig:268-304,591-649 |
+| 2 | Perf | **PR-2** (#36) | `commitSubMessage` `copyForwards` quadratic shifts on nested OTLP encode | P0 | 88 | src/generated/otlp.zig:142-169 |
+| 3 | Security | **NEW-H-1** (#134🔒) | proto/semconv manifests hash only LICENSE — provenance gate is decorative (CWE-345) | High | 7.5 | docs/proto-manifest.txt:4 |
+| 4 | Quality | **OTEL-Q-001** (#149) | otlp_http.zig 1407 LOC, triple-encoder family — split by signal/encoder | High | 85 | src/exporters/otlp_http.zig |
+| 5 | Quality | **OTEL-Q-NEW-A** (#163) | Fragile fn-pointer-identity dispatch sentinel (LTO/inline-fragile) | High | 82 | otlp_http.zig:303-306,372-375 |
+| 6 | Perf | **PR-7** (#146) | Prometheus per-bucket label re-sort (16× cost on default histograms) | P1 | 82 | src/exporters/prometheus.zig:70-80,162-177 |
+| 7 | Quality | **OTEL-Q-002** (#150) | Extract `exportSignal` helper — `expSpans`/`expMetrics` byte-identical retry loops | High | 80 | otlp_http.zig:277-322 vs 348-392 |
+| 8 | Perf+Correctness | **PR-3** (#136) | OTLP trace encoder uses `items[0].instrumentation_scope` only — multi-tracer batches mislabeled | P0 | 78 | otlp_http.zig:1055-1093 |
+| 9 | Quality | **OTEL-Q-003** (#152) | OTLP log export missing — SimpleLogProcessor exists, no expLogs/encodeLogs | High | 78 | src/sdk/logs.zig:43 |
+| 10 | Perf | **PR-4** (#47) | new `std.http.Client` per export — TCP/TLS handshake every BSP drain | P1 | 76 | otlp_http.zig:243 |
+
+(🔒 = filed confidential)
+
+## High-Impact Items Closed Today
+
+| Domain | Item | Evidence |
+|---|---|---|
+| Gap | #1 Instrumentation scope propagation | src/sdk/trace.zig:289-296 + test/trace.zig:57,83-87 |
+| Gap | #3 OTLP wire instrumentation scope | src/exporters/otlp_http.zig:1057-1058 |
+| Gap | #31 Redact wired across exporters | otlp_http.zig:644,873,1108,1386 + prometheus.zig:201 + json_codec.zig:173 |
+| Perf | #5 P0-1 AttributeSet dedup-before-dup (~11×) | src/internal/attributes.zig:147-150 |
+| Perf | #6 P0-2 SpanState pool (~1.97×) | src/sdk/span_pool.zig + src/api/trace.zig:157-194 |
+| Perf | #15 P0-4 pointFor 3→0 allocs | src/sdk/metrics.zig:271 |
+| Perf | #122 P-N1 retry sleep (HTTP) | src/sdk/export.zig:673-680 |
+| Perf | #126 P-N2 retry sleep (gRPC) | src/sdk/export.zig:678 |
+
+## Operator-Pending Follow-Ups
+
+1. **H-7 (#80, confidential)** — rotate `OTEL_INTEGRATION_AUTH_HEADER` by **2026-05-03** (6 days remaining); run `scripts/audit_ci_logs.sh` against last 90 days **before** rotation invalidates the token. Owner: <benji@codepros.org>.
+2. **NEW-M-2 (#140, confidential)** — verify Zig 0.16 `std/fs/Dir.createFile` default `O_NOFOLLOW`; downgrade to Info if already nofollow, otherwise patch.
+3. **M-3 (#84)** — DevNW upstream Sigstore/cosign signing (deferred to upstream).
+4. **BENCH-BASELINES-MISSING (#166)** — capture A/B baselines for P0-3, P0-5, P0-7, P0-8, P-N3..N7, P1-1..P1-13.
+5. **PERF-SLO-DEFINE (#167)** — set service-level p99 export latency / RPS / allocation-HWM SLO.
+6. **CI dark spots** — re-enable zig-fuzz + Windows tests after upstream Zig 0.16 fix; flip benchmark-regression `allow_failure: false` after baselines land.
+7. **Tracker drift (informational)** — #7 (GAP-OTLP-METRIC-EXPORT) and #101 (GAP-DEPRECATED-SPAN-EVENTS-FLAG) are tracked-open but resolved-doc; reconcile next sync.
+
+## Blockers Encountered
+
+- **No SBOM/CVE scanner installed locally** (osv-scanner / trivy / grype / syft / snyk) — security scan ran gitleaks + semgrep only. CI pipeline still has osv-scanner; locally untested.
+- **Semgrep `--config auto` blocked by telemetry policy** — ran reduced ruleset (p/security-audit + p/secrets + p/owasp-top-ten, 65 rules).
+- **No Zig linter beyond fmt+check** — duplication/complexity/dead-code findings rely on manual review and grep audits.
+- **No coverage instrumentation** wired into build.zig or CI; coverage gates cannot be enforced.
+- **Fuzz job + Windows test jobs** suppressed in CI (`when: never`) due to upstream Zig 0.16 bugs — fuzzing and cross-OS signal currently dark.
+
+## Phase Verdicts
+
+| Phase | Status | Notes |
+|---|---|---|
+| 1 — Orientation | OK | All 4 agents completed; auth healthy; bench harness mapped; threat model surfaced 8 abuse cases. |
+| 2 — Scanning | OK | Build/check/test green; gitleaks 0 leaks / 81 commits; semgrep 0 findings / 65 rules. |
+| 3 — Deep Analysis | OK | 1 P0 correctness defect (PR-3 trace encoder), 1 P0 race (PR-1), 1 High supply-chain (NEW-H-1) discovered. |
+| 4 — Tracking | OK | 35 issues created (3 confidential), 4 updated, 17 closed; 5 docs updated. |
+| 5 — Unified summary | OK (this file) | |
+
+## Net Tracker Movement
+
+- Before run: 108 open / 24 closed (132 total)
+- After run: ~141 open / 41 closed (~178 total) — net +33 created, +17 closed.
+
+## Gap Closures — 2026-04-27
+
+Five-PR closure run executed end-to-end against `main` after the audit landed. Plan: `docs/audit/gap-closure/PLAN_2026-04-27.md`. Completion report: `docs/audit/gap-closure/COMPLETION_REPORT_2026-04-27.md`.
+
+| Order | Gap | Issue | Commit | Domain | File evidence (primary) | New tests |
+|------:|-----|------:|--------|--------|-------------------------|-----------|
+| 1 | PR-1 — `MeterProvider.pointFor` race | [#135](https://gitlab.com/devnw/zig/otel/-/work_items/135) | `177708f` | Performance | `src/sdk/metrics.zig:90-95,305-360,644-790` + `freeSnapshot` | `test/metrics_concurrency.zig` (3) |
+| 2 | PR-2 — two-pass OTLP encoder | [#36](https://gitlab.com/devnw/zig/otel/-/work_items/36) | `a8cce5b` | Performance | `src/generated/otlp.zig` (deferred-compaction `Writer.toOwnedSlice`) | 6 inline + 3 `bench-micro` scenarios (`micro_encode_spans_proto_{64,512,4096}`) |
+| 3 | PR-3 — multi-scope trace encoder | [#136](https://gitlab.com/devnw/zig/otel/-/work_items/136) | `a092ca4` | Performance / Correctness | `src/exporters/otlp_http/encode_proto.zig:216` (`groupSpansByScope`) | `test/otlp_spans_multi_scope.zig` (5) |
+| 4a | OTEL-Q-001 — split `otlp_http.zig` | [#149](https://gitlab.com/devnw/zig/otel/-/work_items/149) | `6f11474` | Quality | `src/exporters/otlp_http/{spans,metrics,headers,exporter,transport,encode_proto,encode_proto_devnw,encode_json}.zig` | refactor-only (existing suites preserved) |
+| 4b | OTEL-Q-NEW-A — tagged-union Transport | [#163](https://gitlab.com/devnw/zig/otel/-/work_items/163) | `6f11474` | Quality | `src/exporters/otlp_http/transport.zig:57` (`Transport` union) | covered by existing OTLP suite |
+| 5 | NEW-H-1 — proto/semconv manifest | [#134](https://gitlab.com/devnw/zig/otel/-/work_items/134) (CONFIDENTIAL) | `1e01147` | Security | `tools/manifest.zig` + `docs/{proto,semconv}-manifest.txt` + `third_party/*` (15 proto + 240 semconv files) | `test/manifest_provenance.zig` (5) |
+
+**Verifier verdict:** ALL PASS. `zig build test --summary all` → **109/21/0** default, **114/16/0** with DevNW codecs. Zero regressions.
+
+**Out of this run (operator follow-ups):** H-7 (#80), NEW-M-2 (#140), BENCH-BASELINES-MISSING (#166), PERF-SLO-DEFINE (#167) — all carry separate workflows and SLAs.

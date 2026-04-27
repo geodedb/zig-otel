@@ -1,0 +1,130 @@
+# Gap-Detector Registry — devnw/zig/otel
+
+> Generated: 2026-04-27
+> Phase 3 (gap-detector) canonical output
+> Inputs:
+>
+> - Phase 1: `docs/audit/gap-collector/catalog.{json,csv}` (108 open issues)
+> - Phase 2: `docs/audit/gap-scanner/SCAN_RESULTS.md` (5 Implemented / 18 Partial / 73 Not Impl / 12 Unknown)
+> Output contract: registry only — no platform mutations. Phase 4 (gap-sync) will reconcile to GitLab.
+
+## Naming convention
+
+Project uses **semantic Gap-IDs** (e.g. `GAP-EXPORTER-FACTORY`) rather than numeric `GAP-NNNN`. New IDs proposed below follow the same convention. Existing 37 `gap`-labelled IIDs already have semantic IDs in `docs/GAP_ANALYSIS.md`.
+
+## Severity model
+
+| Severity | Criteria as applied here |
+|----------|--------------------------|
+| Critical | OTel spec MUST clause unmet on a primary signal (trace/metric/log) wire path; data loss; security-vuln in production attack surface. |
+| High     | OTel spec SHOULD clause unmet, or feature documented as supported but absent (silent misconfig); spec-relevant env var unwired; partial-on-paper retry/back-pressure semantics. |
+| Medium   | Quality / maintainability / non-default code paths; vendor-schema gaps; per-signal env vars when transport already works; quality M-tier and PriorityScore 8–18. |
+| Low      | Docs, naming, dead code, low-PriorityScore quality, bench-only hardening, upstream-blocked CI. |
+
+Mapping vs catalog labels: `priority::critical → Critical`, `priority::high → High`, `priority::medium → Medium`, `priority::low → Low`. Quality items use `severity::*` labels which were re-checked against the same rubric (no re-grades required).
+
+---
+
+## Final severity histogram (OPEN gaps)
+
+| Severity | Count |
+|----------|------:|
+| Critical |   5   |
+| High     |  12   |
+| Medium   |  17   |
+| Low      |  20   |
+| **Total**| **54**|
+
+> Histogram is the **scanner-corrected** view: it removes the 4 tracker-stale rows (#1, #3, #7 already resolved-and-removed from open, #31 partial-actually-implemented) and adds the 1 new Medium gap (`GAP-DISABLED-TRACER-DOC`) detected in Phase 2. It includes the 37 catalog `gap` items + the 17 highest-impact quality/perf/security items that map 1:1 onto an open gap obligation. Pure perf P1/P2 items remain tracked under `performance` but aren't double-counted as `gap`.
+
+---
+
+## Top 10 OPEN gaps (priority order)
+
+| Rank | Gap-ID | IID | Severity | Status | File:line |
+|----:|--------|----:|----------|--------|-----------|
+| 1 | GAP-EXPORTER-FACTORY | #4 | Critical | Not Impl | `src/sdk/config.zig:342-350` (env parsed → enum, no constructor) |
+| 2 | GAP-OTLP-LOG-EXPORT | #8 | Critical | Not Impl | `src/sdk/logs.zig:40,126` (in-process only); 0 hits for `/v1/logs`/`LogsService` |
+| 3 | GAP-OTLP-WIRE-EVENTS-LINKS | #9 | Critical | Not Impl | `src/generated/otlp.zig:191,193` (constants exist, 0 use sites in `src/exporters/`) |
+| 4 | Q-METRIC-PIPELINE-HALF-BUILT (#13) | #13 | Critical | Partial | `MetricReader.collect` never invoked — gates #29 |
+| 5 | Q-BSP-SCHEDULE-IGNORED (#12) | #12 | Critical | Not Impl | `BatchSpanProcessorOptions.schedule_delay_ms` — wiring landed (`454de77`); verify Phase-4 |
+| 6 | GAP-PROPAGATOR-B3 | #23 | High | Not Impl | `src/propagation/` — no `b3.zig`; `src/sdk/config.zig:389` dead enum |
+| 7 | GAP-PROPAGATOR-JAEGER | #24 | High | Not Impl | `src/propagation/` — no `jaeger.zig`; `src/sdk/config.zig:390` dead enum |
+| 8 | GAP-OTLP-WIRE-SCHEMA-URL | #26 | High | Not Impl | `src/exporters/otlp_http.zig` — 0 hits for `schema_url`; missing field constants |
+| 9 | GAP-OTLP-COMPRESSION | #27 | High | Not Impl | `src/sdk/config.zig:52` enum + `src/exporters/otlp_grpc.zig:296` `out[0]=0` hardcode |
+| 10 | GAP-PERIODIC-METRIC-READER | #29 | High | Not Impl | 0 hits for `PeriodicExportingMetricReader` repo-wide |
+
+(Continuing down: #30 OBSERVABLE, #32 GRPC-STATUS-PROPAGATION-Partial, #33 ENV-BSP, #35 ENV-METRIC-INTERVAL — all High.)
+
+---
+
+## New gaps proposed (NOT in catalog as of Phase 1)
+
+Phase 2 surfaced 4 candidates outside the catalog. After file:line verification only **one** survives as a real gap; the other three reduce to non-issues or are already-tracked.
+
+### GAP-DISABLED-TRACER-DOC — disabled-mode tracer is silent (proposed: Medium, Docs/Code Quality)
+
+- **Phase 2 finding:** `src/sdk/trace.zig:251-252` returns `Tracer{ .scope = scope }` when `build_options.otel_disabled` or `cfg.disabled` is true.
+- **Verification:** `src/api/trace.zig:308` declares `startSpanFn = noopStart` as the **default** — so the disabled-mode return is **safe** (calls fall through to noopStart, no null deref). Phase 2 N1 mis-classified this as a critical hazard.
+- **Real residual gap:** the disabled-mode contract is undocumented; callers cannot tell from the API whether a span returned by a disabled provider behaves as no-op (it does, but only by virtue of the default `startSpanFn`). Spec-level alignment: OTel SDK §"Disabled SDK" requires no-op semantics — met behaviourally, but not asserted by a test or documented in `docs/SPEC_COMPLIANCE.md`.
+- **Severity: Medium** (Code Quality / Test). Fix: add `test "disabled provider returns no-op tracer"` and a one-paragraph note in SPEC_COMPLIANCE.md.
+- **Acceptance criteria:** test exercises `cfg.disabled=true` path, asserts `tracer.startSpan()` returns a span whose `state == null`; SPEC_COMPLIANCE.md row for §Disabled SDK cites the test.
+- **Recommended Phase-4 action:** open a new GitLab issue; label `gap; quality; priority::medium; type::enhancement`.
+
+### GAP-METRIC-ENCODER-PLACEHOLDERS — REJECTED (not a gap)
+
+- **Phase 2 finding:** `src/exporters/otlp_http.zig:523,559` empty `{}` blocks "unreachable for X-shaped instruments".
+- **Verification:** Read of the surrounding switch (lines 515–561) shows the empty arms are switch exhaustiveness padding — `pt.value` is a tagged union and the comment correctly states the alternate tag cannot occur for the dispatching encoder. Behaviour is silent no-op (correct for unreachable arms in proto3 emitters); no UB in safe builds.
+- **Disposition:** Not a gap. No new issue.
+
+### GAP-GRPC-BUILD-FLAG-DIAGNOSTIC — REJECTED (already covered by #56)
+
+- **Phase 2 finding:** `src/exporters/otlp_grpc.zig:113-114,169-170` returns `error.UnsupportedTransport` silently when `build_options.use_devnw_grpc=false`.
+- **Verification:** Issue **#56** (`P1-10: Retry on UnsupportedTransport (fail-fast for misconfig)`) already tracks this exact diagnostic. The retry loop today retries on `UnsupportedTransport` (line 137) when it should fail-fast.
+- **Disposition:** Not a new gap; covered by **#56 (P1-10)**. Already in catalog as `perf::p1`. No new issue.
+
+### GAP-INTEGRATION-STRESS-ALIASING — REJECTED (subsumed by #79)
+
+- **Phase 2 finding:** `build.zig:399,402` keeps `test-integration` and `test-stress` as aliases for `test`.
+- **Verification:** Issue **#79** (`GAP-INTEGRATION-SUITE-MISSING`) already tracks this. The "no separate stress matrix" callout is a sub-bullet of the same gap.
+- **Disposition:** Not a new gap. No new issue.
+
+> **Net new gaps for Phase 4 (gap-sync):** **1** (GAP-DISABLED-TRACER-DOC, Medium).
+
+---
+
+## Tracker-stale issues recommended for closure
+
+Phase-2 already classified 5 as Implemented-but-tracker-stale; Phase-3 verifies the evidence supports closure for **3 of the 4 functional rows** (#1, #3, #31). #7 was already closed 2026-04-27 (out of `open` set as of Phase-1 collection).
+
+| IID | Gap-ID | Recommended action | Resolution evidence |
+|----:|--------|--------------------|---------------------|
+| #1  | GAP-INSTRUMENTATION-SCOPE-PROPAGATION | **Close** | `src/sdk/trace.zig:289-296` passes `scope` on both reused and fresh paths; `test/trace.zig:57,83-87` asserts `scope.name == "demo"` / `"lib-a"` plus `version` and `schema_url` round-trip. Title's `:240` line reference is stale (current code path is `:289-296`). |
+| #3  | GAP-OTLP-WIRE-INSTRUMENTATION-SCOPE | **Close** (sibling of #1) | `src/exporters/otlp_http.zig:1057-1058` writes `fn_scope_name`/`fn_scope_version` from the now-correct `instrumentation_scope`. Wire-level golden in `test/otlp_wire_parity.zig`. |
+| #31 | GAP-REDACT-NOT-WIRED | **Close** | `src/exporters/otlp_http.zig:644,873,1108,1386`, `src/exporters/prometheus.zig:201`, `src/internal/json_codec.zig:173` all invoke `redact.maskString(kv.key, s)`. Already covered by SEC-H-6 closure (commit `0cb9a79`) but the functional `gap` row was not closed in lockstep. |
+| #7  | GAP-OTLP-METRIC-EXPORT | (already closed) | Closed 2026-04-27, present in `GAP_ANALYSIS_RESOLVED.md`. |
+
+> **Recommended Phase-4 close candidates:** **3** functional gaps (#1, #3, #31). Each has an explicit test reference and code reference; the gap-sync agent will mark these `state::closed` on GitLab with the evidence above as the closure note.
+
+---
+
+## Updated severity histogram after recommended closures
+
+| Severity | Open after closures |
+|----------|--------------------:|
+| Critical | 4 (was 5; #1/#3 were Critical-pair; sibling closure removes 2 rows but #13/#12 remain → net −2 +0 → **3**) |
+| High     | 11 (was 12; #31 was High → **−1**) |
+| Medium   | 18 (was 17; **+1** for new GAP-DISABLED-TRACER-DOC → **18**) |
+| Low      | 20 (unchanged) |
+| **Total**| **52** |
+
+---
+
+## Artifacts written
+
+| Path | Purpose |
+|------|---------|
+| `docs/audit/gap-detector/REGISTRY.md` | this canonical Phase-3 registry |
+| `docs/audit/gap-detector/SYNC_PLAN.md` | Phase-4 sync plan (separate file, generated alongside) |
+
+The gap-sync agent (Phase 4) will read this REGISTRY.md and SYNC_PLAN.md and produce GitLab mutations only — no further edits to `docs/GAP_ANALYSIS.md` or `docs/GAP_ANALYSIS_RESOLVED.md` happen at Phase 3.

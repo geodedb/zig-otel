@@ -2,7 +2,7 @@
 
 > Resolved or invalidated gaps. Source: GitLab issue tracker at <https://gitlab.com/devnw/zig/otel/-/issues>.
 >
-> **Last sync:** 2026-04-26 (PM re-audit Phase 4 gap-sync) — adds GAP-BENCH-NOT-WIRED to the functional-closure ledger.
+> **Last sync:** 2026-04-27 (Phase 4 gap-sync — registry from `docs/audit/gap-detector/REGISTRY.md`) — adds tracker-stale closures #1, #3, #31.
 
 ---
 
@@ -96,6 +96,52 @@ The PM re-audit verified one functional gap closed since the morning sync.
 | Gap-ID | Title | Resolution | Issue URL |
 |--------|-------|------------|-----------|
 | GAP-OTLP-METRIC-EXPORT | No OTLP metric export path (HTTP `/v1/metrics` or gRPC `MetricsService/Export`) | OTLP/HTTP `metricExporter()` and OTLP/gRPC `metricExporter()` shipped. Encoder lives at `src/exporters/otlp_http.zig:encodeMetricsProto` and emits `ExportMetricsServiceRequest` per OTLP 1.10.0 (Sum / Gauge / Histogram with packed `bucket_counts`/`explicit_bounds`). HTTP path posts to `/v1/metrics` with retry/backoff parity to spans. gRPC path routes through `/opentelemetry.proto.collector.metrics.v1.MetricsService/Export`. JSON payload routes via `../json` (DevNW `streamingEncoder`) when `-Dotel_use_devnw_json=true`. New tests: 8 in `test/otlp_metrics.zig` (path/content-type assertions, retry behaviour, golden field-tag checks, JSON wire-shape) + a live-collector test in `test/remote_otlp.zig` ("OTLP/HTTPS live metric export to remote collector"). | <https://gitlab.com/devnw/zig/otel/-/issues/7> |
+
+---
+
+## Functional / Tracker-stale (closed 2026-04-27, Phase 4 gap-sync)
+
+The Phase 3 gap-detector registry (`docs/audit/gap-detector/REGISTRY.md`) identified three issues whose underlying defect was already fixed in code but whose tracker rows were left open. Phase 4 gap-sync closed each with a closure-evidence comment linking the audit registry.
+
+### GAP-INSTRUMENTATION-SCOPE-PROPAGATION: Tracer scope never reaches SpanState [RESOLVED — tracker-stale]
+
+- **Issue:** [#1](https://gitlab.com/devnw/zig/otel/-/issues/1) (closed 2026-04-27)
+- **Category:** Bug / Trace SDK
+- **Severity:** Critical
+- **Resolution:** Scope propagation flows correctly on both fresh and reused span paths. The title's `src/sdk/trace.zig:240` line reference is from the stale snapshot; current code path is `src/sdk/trace.zig:289-296`.
+- **Evidence:**
+  - `src/sdk/trace.zig:289-296` — scope flows from `self.scope` to `SpanState` on both fresh and reused span paths.
+  - `test/trace.zig:57` — asserts `scope.name == "demo"` round-trip.
+  - `test/trace.zig:83-87` — asserts `scope.name == "lib-a"`, `version`, and `schema_url` round-trip.
+- **Sibling closure:** GAP-OTLP-WIRE-INSTRUMENTATION-SCOPE (#3) — see below.
+- **Resolved date:** 2026-04-27
+
+### GAP-OTLP-WIRE-INSTRUMENTATION-SCOPE: ScopeSpans.scope.name always empty [RESOLVED — sibling of #1]
+
+- **Issue:** [#3](https://gitlab.com/devnw/zig/otel/-/issues/3) (closed 2026-04-27)
+- **Category:** Bug / Exporter
+- **Severity:** Critical
+- **Resolution:** Wire-shape symptom resolved automatically once scope propagation root cause (#1) was fixed. OTLP encoder writes the now-correct `instrumentation_scope`.
+- **Evidence:**
+  - `src/exporters/otlp_http.zig:1057-1058` — writes `fn_scope_name` / `fn_scope_version` from `instrumentation_scope`.
+  - `test/otlp_wire_parity.zig` — wire-level golden test asserts non-empty `scope.name`/`version` round-trip through OTLP encoding.
+- **Resolved date:** 2026-04-27
+
+### GAP-REDACT-NOT-WIRED: redact helpers never invoked by exporters [RESOLVED — coalesced with GAP-SEC-H-6]
+
+- **Issue:** [#31](https://gitlab.com/devnw/zig/otel/-/issues/31) (closed 2026-04-27)
+- **Category:** Bug / Security / Exporter
+- **Severity:** High
+- **Resolution:** `redact.maskString` is invoked in every export path. Code-side fix landed in commit `0cb9a79` as part of the GAP-SEC-H-6 closure run; the functional `gap` tracker row was not closed in lockstep at the time. Phase 4 gap-sync brings the gap tracker in sync with the security ledger.
+- **Evidence:**
+  - `src/exporters/otlp_http.zig:644` — span attribute writer.
+  - `src/exporters/otlp_http.zig:873` — log record attribute writer.
+  - `src/exporters/otlp_http.zig:1108` — metric data-point attribute writer.
+  - `src/exporters/otlp_http.zig:1386` — resource attribute writer.
+  - `src/exporters/prometheus.zig:201` — Prometheus label writer.
+  - `src/internal/json_codec.zig:173` — JSON encoder (stdout / file exporter path).
+  - GAP-SEC-H-6 row above (commit `0cb9a79`).
+- **Resolved date:** 2026-04-27
 
 ---
 

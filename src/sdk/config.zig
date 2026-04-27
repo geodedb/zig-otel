@@ -178,6 +178,25 @@ pub const LogProviderConfig = struct {
     otlp: OtlpConfig = .{},
 };
 
+/// BatchSpanProcessor knobs sourced from the `OTEL_BSP_*` env-var family
+/// (GAP-ENV-BSP, gitlab #33). Mirrors `BatchSpanProcessorOptions` field
+/// for field so a future caller can construct one with `.{
+///     .schedule_delay_ms = cfg.bsp.schedule_delay_ms,
+///     .export_timeout_ms = cfg.bsp.export_timeout_ms,
+///     .max_queue_size = cfg.bsp.max_queue_size,
+///     .max_export_batch_size = cfg.bsp.max_export_batch_size,
+/// }`. Spec defaults (OpenTelemetry Specification, "Batching processor"):
+///   schedule_delay        5_000 ms
+///   export_timeout       30_000 ms
+///   max_queue_size        2_048
+///   max_export_batch_size   512
+pub const BatchSpanProcessorConfig = struct {
+    schedule_delay_ms: u64 = 5_000,
+    export_timeout_ms: u64 = 30_000,
+    max_queue_size: u32 = 2048,
+    max_export_batch_size: u32 = 512,
+};
+
 pub const Config = struct {
     /// File-format version; matches the OTel declarative config 1.0.0 schema.
     file_format: []const u8 = "1.0.0",
@@ -189,6 +208,9 @@ pub const Config = struct {
     traces: TraceProviderConfig = .{},
     metrics: MetricProviderConfig = .{},
     logs: LogProviderConfig = .{},
+    /// `OTEL_BSP_*` env-var-driven BatchSpanProcessor knobs.
+    /// GAP-ENV-BSP (#33).
+    bsp: BatchSpanProcessorConfig = .{},
 
     // Ownership bookkeeping — set by loaders that duped from env / YAML.
     // Default Config{} uses static literals everywhere so the defaults
@@ -389,6 +411,33 @@ pub fn applyEnvFromMap(cfg: *Config, allocator: std.mem.Allocator, env_map: *con
         if (std.mem.eql(u8, v, "b3")) cfg.propagator = .b3;
         if (std.mem.eql(u8, v, "jaeger")) cfg.propagator = .jaeger;
     }
+
+    // GAP-ENV-BSP (#33): OTEL_BSP_* env-var family. Spec calls for
+    // graceful fallback on malformed values — empty string,
+    // non-numeric, or negative numbers all leave the default in
+    // place rather than failing config load.
+    if (parseU64Env(env_map, "OTEL_BSP_SCHEDULE_DELAY")) |ms| cfg.bsp.schedule_delay_ms = ms;
+    if (parseU64Env(env_map, "OTEL_BSP_EXPORT_TIMEOUT")) |ms| cfg.bsp.export_timeout_ms = ms;
+    if (parseU32Env(env_map, "OTEL_BSP_MAX_QUEUE_SIZE")) |n| cfg.bsp.max_queue_size = n;
+    if (parseU32Env(env_map, "OTEL_BSP_MAX_EXPORT_BATCH_SIZE")) |n| cfg.bsp.max_export_batch_size = n;
+}
+
+/// Parse an env-var value as a `u64`. Returns `null` when the var is
+/// absent, empty, or fails `parseInt` (negative, non-numeric, …). The
+/// spec is deliberate that misconfigured numeric env vars must not
+/// crash the SDK; falling back to the in-struct default keeps the
+/// process running with sane behaviour.
+fn parseU64Env(env_map: *const EnvMap, name: []const u8) ?u64 {
+    const v = env_map.get(name) orelse return null;
+    if (v.len == 0) return null;
+    return std.fmt.parseInt(u64, v, 10) catch null;
+}
+
+/// `parseU64Env` for `u32` fields (queue / batch sizes).
+fn parseU32Env(env_map: *const EnvMap, name: []const u8) ?u32 {
+    const v = env_map.get(name) orelse return null;
+    if (v.len == 0) return null;
+    return std.fmt.parseInt(u32, v, 10) catch null;
 }
 
 fn parseBool(v: []const u8) ?bool {

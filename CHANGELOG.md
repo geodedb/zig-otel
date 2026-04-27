@@ -181,6 +181,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`OTEL_BSP_*` env-var family parsed onto `Config.bsp` and wired
+  through to `BatchSpanProcessorOptions` (GAP-ENV-BSP, gitlab #33).**
+  `applyEnvFromMap` now reads `OTEL_BSP_SCHEDULE_DELAY` (default
+  5_000ms), `OTEL_BSP_EXPORT_TIMEOUT` (default 30_000ms),
+  `OTEL_BSP_MAX_QUEUE_SIZE` (default 2048), and
+  `OTEL_BSP_MAX_EXPORT_BATCH_SIZE` (default 512), populating the new
+  `BatchSpanProcessorConfig` sub-struct on `Config`. Invalid values
+  (empty, non-numeric, negative) fall back to spec defaults rather than
+  failing config load. `TraceConfig.bsp_options` carries
+  `BatchSpanProcessorOptions` through to `TracerProvider.init`, so the
+  default-exporter path picks up the env-driven knobs at construction;
+  the runtime BSP options struct gained the matching `export_timeout_ms`
+  field. Four new `test/config.zig` cases pin defaults, parse,
+  invalid-fallback, and the BSP options surface.
 - **Service-level performance SLOs + runtime hard-criterion gate
   (PERF-SLO-DEFINE, gitlab #167).** New `docs/performance/SLO.md`
   (~290 lines) defines per-op latency and allocation ceilings

@@ -116,6 +116,16 @@ pub const TraceConfig = struct {
     /// When `processors` is empty and a default exporter is supplied, the
     /// provider wraps it in a SimpleSpanProcessor.
     default_exporter: ?exp.SpanExporter = null,
+    /// Options for the default BatchSpanProcessor that the provider
+    /// constructs when `processors` is empty and `default_exporter` is
+    /// supplied. Wires the `OTEL_BSP_*` env-var family through to BSP
+    /// at construction time. `async_workers` defaults to 1 for the
+    /// default provider path (preserving ADR-0003 behaviour) when this
+    /// field is left at the spec defaults; callers building from a
+    /// resolved `Config` should copy `Config.bsp` over and additionally
+    /// set `async_workers` to the desired worker count.
+    /// GAP-ENV-BSP (#33).
+    bsp_options: exp.BatchSpanProcessorOptions = .{ .async_workers = 1 },
     max_attributes: usize = attrs_mod.max_attributes,
     /// Runtime kill-switch. When `true`, `tracer()` returns an API-layer
     /// noop tracer so every `startSpan` call collapses to `Span.noop`
@@ -204,9 +214,7 @@ pub const TracerProvider = struct {
             // ADR-0003: default to BatchSpanProcessor. Callers who
             // want the synchronous Simple path supply their own
             // SimpleSpanProcessor via `processors`.
-            const bsp = try exp.BatchSpanProcessor.init(allocator, exporter, resource_ptr, .{
-                .async_workers = 1,
-            });
+            const bsp = try exp.BatchSpanProcessor.init(allocator, exporter, resource_ptr, config.bsp_options);
             errdefer bsp.deinit();
             self.default_processor = .{ .batch = bsp };
             const owned = try allocator.alloc(exp.SpanProcessor, 1);

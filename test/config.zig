@@ -166,6 +166,70 @@ test "L-7: validate rejects NaN sampler_arg" {
     try std.testing.expectError(error.InvalidConfig, cfg.validate());
 }
 
+// -------------------------------------------------------------------------
+// GAP-ENV-BSP (#33): OTEL_BSP_* env vars must be parsed and surfaced on
+// `Config.bsp` so the BatchSpanProcessor can be reconfigured from the
+// environment. Spec defaults: schedule_delay 5_000ms, export_timeout
+// 30_000ms, max_queue_size 2048, max_export_batch_size 512.
+// -------------------------------------------------------------------------
+
+test "GAP-ENV-BSP: defaults when env unset" {
+    var env_map = otel.sdk.config.EnvMap.init(std.testing.allocator);
+    defer env_map.deinit();
+
+    var cfg: otel.sdk.config.Config = .{};
+    try otel.sdk.config.applyEnvFromMap(&cfg, std.testing.allocator, &env_map);
+    defer cfg.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(u64, 5_000), cfg.bsp.schedule_delay_ms);
+    try std.testing.expectEqual(@as(u64, 30_000), cfg.bsp.export_timeout_ms);
+    try std.testing.expectEqual(@as(u32, 2048), cfg.bsp.max_queue_size);
+    try std.testing.expectEqual(@as(u32, 512), cfg.bsp.max_export_batch_size);
+}
+
+test "GAP-ENV-BSP: all four env vars parse to expected values" {
+    var env_map = otel.sdk.config.EnvMap.init(std.testing.allocator);
+    defer env_map.deinit();
+    try env_map.put("OTEL_BSP_SCHEDULE_DELAY", "1234");
+    try env_map.put("OTEL_BSP_EXPORT_TIMEOUT", "9876");
+    try env_map.put("OTEL_BSP_MAX_QUEUE_SIZE", "4096");
+    try env_map.put("OTEL_BSP_MAX_EXPORT_BATCH_SIZE", "256");
+
+    var cfg: otel.sdk.config.Config = .{};
+    try otel.sdk.config.applyEnvFromMap(&cfg, std.testing.allocator, &env_map);
+    defer cfg.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(u64, 1234), cfg.bsp.schedule_delay_ms);
+    try std.testing.expectEqual(@as(u64, 9876), cfg.bsp.export_timeout_ms);
+    try std.testing.expectEqual(@as(u32, 4096), cfg.bsp.max_queue_size);
+    try std.testing.expectEqual(@as(u32, 256), cfg.bsp.max_export_batch_size);
+}
+
+test "GAP-ENV-BSP: invalid values fall back to defaults" {
+    var env_map = otel.sdk.config.EnvMap.init(std.testing.allocator);
+    defer env_map.deinit();
+    try env_map.put("OTEL_BSP_SCHEDULE_DELAY", "");
+    try env_map.put("OTEL_BSP_EXPORT_TIMEOUT", "not-a-number");
+    try env_map.put("OTEL_BSP_MAX_QUEUE_SIZE", "-99");
+    try env_map.put("OTEL_BSP_MAX_EXPORT_BATCH_SIZE", "abc");
+
+    var cfg: otel.sdk.config.Config = .{};
+    try otel.sdk.config.applyEnvFromMap(&cfg, std.testing.allocator, &env_map);
+    defer cfg.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(u64, 5_000), cfg.bsp.schedule_delay_ms);
+    try std.testing.expectEqual(@as(u64, 30_000), cfg.bsp.export_timeout_ms);
+    try std.testing.expectEqual(@as(u32, 2048), cfg.bsp.max_queue_size);
+    try std.testing.expectEqual(@as(u32, 512), cfg.bsp.max_export_batch_size);
+}
+
+test "GAP-ENV-BSP: BatchSpanProcessorOptions surface includes export_timeout_ms" {
+    // The runtime BSP options struct must carry the new field so wiring
+    // from Config.bsp -> BatchSpanProcessorOptions stays 1:1.
+    const opts: otel.sdk.exporter.BatchSpanProcessorOptions = .{};
+    try std.testing.expectEqual(@as(u64, 30_000), opts.export_timeout_ms);
+}
+
 test "M-4: applyYamlString values survive source buffer free" {
     // Allocate a YAML source on the heap, copy it into another buffer,
     // free the original, then assert Config still holds the right strings.

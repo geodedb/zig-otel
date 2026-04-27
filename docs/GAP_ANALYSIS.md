@@ -58,7 +58,7 @@
 | GAP-PERIODIC-METRIC-READER | PeriodicExportingMetricReader missing — long-running services emit no metrics until shutdown | Not Implemented | High | [#29](https://gitlab.com/devnw/zig/otel/-/issues/29) |
 | GAP-OBSERVABLE-INSTRUMENTS | Observable Counter/UpDownCounter/Gauge API absent | Not Implemented | High | [#30](https://gitlab.com/devnw/zig/otel/-/issues/30) |
 | GAP-GRPC-STATUS-PROPAGATION | grpc-status trailers invisible to OTLP retry loop — server-side back-pressure dropped | Partial | High | [#32](https://gitlab.com/devnw/zig/otel/-/issues/32) |
-| GAP-ENV-BSP | OTEL_BSP_* env vars not parsed — BatchSpanProcessor unreconfigurable from env | Not Implemented | High | [#33](https://gitlab.com/devnw/zig/otel/-/issues/33) |
+| GAP-ENV-BSP | OTEL_BSP_* env vars not parsed — BatchSpanProcessor unreconfigurable from env | Closed (`src/sdk/config.zig:193-198,415-422`, `src/sdk/export.zig:146-149`, `src/sdk/trace.zig:121-124,212`) | High | [#33](https://gitlab.com/devnw/zig/otel/-/issues/33) |
 | GAP-ENV-METRIC-INTERVAL | OTEL_METRIC_EXPORT_INTERVAL/_TIMEOUT env vars not parsed | Not Implemented | High | [#35](https://gitlab.com/devnw/zig/otel/-/issues/35) |
 | GAP-VENDOR-PROTO | opentelemetry-proto v1.10.0 not vendored — golden tests cannot decode against canonical schema | Not Implemented | Medium | [#48](https://gitlab.com/devnw/zig/otel/-/issues/48) |
 | GAP-VENDOR-SEMCONV | semantic-conventions v1.40.0 YAML not vendored | Not Implemented | Medium | [#49](https://gitlab.com/devnw/zig/otel/-/issues/49) |

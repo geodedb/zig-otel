@@ -141,6 +141,12 @@ pub const BatchSpanProcessorOptions = struct {
     max_queue_size: usize = 2048,
     max_export_batch_size: usize = 512,
     schedule_delay_ms: u64 = 5_000,
+    /// Maximum time (ms) to wait for any single export call before
+    /// returning `error.ExportTimeout`. Mirrors the spec's
+    /// `OTEL_BSP_EXPORT_TIMEOUT` knob and the runtime `forceFlush`
+    /// timeout used by callers. Default 30_000ms per the spec.
+    /// GAP-ENV-BSP (#33).
+    export_timeout_ms: u64 = 30_000,
     /// 0 keeps the synchronous drain. >0 spawns a DevNW thread-pool with
     /// the given worker count when `-Dotel_use_devnw_pool=true`. The
     /// option is silently ignored (synchronous drain stays in effect)

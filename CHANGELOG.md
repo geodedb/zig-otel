@@ -116,8 +116,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pointer, numbers table). Combined with the 2026-04-26 P0-1/P0-2/P0-4
   dirs, every micro-scenario in `benchmarks/micro/main.zig` now has a
   captured snapshot. **Partial close** of BENCH-BASELINES-MISSING — the
-  remaining 14 perf gaps still need a bench probe authored before a
-  baseline can be captured; reissued in `docs/PERF_GAP_ANALYSIS.md`
+  remaining 18 perf gaps still need a bench probe authored before a
+  baseline can be captured (plus 2 won't-do rows P1-4 / P1-12);
+  reissued in `docs/PERF_GAP_ANALYSIS.md`
   §"Deferred bench probes". (BENCH-BASELINES-MISSING #166, partial)
 
 ### Changed

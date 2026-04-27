@@ -169,3 +169,21 @@ Five-PR closure run executed end-to-end against `main` after the audit landed. P
 **Verifier verdict:** ALL PASS. `zig build test --summary all` → **109/21/0** default, **114/16/0** with DevNW codecs. Zero regressions.
 
 **Out of this run (operator follow-ups):** H-7 (#80), NEW-M-2 (#140), BENCH-BASELINES-MISSING (#166), PERF-SLO-DEFINE (#167) — all carry separate workflows and SLAs.
+
+## Follow-ups Closed — 2026-04-27
+
+Five deferred follow-up items from the §"Operator-Pending Follow-Ups" list above were addressed in a second close-out pass on the same day. Plan: `docs/audit/gap-closure/PLAN_2026-04-27_FOLLOWUPS.md`. Completion report: `docs/audit/gap-closure/COMPLETION_REPORT_2026-04-27_FOLLOWUPS.md`. Verifier verdict: ALL PASS (`zig build test --summary all` → **112/21/0** default, **117/16/0** with DevNW codecs; zero regressions).
+
+| # | Gap | Issue | Commit | Status | Domain | Evidence |
+|--:|-----|------:|--------|--------|--------|----------|
+| 1 | M-3 — DevNW upstream Sigstore/cosign signing | [#84](https://gitlab.com/devnw/zig/otel/-/work_items/84) | `914579e` | Won't Do (this repo) | Security / Supply chain | `docs/SECURITY_GAP_ANALYSIS.md:115` row 13; reclassified from Partial → Won't Do — signing infra is owned by DevNW shared CI (tracked OOB at `gitlab.com/devnw/meta`); consumer-side mitigations (SHA pinning + osv-scanner CI gate) remain in place. |
+| 2 | NEW-M-2 — File JSONL exporter follows symlinks | [#140](https://gitlab.com/devnw/zig/otel/-/work_items/140) (CONFIDENTIAL) | `d8dd8a5` | Closed | Security | `src/exporters/file.zig:50-69` — open path now uses `Dir.openFile(.{ .follow_symlinks = false })` first, falling through to `Dir.createFile(.{ .exclusive = true })` (`O_NOFOLLOW` + `O_CREAT \| O_EXCL`) on `error.FileNotFound`; TOCTOU window closed at the kernel level. Regression tests: `test/file_exporter_symlink.zig` (3 tests). |
+| 3 | H-7 — CI bearer-token rotation | [#80](https://gitlab.com/devnw/zig/otel/-/work_items/80) (CONFIDENTIAL) | `b3301e7` | **Blocked (operator-pending)** — issue stays OPEN | Security / Operations | `scripts/audit_ci_logs.sh` smoke-checked (`--help` exit 0, bad-flag exit 2, syntax clean); evidence captured in `docs/audit/h7-audit-evidence-2026-04-27.txt`. Runbook `docs/runbooks/h7-token-rotation.md` hardened with a prominent "audit BEFORE rotate" warning + project URL + `glab auth login` pre-flight. 5-step operator checklist in `SECURITY_GAP_ANALYSIS.md` §2.1. Deadline **2026-05-03**. Owner `<benji@codepros.org>`. |
+| 4 | PERF-SLO-DEFINE — service-level performance SLOs | [#167](https://gitlab.com/devnw/zig/otel/-/work_items/167) | `e82205d` | Closed | Performance | `docs/performance/SLO.md` (~290 lines) defines 4 hard-criterion rules; `benchmarks/check_hard_criteria.zig` extended with Rule 3 (`micro_attr_put_update` p99 ≤ 50 ns/op, 1.6× headroom over the 31.92 ns/op floor) and Rule 4 (`micro_counter_add_4_attrs_hit` allocs/op ≤ 0.005, 3.3× headroom over the 0.0015 allocs/op floor); `make slo-check` wired into `make ci`. |
+| 5 | BENCH-BASELINES-MISSING — captured + enumerate deferred probes | [#166](https://gitlab.com/devnw/zig/otel/-/work_items/166) | `94866d2` | **Partial** — issue stays OPEN with reduced scope | Performance | `docs/performance/2026-04-27-pr-2-encoder/{results.md,results/baseline.json,results/latest.json}` frozen ReleaseFast snapshot for `micro_encode_spans_proto_{64,512,4096}`. Combined with 2026-04-26 P0-1 / P0-2 / P0-4 + zero-overhead-when-disabled dirs, every micro-scenario in `benchmarks/micro/main.zig` is covered. Remaining 18 deferred probes + 2 won't-do rows enumerated in `docs/PERF_GAP_ANALYSIS.md` §"Deferred bench probes" with a 5-step unblock recipe per row. |
+
+**Issues closed on tracker:** 3 (#84, #140, #167).
+**Issues kept open with status comment:** 2 (#80 — Blocked operator-pending, #166 — Partial / reduced scope).
+**Net session estimate vs actual:** ~2.5 hours predicted; landed 5 commits (`914579e..94866d2`) on `main` (not yet pushed at hand-off).
+
+**Doc reconciliation in this pass:** corrected `docs/PERF_GAP_ANALYSIS.md:99` and `CHANGELOG.md` to read "18 deferred + 2 won't-do" (was "14 untracked gaps"); the deferred-probes table itself was always 18 rows. Plan-time wording in `docs/audit/gap-closure/PLAN_2026-04-27_FOLLOWUPS.md` left as historical artefact.

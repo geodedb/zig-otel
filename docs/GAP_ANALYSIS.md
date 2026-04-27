@@ -59,7 +59,7 @@
 | GAP-OBSERVABLE-INSTRUMENTS | Observable Counter/UpDownCounter/Gauge API absent | Not Implemented | High | [#30](https://gitlab.com/devnw/zig/otel/-/issues/30) |
 | GAP-GRPC-STATUS-PROPAGATION | grpc-status trailers invisible to OTLP retry loop — server-side back-pressure dropped | Partial | High | [#32](https://gitlab.com/devnw/zig/otel/-/issues/32) |
 | GAP-ENV-BSP | OTEL_BSP_* env vars not parsed — BatchSpanProcessor unreconfigurable from env | Closed (`src/sdk/config.zig:193-198,415-422`, `src/sdk/export.zig:146-149`, `src/sdk/trace.zig:121-124,212`) | High | [#33](https://gitlab.com/devnw/zig/otel/-/issues/33) |
-| GAP-ENV-METRIC-INTERVAL | OTEL_METRIC_EXPORT_INTERVAL/_TIMEOUT env vars not parsed | Not Implemented | High | [#35](https://gitlab.com/devnw/zig/otel/-/issues/35) |
+| GAP-ENV-METRIC-INTERVAL | OTEL_METRIC_EXPORT_INTERVAL/_TIMEOUT env vars not parsed | Closed (`src/sdk/config.zig:209-212,231,445-446`) — env-var parse only; reader wiring tracked under #29 | High | [#35](https://gitlab.com/devnw/zig/otel/-/issues/35) |
 | GAP-VENDOR-PROTO | opentelemetry-proto v1.10.0 not vendored — golden tests cannot decode against canonical schema | Not Implemented | Medium | [#48](https://gitlab.com/devnw/zig/otel/-/issues/48) |
 | GAP-VENDOR-SEMCONV | semantic-conventions v1.40.0 YAML not vendored | Not Implemented | Medium | [#49](https://gitlab.com/devnw/zig/otel/-/issues/49) |
 | GAP-SEMCONV-COVERAGE | generated semconv covers ~60 attrs vs hundreds in stable v1.40.0 surface | Partial | Medium | [#50](https://gitlab.com/devnw/zig/otel/-/issues/50) |

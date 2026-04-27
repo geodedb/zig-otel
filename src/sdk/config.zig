@@ -197,6 +197,20 @@ pub const BatchSpanProcessorConfig = struct {
     max_export_batch_size: u32 = 512,
 };
 
+/// PeriodicExportingMetricReader knobs sourced from
+/// `OTEL_METRIC_EXPORT_INTERVAL` and `OTEL_METRIC_EXPORT_TIMEOUT`
+/// (GAP-ENV-METRIC-INTERVAL, gitlab #35). The reader itself is tracked
+/// separately under #29 (Day-2); this struct stores the parsed values
+/// so the env vars are first-class citizens of the config surface and
+/// the reader can pick them up the moment it lands. Spec defaults
+/// (OpenTelemetry Specification, "Periodic exporting MetricReader"):
+///   export_interval  60_000 ms
+///   export_timeout   30_000 ms
+pub const MetricReaderConfig = struct {
+    export_interval_ms: u64 = 60_000,
+    export_timeout_ms: u64 = 30_000,
+};
+
 pub const Config = struct {
     /// File-format version; matches the OTel declarative config 1.0.0 schema.
     file_format: []const u8 = "1.0.0",
@@ -211,6 +225,10 @@ pub const Config = struct {
     /// `OTEL_BSP_*` env-var-driven BatchSpanProcessor knobs.
     /// GAP-ENV-BSP (#33).
     bsp: BatchSpanProcessorConfig = .{},
+    /// `OTEL_METRIC_EXPORT_INTERVAL` / `_TIMEOUT` knobs for the
+    /// (Day-2 #29) PeriodicExportingMetricReader.
+    /// GAP-ENV-METRIC-INTERVAL (#35).
+    metric_reader: MetricReaderConfig = .{},
 
     // Ownership bookkeeping — set by loaders that duped from env / YAML.
     // Default Config{} uses static literals everywhere so the defaults
@@ -420,6 +438,12 @@ pub fn applyEnvFromMap(cfg: *Config, allocator: std.mem.Allocator, env_map: *con
     if (parseU64Env(env_map, "OTEL_BSP_EXPORT_TIMEOUT")) |ms| cfg.bsp.export_timeout_ms = ms;
     if (parseU32Env(env_map, "OTEL_BSP_MAX_QUEUE_SIZE")) |n| cfg.bsp.max_queue_size = n;
     if (parseU32Env(env_map, "OTEL_BSP_MAX_EXPORT_BATCH_SIZE")) |n| cfg.bsp.max_export_batch_size = n;
+
+    // GAP-ENV-METRIC-INTERVAL (#35): OTEL_METRIC_EXPORT_* env vars.
+    // Stored on `cfg.metric_reader`; the reader itself
+    // (PeriodicExportingMetricReader) lands under #29.
+    if (parseU64Env(env_map, "OTEL_METRIC_EXPORT_INTERVAL")) |ms| cfg.metric_reader.export_interval_ms = ms;
+    if (parseU64Env(env_map, "OTEL_METRIC_EXPORT_TIMEOUT")) |ms| cfg.metric_reader.export_timeout_ms = ms;
 }
 
 /// Parse an env-var value as a `u64`. Returns `null` when the var is

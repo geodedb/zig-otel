@@ -230,6 +230,53 @@ test "GAP-ENV-BSP: BatchSpanProcessorOptions surface includes export_timeout_ms"
     try std.testing.expectEqual(@as(u64, 30_000), opts.export_timeout_ms);
 }
 
+// -------------------------------------------------------------------------
+// GAP-ENV-METRIC-INTERVAL (#35): OTEL_METRIC_EXPORT_INTERVAL and
+// OTEL_METRIC_EXPORT_TIMEOUT must be parsed onto Config.metric_reader so
+// the (Day-2) PeriodicExportingMetricReader can pick them up. Spec
+// defaults: export_interval 60_000ms, export_timeout 30_000ms.
+// -------------------------------------------------------------------------
+
+test "GAP-ENV-METRIC-INTERVAL: defaults when env unset" {
+    var env_map = otel.sdk.config.EnvMap.init(std.testing.allocator);
+    defer env_map.deinit();
+
+    var cfg: otel.sdk.config.Config = .{};
+    try otel.sdk.config.applyEnvFromMap(&cfg, std.testing.allocator, &env_map);
+    defer cfg.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(u64, 60_000), cfg.metric_reader.export_interval_ms);
+    try std.testing.expectEqual(@as(u64, 30_000), cfg.metric_reader.export_timeout_ms);
+}
+
+test "GAP-ENV-METRIC-INTERVAL: both env vars parse to expected values" {
+    var env_map = otel.sdk.config.EnvMap.init(std.testing.allocator);
+    defer env_map.deinit();
+    try env_map.put("OTEL_METRIC_EXPORT_INTERVAL", "15000");
+    try env_map.put("OTEL_METRIC_EXPORT_TIMEOUT", "7500");
+
+    var cfg: otel.sdk.config.Config = .{};
+    try otel.sdk.config.applyEnvFromMap(&cfg, std.testing.allocator, &env_map);
+    defer cfg.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(u64, 15000), cfg.metric_reader.export_interval_ms);
+    try std.testing.expectEqual(@as(u64, 7500), cfg.metric_reader.export_timeout_ms);
+}
+
+test "GAP-ENV-METRIC-INTERVAL: invalid values fall back to defaults" {
+    var env_map = otel.sdk.config.EnvMap.init(std.testing.allocator);
+    defer env_map.deinit();
+    try env_map.put("OTEL_METRIC_EXPORT_INTERVAL", "");
+    try env_map.put("OTEL_METRIC_EXPORT_TIMEOUT", "nope");
+
+    var cfg: otel.sdk.config.Config = .{};
+    try otel.sdk.config.applyEnvFromMap(&cfg, std.testing.allocator, &env_map);
+    defer cfg.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(u64, 60_000), cfg.metric_reader.export_interval_ms);
+    try std.testing.expectEqual(@as(u64, 30_000), cfg.metric_reader.export_timeout_ms);
+}
+
 test "M-4: applyYamlString values survive source buffer free" {
     // Allocate a YAML source on the heap, copy it into another buffer,
     // free the original, then assert Config still holds the right strings.

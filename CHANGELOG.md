@@ -181,6 +181,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`OTEL_METRIC_EXPORT_INTERVAL` / `OTEL_METRIC_EXPORT_TIMEOUT`
+  parsed onto `Config.metric_reader` (GAP-ENV-METRIC-INTERVAL,
+  gitlab #35).** New `MetricReaderConfig` sub-struct on `Config`
+  with `export_interval_ms` (spec default 60_000ms) and
+  `export_timeout_ms` (spec default 30_000ms). `applyEnvFromMap`
+  reads both vars and falls back to defaults on empty / non-numeric
+  values. The `PeriodicExportingMetricReader` itself is tracked
+  separately under #29 (Day-2); landing the env-var surface now means
+  the reader can pick up operator-supplied values the moment it
+  ships, with no further config plumbing required. Three
+  `test/config.zig` cases pin defaults, parse, and invalid-fallback.
 - **`OTEL_BSP_*` env-var family parsed onto `Config.bsp` and wired
   through to `BatchSpanProcessorOptions` (GAP-ENV-BSP, gitlab #33).**
   `applyEnvFromMap` now reads `OTEL_BSP_SCHEDULE_DELAY` (default

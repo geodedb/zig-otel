@@ -307,10 +307,7 @@ test "OTLP/HTTPS live metric export to remote collector" {
     h.record(20.0, &.{});
 
     const snapshot = try otel.sdk.metrics.collect(&mp, allocator);
-    defer {
-        for (snapshot) |s| allocator.free(s.points);
-        allocator.free(snapshot);
-    }
+    defer otel.sdk.metrics.freeSnapshot(allocator, snapshot);
     try std.testing.expect(snapshot.len >= 2);
 
     var headers_buf: [4096]u8 = undefined;

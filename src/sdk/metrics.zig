@@ -21,6 +21,34 @@ const exp = @import("export.zig");
 /// alongside OTLP. See docs/DEPENDENCIES.md for the rationale.
 const devnw_metrics = if (build_options.use_devnw_metrics) @import("devnw_metrics") else struct {};
 
+/// Zero-arg mutex wrapper around `std.Io.Mutex`'s `*Uncancelable` API
+/// using the global single-threaded I/O instance. Mirrors the
+/// `tp.sync.Mutex` shape used elsewhere in the SDK so we don't have to
+/// plumb an `io` through every record-path. Safe to call from any
+/// thread regardless of whether the caller is registered with a
+/// `Threaded` runtime — `lockUncancelable`/`unlock` ignore the futex
+/// vtable's userdata.
+///
+/// PR-1 / gitlab #135: this is intentionally an *unconditional* real
+/// mutex (not a flag-gated no-op) because the race the lock closes is
+/// triggered by any external `std.Thread.spawn` caller, regardless of
+/// whether the `-Dotel_use_devnw_pool` build flag is set.
+const InstrumentMutex = struct {
+    inner: std.Io.Mutex = .init,
+
+    inline fn io() std.Io {
+        return std.Io.Threaded.global_single_threaded.io();
+    }
+
+    pub fn lock(self: *InstrumentMutex) void {
+        self.inner.lockUncancelable(io());
+    }
+
+    pub fn unlock(self: *InstrumentMutex) void {
+        self.inner.unlock(io());
+    }
+};
+
 /// Selects the aggregation backend. The in-repo backend is always
 /// available; `devnw` mirrors counter/up-down/histogram/gauge writes
 /// into a DevNW `metrics.Registry` while the in-repo aggregation
@@ -62,6 +90,18 @@ const InstrumentBackend = struct {
     /// each unique attribute combination. Hit-path lookup is O(1) and
     /// does not allocate. See `attrFingerprint`.
     points_index: std.AutoHashMapUnmanaged(u64, u32) = .empty,
+    /// Per-instrument writer/collector mutex (PR-1, gitlab #135).
+    ///
+    /// Every mutation of `points` / `points_index`, every read of an
+    /// `AggregatedPoint` from `points.items`, and the per-instrument
+    /// snapshot loop in `collect()` must run under this lock. The lock
+    /// is intentionally per-instrument (not provider-wide) so concurrent
+    /// counters/histograms on different instruments stay independent.
+    /// Holding it covers (a) the racing-grow on `points.append`, (b)
+    /// the dangling `&items[idx]` after a re-grow, and (c) the
+    /// torn read in `collect()` walking a slice whose `.items.ptr` is
+    /// being moved by a concurrent recorder.
+    mu: InstrumentMutex = .{},
     is_monotonic: bool = true,
     /// Back-pointer so instrument operations can route through the
     /// provider without a threadlocal.
@@ -265,19 +305,32 @@ pub const MeterProvider = struct {
         inst.devnw_name = sanitized;
     }
 
-    fn pointFor(self: *MeterProvider, inst: *InstrumentBackend, attributes: []const attrs_mod.Entry, now: u64) !*AggregatedPoint {
+    /// Resolve (or create) the storage index for the point that owns
+    /// `attributes` on this instrument.
+    ///
+    /// **Caller must hold `inst.mu`** for the entire window between the
+    /// call and the last access to `inst.points.items[idx]`. The
+    /// returned index is only stable while the lock is held: a
+    /// concurrent recorder that triggers `points.append` invalidates
+    /// every cached `&items[i]` pointer. See PR-1 / gitlab #135.
+    fn pointIndexFor(self: *MeterProvider, inst: *InstrumentBackend, attributes: []const attrs_mod.Entry, now: u64) !u32 {
         // Hit path: zero-alloc canonical fingerprint -> O(1) index lookup.
         const fp = attrFingerprint(attributes);
-        if (inst.points_index.get(fp)) |idx| {
-            return &inst.points.items[idx];
-        }
+        if (inst.points_index.get(fp)) |idx| return idx;
+
         // Miss path: build the formatted key for storage and append a
         // new point. attribute_key remains useful for stable
         // diagnostics and Prometheus exposition; only this path pays
-        // the allocation cost.
+        // the allocation cost. Allocations happen *after* we've
+        // committed to the miss branch but *before* the index insert
+        // so a partial failure doesn't leak an entry into
+        // `points_index` that points at a non-existent slot.
         const key = try attributeKey(self.allocator, attributes);
+        errdefer self.allocator.free(key);
         var attr_set = attrs_mod.AttributeSet.init(self.allocator);
+        errdefer attr_set.deinit();
         for (attributes) |entry| try attr_set.put(entry.key, entry.value);
+
         const pt: AggregatedPoint = .{
             .attribute_key = key,
             .attributes = attr_set,
@@ -291,16 +344,26 @@ pub const MeterProvider = struct {
                 .histogram => blk: {
                     const bounds = inst.descriptor.explicit_buckets orelse metrics_api.ExplicitBuckets{ .boundaries = &default_histogram_bounds };
                     const owned_bounds = try self.allocator.dupe(f64, bounds.boundaries);
+                    errdefer self.allocator.free(owned_bounds);
                     const counts = try self.allocator.alloc(u64, owned_bounds.len + 1);
                     @memset(counts, 0);
                     break :blk .{ .histogram = .{ .bounds = owned_bounds, .counts = counts } };
                 },
             },
         };
+
         try inst.points.append(self.allocator, pt);
         const idx: u32 = @intCast(inst.points.items.len - 1);
-        try inst.points_index.put(self.allocator, fp, idx);
-        return &inst.points.items[idx];
+        inst.points_index.put(self.allocator, fp, idx) catch |err| {
+            // Roll the append back so the slice and the index stay in
+            // sync. The just-appended point still owns its
+            // `attribute_key`/`attributes`/histogram buffers, so we
+            // explicitly tear those down before truncating.
+            var dropped = inst.points.pop().?;
+            dropped.deinit(self.allocator);
+            return err;
+        };
+        return idx;
     }
 };
 
@@ -451,12 +514,18 @@ fn makeCounter(ctx: ?*anyopaque, d: metrics_api.InstrumentDescriptor) anyerror!m
 fn counterAdd(ctx: ?*anyopaque, value: u64, attributes: []const attrs_mod.Entry) void {
     const inst: *InstrumentBackend = @ptrCast(@alignCast(ctx.?));
     const provider_ptr = providerOf(inst);
-    const pt = provider_ptr.pointFor(inst, attributes, provider_ptr.clock.now()) catch return;
+    const now = provider_ptr.clock.now();
+
+    inst.mu.lock();
+    defer inst.mu.unlock();
+    const idx = provider_ptr.pointIndexFor(inst, attributes, now) catch return;
+    const pt = &inst.points.items[idx];
     switch (pt.value) {
         .sum_uint => |*v| v.* +%= value,
         else => {},
     }
     pt.last_unix_nano = provider_ptr.clock.now();
+
     mirrorCounterAdd(inst, value);
 }
 
@@ -478,12 +547,18 @@ fn makeUpDownCounter(ctx: ?*anyopaque, d: metrics_api.InstrumentDescriptor) anye
 fn udcAdd(ctx: ?*anyopaque, value: i64, attributes: []const attrs_mod.Entry) void {
     const inst: *InstrumentBackend = @ptrCast(@alignCast(ctx.?));
     const provider_ptr = providerOf(inst);
-    const pt = provider_ptr.pointFor(inst, attributes, provider_ptr.clock.now()) catch return;
+    const now = provider_ptr.clock.now();
+
+    inst.mu.lock();
+    defer inst.mu.unlock();
+    const idx = provider_ptr.pointIndexFor(inst, attributes, now) catch return;
+    const pt = &inst.points.items[idx];
     switch (pt.value) {
         .sum_int => |*v| v.* +%= value,
         else => {},
     }
     pt.last_unix_nano = provider_ptr.clock.now();
+
     mirrorGaugeAdd(inst, value);
 }
 
@@ -496,23 +571,29 @@ fn makeHistogram(ctx: ?*anyopaque, d: metrics_api.InstrumentDescriptor) anyerror
 fn histRecord(ctx: ?*anyopaque, value: f64, attributes: []const attrs_mod.Entry) void {
     const inst: *InstrumentBackend = @ptrCast(@alignCast(ctx.?));
     const provider_ptr = providerOf(inst);
-    const pt = provider_ptr.pointFor(inst, attributes, provider_ptr.clock.now()) catch return;
+    const now = provider_ptr.clock.now();
+
+    inst.mu.lock();
+    defer inst.mu.unlock();
+    const idx = provider_ptr.pointIndexFor(inst, attributes, now) catch return;
+    const pt = &inst.points.items[idx];
     switch (pt.value) {
         .histogram => |*h| {
             h.sum += value;
             h.count += 1;
             h.min = if (h.min) |m| @min(m, value) else value;
             h.max = if (h.max) |m| @max(m, value) else value;
-            var idx: usize = 0;
+            var bucket: usize = 0;
             for (h.bounds) |b| {
                 if (value <= b) break;
-                idx += 1;
+                bucket += 1;
             }
-            h.counts[idx] += 1;
+            h.counts[bucket] += 1;
         },
         else => {},
     }
     pt.last_unix_nano = provider_ptr.clock.now();
+
     mirrorHistogramObserve(inst, value);
 }
 
@@ -525,12 +606,18 @@ fn makeGauge(ctx: ?*anyopaque, d: metrics_api.InstrumentDescriptor) anyerror!met
 fn gaugeSet(ctx: ?*anyopaque, value: f64, attributes: []const attrs_mod.Entry) void {
     const inst: *InstrumentBackend = @ptrCast(@alignCast(ctx.?));
     const provider_ptr = providerOf(inst);
-    const pt = provider_ptr.pointFor(inst, attributes, provider_ptr.clock.now()) catch return;
+    const now = provider_ptr.clock.now();
+
+    inst.mu.lock();
+    defer inst.mu.unlock();
+    const idx = provider_ptr.pointIndexFor(inst, attributes, now) catch return;
+    const pt = &inst.points.items[idx];
     switch (pt.value) {
         .gauge_double => |*v| v.* = value,
         else => {},
     }
     pt.last_unix_nano = provider_ptr.clock.now();
+
     mirrorGaugeSet(inst, value);
 }
 
@@ -587,53 +674,142 @@ fn mirrorHistogramObserve(inst: *InstrumentBackend, value: f64) void {
 }
 
 /// Snapshot every instrument into `out_alloc`-owned MetricData slices.
-/// The caller frees the returned slice and each element's points.
+///
+/// The returned snapshot is **owned, lock-free, and safe to consume
+/// without further coordination** with concurrent record-paths. Per
+/// PR-1 / gitlab #135, every per-instrument copy runs under
+/// `inst.mu` and the result fully detaches from `inst.points`:
+///   - `DataPoint.value.histogram.bounds`/`counts` are duped into
+///     `out_alloc`.
+///   - `DataPoint.attributes` is a freshly-allocated `AttributeSet`
+///     in `out_alloc` (not a borrow into `inst.points.items[i]`).
+///
+/// **Free with `freeSnapshot(out_alloc, snap)`**, which deinits the
+/// cloned attribute sets and the cloned histogram buffers before
+/// releasing the slice. Tests / callers that previously used the
+/// `for (snap) |s| free(s.points); free(snap);` pattern must migrate
+/// — the old shape was only valid because `attributes` was a borrow
+/// destroyed by `MeterProvider.deinit`; the post-fix snapshot owns
+/// independent storage that needs an explicit free.
 pub fn collect(provider: *MeterProvider, out_alloc: std.mem.Allocator) ![]exp.MetricData {
     var out: std.ArrayList(exp.MetricData) = .empty;
     errdefer {
-        for (out.items) |m| out_alloc.free(m.points);
+        // Tear down already-cloned MetricData entries (per-point
+        // attribute sets + histogram buffers) before releasing the
+        // outer ArrayList. We do not call `freeSnapshot` here because
+        // the slice still lives in `out.items`; freeing per-element
+        // first then deinit-ing the ArrayList itself handles the
+        // ownership cleanly even if `toOwnedSlice` would OOM.
+        for (out.items) |m| {
+            for (m.points) |*pt| freeDataPoint(out_alloc, pt);
+            out_alloc.free(@as([]exp.DataPoint, @constCast(m.points)));
+        }
         out.deinit(out_alloc);
     }
 
     for (provider.instruments.items) |inst| {
-        if (inst.points.items.len == 0) continue;
-        const points = try out_alloc.alloc(exp.DataPoint, inst.points.items.len);
+        // Take the per-instrument lock for the entire copy window so
+        // (a) the source slice cannot grow underneath us, and
+        // (b) concurrent recorders observe a consistent view of each
+        // point's value/last_unix_nano.
+        inst.mu.lock();
+        const empty = inst.points.items.len == 0;
+        if (empty) {
+            inst.mu.unlock();
+            continue;
+        }
+
+        const points = out_alloc.alloc(exp.DataPoint, inst.points.items.len) catch |err| {
+            inst.mu.unlock();
+            return err;
+        };
+        // How many entries in `points` have been fully populated;
+        // used by the error path to roll back partial allocations
+        // (cloned attribute sets / histogram buffers) without leaking.
+        var populated: usize = 0;
+        errdefer {
+            // Lock is already released by the time errdefer runs in
+            // the inner loop's error path; we reacquire it is not
+            // necessary because `points` is `out_alloc`-owned and
+            // `populated` tracks fully-cloned entries only.
+            var k: usize = 0;
+            while (k < populated) : (k += 1) freeDataPoint(out_alloc, &points[k]);
+            out_alloc.free(points);
+        }
+
         for (inst.points.items, 0..) |*pt, i| {
+            // Clone the attribute set into out_alloc-owned storage
+            // so the snapshot fully detaches from `inst.points`.
+            const attr_clone = out_alloc.create(attrs_mod.AttributeSet) catch |err| {
+                inst.mu.unlock();
+                return err;
+            };
+            attr_clone.* = attrs_mod.AttributeSet.init(out_alloc);
+            for (pt.attributes.entries.items) |entry| {
+                attr_clone.put(entry.key, entry.value) catch |err| {
+                    attr_clone.deinit();
+                    out_alloc.destroy(attr_clone);
+                    inst.mu.unlock();
+                    return err;
+                };
+            }
+
             points[i] = switch (pt.value) {
                 .sum_int => |v| .{
                     .start_unix_nano = pt.start_unix_nano,
                     .time_unix_nano = pt.last_unix_nano,
-                    .attributes = &pt.attributes,
+                    .attributes = attr_clone,
                     .value = .{ .number = .{ .int = v } },
                 },
                 .sum_uint => |v| .{
                     .start_unix_nano = pt.start_unix_nano,
                     .time_unix_nano = pt.last_unix_nano,
-                    .attributes = &pt.attributes,
+                    .attributes = attr_clone,
                     .value = .{ .number = .{ .int = @intCast(v) } },
                 },
                 .gauge_double => |v| .{
                     .start_unix_nano = pt.start_unix_nano,
                     .time_unix_nano = pt.last_unix_nano,
-                    .attributes = &pt.attributes,
+                    .attributes = attr_clone,
                     .value = .{ .number = .{ .double = v } },
                 },
-                .histogram => |h| .{
-                    .start_unix_nano = pt.start_unix_nano,
-                    .time_unix_nano = pt.last_unix_nano,
-                    .attributes = &pt.attributes,
-                    .value = .{ .histogram = .{
-                        .bounds = h.bounds,
-                        .counts = h.counts,
-                        .sum = h.sum,
-                        .count = h.count,
-                        .min = h.min,
-                        .max = h.max,
-                    } },
+                .histogram => |h| blk: {
+                    const bounds_copy = out_alloc.dupe(f64, h.bounds) catch |err| {
+                        attr_clone.deinit();
+                        out_alloc.destroy(attr_clone);
+                        inst.mu.unlock();
+                        return err;
+                    };
+                    const counts_copy = out_alloc.dupe(u64, h.counts) catch |err| {
+                        out_alloc.free(bounds_copy);
+                        attr_clone.deinit();
+                        out_alloc.destroy(attr_clone);
+                        inst.mu.unlock();
+                        return err;
+                    };
+                    break :blk .{
+                        .start_unix_nano = pt.start_unix_nano,
+                        .time_unix_nano = pt.last_unix_nano,
+                        .attributes = attr_clone,
+                        .value = .{ .histogram = .{
+                            .bounds = bounds_copy,
+                            .counts = counts_copy,
+                            .sum = h.sum,
+                            .count = h.count,
+                            .min = h.min,
+                            .max = h.max,
+                        } },
+                    };
                 },
             };
+            populated = i + 1;
         }
-        try out.append(out_alloc, .{
+
+        // Snapshot the metadata fields needed for the MetricData
+        // envelope while we still hold the lock so a concurrent
+        // descriptor mutation (none today, but future-proofing) is
+        // observed coherently with the points.
+        const md: exp.MetricData = .{
             .name = inst.descriptor.name,
             .description = inst.descriptor.description,
             .unit = inst.descriptor.unit,
@@ -643,9 +819,49 @@ pub fn collect(provider: *MeterProvider, out_alloc: std.mem.Allocator) ![]exp.Me
             .points = points,
             .instrumentation_scope = inst.scope,
             .resource = provider.resource,
-        });
+        };
+        inst.mu.unlock();
+
+        // Encode-side append happens outside the per-instrument
+        // lock; on OOM the inner errdefer rolls the cloned points
+        // back so we don't leak. Iteration scope ends on success and
+        // the errdefer is discarded — `points` ownership transfers
+        // to `out`.
+        try out.append(out_alloc, md);
     }
     return out.toOwnedSlice(out_alloc);
+}
+
+/// Free a `[]MetricData` snapshot produced by `collect`. Tears down
+/// the cloned attribute sets and histogram bounds/counts before
+/// releasing the outer slice. PR-1 / gitlab #135.
+pub fn freeSnapshot(allocator: std.mem.Allocator, snap: []const exp.MetricData) void {
+    for (snap) |m| {
+        for (m.points) |*pt| freeDataPoint(allocator, pt);
+        // The points slice itself is `[]const`; the underlying
+        // storage was allocated mutable, so we cast off `const` for
+        // the free call.
+        allocator.free(@as([]exp.DataPoint, @constCast(m.points)));
+    }
+    allocator.free(@as([]exp.MetricData, @constCast(snap)));
+}
+
+fn freeDataPoint(allocator: std.mem.Allocator, pt: *const exp.DataPoint) void {
+    if (pt.attributes) |a| {
+        // `attributes` is `?*const AttributeSet`; the snapshot owns
+        // it but the field is typed const. Cast off const for the
+        // deinit + destroy.
+        const mutable: *attrs_mod.AttributeSet = @constCast(a);
+        mutable.deinit();
+        allocator.destroy(mutable);
+    }
+    switch (pt.value) {
+        .histogram => |h| {
+            allocator.free(@as([]f64, @constCast(h.bounds)));
+            allocator.free(@as([]u64, @constCast(h.counts)));
+        },
+        else => {},
+    }
 }
 
 test "counter aggregation" {
@@ -661,10 +877,7 @@ test "counter aggregation" {
     c.add(2, &.{});
 
     const datas = try collect(&mp, std.testing.allocator);
-    defer {
-        for (datas) |d| std.testing.allocator.free(d.points);
-        std.testing.allocator.free(datas);
-    }
+    defer freeSnapshot(std.testing.allocator, datas);
     try std.testing.expectEqual(@as(usize, 1), datas.len);
     try std.testing.expectEqual(@as(i64, 3), datas[0].points[0].value.number.int);
 }
@@ -687,10 +900,7 @@ test "histogram bucket counts" {
     h.record(20.0, &.{});
 
     const datas = try collect(&mp, std.testing.allocator);
-    defer {
-        for (datas) |d| std.testing.allocator.free(d.points);
-        std.testing.allocator.free(datas);
-    }
+    defer freeSnapshot(std.testing.allocator, datas);
     const hp = datas[0].points[0].value.histogram;
     try std.testing.expectEqual(@as(u64, 3), hp.count);
     try std.testing.expectEqualSlices(u64, &.{ 1, 1, 0, 1 }, hp.counts);

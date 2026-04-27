@@ -70,8 +70,7 @@ fn collectMetrics(allocator: std.mem.Allocator, mp: *otel.sdk.metrics.MeterProvi
 }
 
 fn freeSnapshot(allocator: std.mem.Allocator, snapshot: []otel.sdk.exporter.MetricData) void {
-    for (snapshot) |s| allocator.free(s.points);
-    allocator.free(snapshot);
+    otel.sdk.metrics.freeSnapshot(allocator, snapshot);
 }
 
 // ----------- Tests -------------------------------------------------------

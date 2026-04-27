@@ -224,6 +224,7 @@ pub fn build(b: *std.Build) void {
         "test/baggage.zig",
         "test/trace.zig",
         "test/metrics.zig",
+        "test/metrics_concurrency.zig",
         "test/logs.zig",
         "test/otlp.zig",
         "test/otlp_metrics.zig",

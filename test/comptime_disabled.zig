@@ -88,10 +88,7 @@ test "MeterProvider.meter returns noop Meter when otel_disabled" {
     c.add(42, &.{});
     // Snapshot must be empty: noop Meter never registered an instrument.
     const snap = try otel.sdk.metrics.collect(&mp, std.testing.allocator);
-    defer {
-        for (snap) |s| std.testing.allocator.free(s.points);
-        std.testing.allocator.free(snap);
-    }
+    defer otel.sdk.metrics.freeSnapshot(std.testing.allocator, snap);
     try std.testing.expectEqual(@as(usize, 0), snap.len);
 }
 
@@ -126,10 +123,7 @@ test "MeterProvider.meter returns noop Meter when config.disabled (runtime kill-
     const c = try m.counter(.{ .name = "x", .kind = .counter });
     c.add(42, &.{});
     const snap = try otel.sdk.metrics.collect(&mp, std.testing.allocator);
-    defer {
-        for (snap) |s| std.testing.allocator.free(s.points);
-        std.testing.allocator.free(snap);
-    }
+    defer otel.sdk.metrics.freeSnapshot(std.testing.allocator, snap);
     // Disabled MeterProvider returns a noop Meter — no instruments registered.
     try std.testing.expectEqual(@as(usize, 0), snap.len);
 }

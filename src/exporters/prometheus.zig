@@ -28,10 +28,7 @@ pub const Prometheus = struct {
         defer buf.deinit(self.allocator);
 
         const datas = try sdk_metrics.collect(self.provider, self.allocator);
-        defer {
-            for (datas) |m| self.allocator.free(m.points);
-            self.allocator.free(datas);
-        }
+        defer sdk_metrics.freeSnapshot(self.allocator, datas);
 
         for (datas) |m| {
             const sanitized = try sanitize(self.allocator, m.name);

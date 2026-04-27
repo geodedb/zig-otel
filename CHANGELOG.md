@@ -53,6 +53,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`MeterProvider.pointFor` race fix.** Concurrent
+  `Counter.add` / `Histogram.record` / `Gauge.set` calls — and a
+  concurrent `collect()` — now run under a per-instrument
+  `InstrumentMutex`. The old code mutated `inst.points`
+  (ArrayList grow) and `inst.points_index` (HashMap put) without
+  synchronisation, so two threads racing on a fingerprint miss
+  would tear the slice header, dangle a `&items[idx]` pointer
+  across a re-grow, or trip a HashMap pointer-stability assert.
+  `pointIndexFor` now returns indices instead of pointers and the
+  record-paths hold the lock from index resolution through the
+  value mutation; `collect()` deep-copies attribute sets and
+  histogram buffers under the lock so the snapshot fully detaches
+  from `inst.points`. New helper `freeSnapshot(allocator, snap)`
+  tears down the cloned storage. Coverage in
+  `test/metrics_concurrency.zig` (single-threaded shape stability,
+  2-thread record stress, writer-vs-collector stress); the
+  pre-fix run reliably crashes with `panic: reached unreachable
+  code` inside `std.HashMap.getOrPutContextAdapted` when the two
+  writers hit the same fingerprint window. Hot-path perf within
+  ±5% of pre-fix (`micro_counter_add_4_attrs_hit` -2.6%,
+  `micro_histogram_record_4_attrs_hit` -0.4%). (PR-1, #135)
 - `InstrumentationScope` now propagates from the `Tracer` value to
   the recorded `SpanState` instead of being clobbered with an empty
   scope. OTLP wire output groups spans correctly under their

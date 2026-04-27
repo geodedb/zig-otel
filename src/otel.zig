@@ -55,6 +55,10 @@ pub const propagation = struct {
     /// `OTEL_PROPAGATORS` at provider-build time. See
     /// `sdk.config.propagatorFromConfig`.
     pub const propagator = @import("propagation/propagator.zig");
+    /// B3 propagator (single + multi header forms). GAP-PROPAGATOR-B3
+    /// (#23). See `propagator.single_header` / `propagator.multi_header`
+    /// for the registered TextMapPropagator handles.
+    pub const b3 = @import("propagation/b3.zig");
 };
 
 pub const sdk = struct {

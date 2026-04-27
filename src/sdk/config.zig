@@ -11,6 +11,7 @@ const std = @import("std");
 const build_options = @import("build_options");
 const devnw_yaml = if (build_options.use_devnw_config) @import("yaml") else struct {};
 const propagator_mod = @import("../propagation/propagator.zig");
+const b3_propagator = @import("../propagation/b3.zig");
 
 pub const ExporterKind = enum {
     in_memory,
@@ -836,12 +837,10 @@ pub fn propagatorBundleFromEnum(
     switch (which) {
         .tracecontext => try members.append(allocator, propagator_mod.trace_context),
         .baggage => try members.append(allocator, propagator_mod.baggage),
-        // b3/b3multi/jaeger arms land in subsequent commits when the
-        // concrete propagator modules ship (#23, #24). For now the
-        // tokens are accepted (enum values are real) but the factory
-        // produces an empty bundle so call sites compile and round-
-        // trip cleanly through the parsed enum.
-        .b3, .b3multi, .jaeger => {},
+        .b3 => try members.append(allocator, b3_propagator.single_header),
+        .b3multi => try members.append(allocator, b3_propagator.multi_header),
+        // jaeger arm lands in the next commit (#24).
+        .jaeger => {},
         .composite => {
             try members.append(allocator, propagator_mod.trace_context);
             try members.append(allocator, propagator_mod.baggage);
@@ -874,13 +873,13 @@ pub fn propagatorBundleFromEnvList(
             try members.append(allocator, propagator_mod.trace_context);
         } else if (std.mem.eql(u8, token, "baggage")) {
             try members.append(allocator, propagator_mod.baggage);
-        } else if (std.mem.eql(u8, token, "b3") or
-            std.mem.eql(u8, token, "b3multi") or
-            std.mem.eql(u8, token, "jaeger"))
-        {
-            // b3/b3multi/jaeger arms land in subsequent commits (#23,
-            // #24); accept the token without poisoning the rest of
-            // the list — sibling propagators still compose correctly.
+        } else if (std.mem.eql(u8, token, "b3")) {
+            try members.append(allocator, b3_propagator.single_header);
+        } else if (std.mem.eql(u8, token, "b3multi")) {
+            try members.append(allocator, b3_propagator.multi_header);
+        } else if (std.mem.eql(u8, token, "jaeger")) {
+            // jaeger arm lands in the next commit (#24); accept the
+            // token without poisoning sibling propagators.
         } else {
             // Unknown token — spec says to ignore, not error. Continue.
         }

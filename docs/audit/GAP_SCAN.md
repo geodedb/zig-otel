@@ -151,8 +151,7 @@ Build Summary: 30/30 steps succeeded; 33/43 tests passed (10 skipped)
 
 ### High-priority spec compliance
 
-- **GAP-PROPAGATOR-B3** — `b3` propagator declared in config + env, no implementation. `src/sdk/config.zig:84,185` only.
-  Spec ref: OpenTelemetry Specification — propagators MUST list (B3 single + multi).
+- **GAP-PROPAGATOR-B3** — Closed (#23). `src/propagation/b3.zig` implements the single + multi header forms; `src/sdk/config.zig propagatorBundleFromConfig` wires `OTEL_PROPAGATORS={b3,b3multi}` (and comma-separated lists) onto a runtime-dispatched `Composite`; regression `test/propagator_b3.zig` covers positive (canonical, debug, parent-id, padded 16-hex), negative (empty/missing/all-zero/non-hex/bad-sampled), round-trip, and end-to-end via the env-var driven factory.
 - **GAP-PROPAGATOR-JAEGER** — `jaeger` propagator declared in config + env, no implementation. `src/sdk/config.zig:84,186` only.
 - **GAP-OTLP-METRIC-EXPORT** — `OtlpHttpExporter`/`OtlpGrpcExporter` have no `metricExporter()`; `/v1/metrics` path unreachable; SPEC_COMPLIANCE.md claim contradicted by `src/exporters/otlp_http.zig`.
 - **GAP-OTLP-LOG-EXPORT** — Same: no `logExporter()`; `/v1/logs` unreachable.

@@ -269,6 +269,8 @@ pub fn build(b: *std.Build) void {
         // OTEL_PROPAGATORS at provider-build time. Carries the B3 /
         // Jaeger end-to-end coverage once those propagators land.
         "test/propagator.zig",
+        // GAP-PROPAGATOR-B3 (#23): B3 single + multi header coverage.
+        "test/propagator_b3.zig",
     };
     for (test_files) |path| {
         const m = b.createModule(.{

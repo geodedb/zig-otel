@@ -48,7 +48,7 @@ Mapping vs catalog labels: `priority::critical → Critical`, `priority::high �
 | 3 | GAP-OTLP-WIRE-EVENTS-LINKS | #9 | Critical | Not Impl | `src/generated/otlp.zig:191,193` (constants exist, 0 use sites in `src/exporters/`) |
 | 4 | Q-METRIC-PIPELINE-HALF-BUILT (#13) | #13 | Critical | Partial | `MetricReader.collect` never invoked — gates #29 |
 | 5 | Q-BSP-SCHEDULE-IGNORED (#12) | #12 | Critical | Not Impl | `BatchSpanProcessorOptions.schedule_delay_ms` — wiring landed (`454de77`); verify Phase-4 |
-| 6 | GAP-PROPAGATOR-B3 | #23 | High | Not Impl | `src/propagation/` — no `b3.zig`; `src/sdk/config.zig:389` dead enum |
+| 6 | GAP-PROPAGATOR-B3 | #23 | High | Closed | `src/propagation/b3.zig` (single + multi header), `src/sdk/config.zig` factory + `b3multi`/`none` env tokens, `src/propagation/propagator.zig` pluggable Composite; `test/propagator_b3.zig` (23 tests) |
 | 7 | GAP-PROPAGATOR-JAEGER | #24 | High | Not Impl | `src/propagation/` — no `jaeger.zig`; `src/sdk/config.zig:390` dead enum |
 | 8 | GAP-OTLP-WIRE-SCHEMA-URL | #26 | High | Not Impl | `src/exporters/otlp_http.zig` — 0 hits for `schema_url`; missing field constants |
 | 9 | GAP-OTLP-COMPRESSION | #27 | High | Not Impl | `src/sdk/config.zig:52` enum + `src/exporters/otlp_grpc.zig:296` `out[0]=0` hardcode |

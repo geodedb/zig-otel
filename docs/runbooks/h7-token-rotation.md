@@ -1,13 +1,29 @@
 # Runbook: rotating `OTEL_INTEGRATION_AUTH_HEADER`
 
 **Owner:** <benji@codepros.org>
-**Tracks:** GitLab issue #80 (H-7, confidential)
+**Tracks:** GitLab issue #80 (H-7, confidential) at
+<https://gitlab.com/devnw/zig/otel/-/issues/80>
 **Cadence:** quarterly (next: 2026-07-26); plus this one-time
 post-audit rotation by **2026-05-03**.
 
+> [!IMPORTANT]
+> **Run the CI log audit script BEFORE rotating the token.** The
+> audit script (`scripts/audit_ci_logs.sh`) walks pipeline logs via
+> `glab`, which authenticates to GitLab using your personal-access
+> token *and* relies on the old `OTEL_INTEGRATION_AUTH_HEADER` value
+> staying valid for the project's `otlp-integration-live` log
+> history. **Once you replace the CI variable in step 3 the previous
+> token is dead** — but more critically, anyone re-running an audit
+> against pre-rotation logs needs the GitLab API token, not the OTLP
+> ingest token, so refresh `glab auth login` first if needed.
+> Skipping the pre-rotation audit means a leaked-bearer disclosure
+> would be discovered *after* the secret is dead, which is still
+> reportable but loses the chance for clean triage.
+
 This runbook describes how to rotate the GitLab CI/CD variable
 `OTEL_INTEGRATION_AUTH_HEADER` used by the `otlp-integration-live`
-job to authenticate against the GitLab Observability collector.
+job to authenticate against the GitLab Observability collector. The
+project lives at <https://gitlab.com/devnw/zig/otel>.
 
 ## Why rotate
 
@@ -36,7 +52,15 @@ In GitLab Observability:
 ### 2. Pre-rotation CI log audit
 
 While the old token is still valid, run the audit script against
-the last 90 days of `otlp-integration-live` job logs:
+the last 90 days of `otlp-integration-live` job logs. First confirm
+your `glab` session is alive:
+
+```bash
+glab auth status   # must show ✓ Logged in; no "Invalid token" warning
+# if needed: glab auth login
+```
+
+Then run:
 
 ```bash
 scripts/audit_ci_logs.sh --days 90 --job otlp-integration-live

@@ -1,0 +1,101 @@
+H-7 (#80, CONFIDENTIAL) audit-script smoke evidence
+====================================================
+Captured:        2026-04-27
+Captured-by:     benji@codepros.org (operator-pending follow-up)
+Repo:            gitlab.com/devnw/zig/otel (working tree)
+Plan reference:  docs/audit/gap-closure/PLAN_2026-04-27_FOLLOWUPS.md (§3.1)
+Status:          Blocked / Operator-Pending — code side already closed
+                 (see commit 43330db); rotation deadline 2026-05-03.
+
+This file is the verifiable artefact that the audit script is wired up
+and ready for the operator to run as part of the H-7 token rotation.
+The actual audit run cannot happen here because the local `glab` token
+is no longer valid against gitlab.com (see "glab auth status" below);
+the operator must re-authenticate before invoking the script.
+
+
+--------------------------------------------------------------------
+1. Smoke check: `bash scripts/audit_ci_logs.sh --help` (exit 0)
+--------------------------------------------------------------------
+$ bash scripts/audit_ci_logs.sh --help
+Audit GitLab CI job logs for accidental disclosure of the
+OTEL_INTEGRATION_AUTH_HEADER bearer token.
+
+Pre-requisites:
+  - glab CLI installed and authenticated (`glab auth status`)
+  - Run from inside a git checkout of devnw/zig/otel (project
+    auto-detected; override with --project)
+
+Usage:
+  scripts/audit_ci_logs.sh [--days N] [--job NAME] [--project NS/REPO]
+
+Exits 0 when no hits, 1 on hits, 2 on usage / setup error.
+Prints one line per hit: "<job_id>:<line_no>:<offending substring>".
+
+Exit code: 0  (parsed cleanly, printed embedded help)
+
+
+--------------------------------------------------------------------
+2. Bad-flag handling: `bash scripts/audit_ci_logs.sh --unknown-flag`
+--------------------------------------------------------------------
+$ bash scripts/audit_ci_logs.sh --unknown-flag
+unknown arg: --unknown-flag
+
+Exit code: 2  (matches the documented usage-error contract)
+
+
+--------------------------------------------------------------------
+3. Syntax check: `bash -n scripts/audit_ci_logs.sh`
+--------------------------------------------------------------------
+$ bash -n scripts/audit_ci_logs.sh
+(no output)
+
+Exit code: 0  (no shell syntax errors)
+
+
+--------------------------------------------------------------------
+4. glab CLI presence + auth state
+--------------------------------------------------------------------
+$ command -v glab
+/usr/bin/glab
+
+$ glab auth status
+gitlab.com
+  ✓ Logged in to gitlab.com as benjiv
+  ✓ Git operations for gitlab.com configured to use ssh protocol.
+  ✓ API calls for gitlab.com are made over https protocol.
+  ✓ REST API Endpoint: https://gitlab.com/api/v4/
+  ✓ GraphQL Endpoint: https://gitlab.com/api/graphql/
+  ✓ Token: **************************
+  ! Invalid token provided in configuration file.
+
+Interpretation: glab is installed and the host config points at the
+correct project, but the cached token is rejected by the gitlab.com
+API. A live audit run (`scripts/audit_ci_logs.sh --days 90 --job
+otlp-integration-live`) cannot be executed from this environment.
+The operator must `glab auth login` (or refresh the personal access
+token) before invoking the script as part of step 2 of the runbook.
+
+This does NOT block the smoke verification — the script's argument
+parser, --help output, and unknown-flag error path all work as
+documented above (exits 0 / 2 respectively). The blocker is purely
+the operator credential, not the script.
+
+
+--------------------------------------------------------------------
+5. Operator unblock checklist (mirrors SECURITY_GAP_ANALYSIS §H-7)
+--------------------------------------------------------------------
+1. `glab auth login` — refresh the personal-access-token used by glab
+   so the audit script can list pipelines on devnw/zig/otel.
+2. `bash scripts/audit_ci_logs.sh --days 90 --job otlp-integration-live`
+   while the OLD token is still valid. Save the output. Triage any hit.
+3. GitLab UI → Project → Settings → CI/CD → Variables: replace
+   `OTEL_INTEGRATION_AUTH_HEADER` with the new ingest token. Confirm
+   Masked: YES, Protected: YES, Expanded: NO. (Runbook §3.)
+4. Trigger one `otlp-integration-live` pipeline and confirm it shows
+   `OTLP integration test PASS` and the new token is masked. (§4.)
+5. Revoke the old ingest token in GitLab Observability (§5) and update
+   the rotation tracker (§6) — set the next rotation date to today + 90
+   days, default 2026-07-26.
+
+Deadline: 2026-05-03 (six days from 2026-04-27).

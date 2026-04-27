@@ -5,6 +5,15 @@
 >
 > **Last sync:** 2026-04-27 (Phase 4 gap-sync — registry from `docs/audit/gap-detector/REGISTRY.md`)
 > **Source:** Phase 3 canonical registry (`docs/audit/gap-detector/REGISTRY.md`) + Phase 4 SYNC_PLAN (`docs/audit/gap-detector/SYNC_PLAN.md`)
+>
+> **Security note (2026-04-27):** Security findings live in
+> `docs/SECURITY_GAP_ANALYSIS.md`, not in this flatfile. The only
+> outstanding security item is **H-7 (#80)** —
+> `OTEL_INTEGRATION_AUTH_HEADER` rotation. **Status: Blocked
+> (operator-pending), deadline 2026-05-03.** Code-side closed
+> `43330db`; the operator unblock checklist is in
+> `docs/SECURITY_GAP_ANALYSIS.md` §2.1 and the runbook is at
+> `docs/runbooks/h7-token-rotation.md`.
 
 ## Status / Severity Summary
 

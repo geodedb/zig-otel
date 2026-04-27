@@ -67,7 +67,7 @@ Closed and Won't-Do entries have been moved to `docs/GAP_ANALYSIS_RESOLVED.md` (
 1. **C-2** (Risk 25) — gRPC exporter scheme handling — `[CONFIDENTIAL][IMMEDIATE]` — **Closed** (`e508627`)
 2. **C-1** (Risk 25) — Configuration env-var slice ownership — `[CONFIDENTIAL][IMMEDIATE]` — **Closed** (`d19b65b`)
 3. **H-1** (Risk 20) — HTTP header parser input validation — `[CONFIDENTIAL]` — **Closed** (`553502b`)
-4. **H-7** (Risk 20) — Live integration test response-body printer — `[CONFIDENTIAL][IMMEDIATE]` — **Partially Closed (code side, `43330db`)**; operator rotation + 30-day CI log audit still pending (owner: <benji@codepros.org>)
+4. **H-7** (Risk 20) — Live integration test response-body printer — `[CONFIDENTIAL][IMMEDIATE]` — **Partially Closed (code side, `43330db`)**; operator-side **Blocked (operator-pending) 2026-04-27**, deadline 2026-05-03 — see §2.1 for the 5-step unblock checklist (owner: <benji@codepros.org>)
 5. **C-3** (Risk 16) — gRPC exporter header propagation — `[IMMEDIATE]` — **Closed** (`e508627`)
 
 ---
@@ -76,11 +76,23 @@ Closed and Won't-Do entries have been moved to `docs/GAP_ANALYSIS_RESOLVED.md` (
 
 These actions are owned by **<benji@codepros.org>**. Items 3 and 4 are satisfied by the 2026-04-26 closure run; items 1 and 2 remain operator action and are tracked here as the only outstanding security work.
 
-1. **Rotate** the `OTEL_INTEGRATION_AUTH_HEADER` GitLab CI/CD variable (H-7). Treat the previous value as compromised. **Deadline: 2026-05-03 (7 days from 2026-04-26).** **Status: PENDING — operator action; not a code change.**
-2. **Audit** the last 90 days of GitLab CI logs for the bearer-token leakage pattern (`Authorization`, `Bearer<space>`, `5333796.otel.gitlab-o11y.com`) BEFORE rotation completes. **Status: PENDING — operator action; not a code change.**
+1. **Rotate** the `OTEL_INTEGRATION_AUTH_HEADER` GitLab CI/CD variable (H-7). Treat the previous value as compromised. **Deadline: 2026-05-03 (6 days from 2026-04-27).** **Status: Blocked (operator-pending) — code side already closed (`43330db`); awaiting GitLab CI/CD UI action.** Owner: <benji@codepros.org>.
+2. **Audit** the last 90 days of GitLab CI logs for the bearer-token leakage pattern (`Authorization`, `Bearer<space>`, `5333796.otel.gitlab-o11y.com`) BEFORE rotation completes. **Status: Blocked (operator-pending) — script (`scripts/audit_ci_logs.sh`) and runbook (`docs/runbooks/h7-token-rotation.md`) ready; smoke-checked 2026-04-27 (evidence: `docs/audit/h7-audit-evidence-2026-04-27.txt`).**
 3. **Scrub** the `last_response_body` printer in `test/remote_otlp.zig` *before* the next default-branch CI run. **Status: DONE** (`43330db`).
 4. **Block the next release** on landing fixes for C-1, C-2, C-3, H-1, M-5. **Status: DONE** — all five landed (`d19b65b`, `e508627`, `e508627`, `553502b`, `ea94ef9`).
 5. **Quarterly token-rotation cron**: schedule recurring rotation of `OTEL_INTEGRATION_AUTH_HEADER`. **Next rotation: 2026-07-26.** Owner: <benji@codepros.org>.
+
+### 2.1 H-7 (#80) operator unblock checklist
+
+Reproduced verbatim from the runbook (`docs/runbooks/h7-token-rotation.md`) and from the audit-script smoke-evidence file. Closing H-7 as "Done" requires all five steps below to complete by **2026-05-03**:
+
+1. **Refresh `glab` auth.** Run `glab auth status`; if the token is invalid, run `glab auth login` to refresh the personal-access token used to query CI log history. (The 2026-04-27 smoke run captured `! Invalid token provided in configuration file.` — see `docs/audit/h7-audit-evidence-2026-04-27.txt`.)
+2. **Run the pre-rotation audit (BEFORE step 3).** `bash scripts/audit_ci_logs.sh --days 90 --job otlp-integration-live`. Save output. PASS → continue. Any hit → fork to incident-response.
+3. **Replace the CI variable.** GitLab → Project (`devnw/zig/otel`) → Settings → CI/CD → Variables → `OTEL_INTEGRATION_AUTH_HEADER` → set new value. Flags: Masked YES, Protected YES, Expanded NO. (Runbook §3.)
+4. **Verify with one live pipeline.** Trigger `otlp-integration-live`. Confirm `OTLP integration test PASS` and that the new token is `[masked]` in the trace. (Runbook §4.)
+5. **Revoke the old ingest token + update tracker.** Revoke in GitLab Observability (Runbook §5). Update GitLab issue #80 (confidential) with `Rotated YYYY-MM-DD; next rotation YYYY-MM-DD; CI log audit clean.` and update §2 item 1/2 of this document to **Status: DONE**.
+
+**Deadline reminder:** 2026-05-03. Owner: <benji@codepros.org>. Tracker: <https://gitlab.com/devnw/zig/otel/-/issues/80> (confidential).
 
 ---
 
@@ -91,7 +103,7 @@ These actions are owned by **<benji@codepros.org>**. Items 3 and 4 are satisfied
 | 1    | C-2 | Critical | 25   | Confirmed  | gRPC exporter scheme handling [CONFIDENTIAL]                          | `src/exporters/otlp_grpc.zig`      | CWE-319 / A02:2021           | <https://gitlab.com/devnw/zig/otel/-/work_items/61> | **Closed** (`e508627`, 2026-04-26) |
 | 2    | C-1 | Critical | 25   | Confirmed  | Configuration env-var slice ownership [CONFIDENTIAL]                  | `src/sdk/config.zig`               | CWE-825 / A01:2021           | <https://gitlab.com/devnw/zig/otel/-/work_items/54> | **Closed** (`d19b65b`, 2026-04-26) |
 | 3    | H-1 | High     | 20   | Confirmed  | HTTP header parser input validation [CONFIDENTIAL]                    | `src/exporters/otlp_http.zig`      | CWE-93,113,444 / A03:2021    | <https://gitlab.com/devnw/zig/otel/-/work_items/69> | **Closed** (`553502b`, 2026-04-26) |
-| 4    | H-7 | High     | 20   | Confirmed  | Live integration test response-body printer [CONFIDENTIAL]            | `test/remote_otlp.zig`, `.gitlab-ci.yml` | CWE-532,200 / A09:2021       | <https://gitlab.com/devnw/zig/otel/-/work_items/77> | **Partially Closed (code side)** (`43330db`, 2026-04-26) — operator rotation + CI log audit pending |
+| 4    | H-7 | High     | 20   | Confirmed  | Live integration test response-body printer [CONFIDENTIAL]            | `test/remote_otlp.zig`, `.gitlab-ci.yml` | CWE-532,200 / A09:2021       | <https://gitlab.com/devnw/zig/otel/-/work_items/77> | **Partially Closed (code side)** (`43330db`, 2026-04-26); operator-side **Blocked (operator-pending)** 2026-04-27 — audit script smoke-checked, runbook hardened, deadline **2026-05-03**. See §2.1 for the 5-step unblock checklist. |
 | 5    | C-3 | Critical | 16   | Confirmed  | gRPC exporter header propagation                                      | `src/exporters/otlp_grpc.zig`      | CWE-693,285 / A07:2021       | <https://gitlab.com/devnw/zig/otel/-/work_items/67> | **Closed** (`e508627`, 2026-04-26) |
 | 6    | H-2 | High     | 16   | Confirmed  | Prometheus exporter label escaping [CONFIDENTIAL]                     | `src/exporters/prometheus.zig`     | CWE-117 / A03:2021           | <https://gitlab.com/devnw/zig/otel/-/work_items/71> | **Closed** (`15c7702`, 2026-04-26) |
 | 7    | H-4 | High     | 16   | Confirmed  | `OtlpConfig.skip_tls_verify` not plumbed                              | `src/sdk/config.zig`               | CWE-295 / A02:2021           | <https://gitlab.com/devnw/zig/otel/-/work_items/73> | **Closed** (`cf518be`, 2026-04-26) |
@@ -162,7 +174,7 @@ These actions are owned by **<benji@codepros.org>**. Items 3 and 4 are satisfied
 
 ### CI / Test Harness
 
-- **H-7** — live integration test prints response bodies (Risk 20, CONFIDENTIAL, IMMEDIATE rotation) — **Partially Closed (code side)** `43330db` — body scrubber + endpoint hashing landed; operator-side credential rotation + 30-day CI log audit still pending (owner: <benji@codepros.org>)
+- **H-7** — live integration test prints response bodies (Risk 20, CONFIDENTIAL, IMMEDIATE rotation) — **Partially Closed (code side)** `43330db` — body scrubber + endpoint hashing landed; operator-side **Blocked (operator-pending) 2026-04-27**, deadline 2026-05-03 — audit script smoke-checked + runbook hardened; see §2.1 5-step checklist (owner: <benji@codepros.org>)
 - **M-1** — test gRPC server hardcoded token, 0.0.0.0 bind — **Closed** `9e54e99`
 
 ---

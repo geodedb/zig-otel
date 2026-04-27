@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- H-7 (#80) blocked operator-pending; rotation deadline 2026-05-03.
+  Code side already closed (`43330db`); the audit script
+  (`scripts/audit_ci_logs.sh`) was smoke-checked 2026-04-27 (evidence:
+  `docs/audit/h7-audit-evidence-2026-04-27.txt`) and the runbook
+  (`docs/runbooks/h7-token-rotation.md`) hardened with a prominent
+  "run audit before rotating" warning. Five-step operator unblock
+  checklist tracked in `docs/SECURITY_GAP_ANALYSIS.md` §2.1.
 - **File JSONL exporter no longer follows symlinks (NEW-M-2, gitlab
   #140, CONFIDENTIAL).** `src/exporters/file.zig::FileJsonl.open` was
   delegating to `std.Io.Dir.createFile`, which on Zig 0.16.0 follows

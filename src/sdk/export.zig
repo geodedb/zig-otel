@@ -206,6 +206,16 @@ pub const BatchSpanProcessor = struct {
     /// Active iff `build_options.use_devnw_pool` *and*
     /// `options.async_workers > 0`. Owned and torn down by `deinit`.
     pool: PoolHandle = null,
+    /// Periodic-drain timer thread. Spawned in `init` when
+    /// `use_devnw_pool && async_workers > 0 && schedule_delay_ms > 0`;
+    /// joined in `deinit`. See ADR-0002.
+    timer_thread: ?std.Thread = null,
+    /// Latched true by `deinit` to signal the timer thread to exit.
+    shutdown_requested: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    /// Pair used to interrupt the timer's `timedWait` on shutdown so
+    /// `deinit` doesn't wait for the next tick.
+    shutdown_mu: QueueMutex = .{},
+    shutdown_cond: FlushCond = .{},
 
     pub fn init(allocator: std.mem.Allocator, exporter: SpanExporter, resource_ref: *const Resource, options: BatchSpanProcessorOptions) !*BatchSpanProcessor {
         const self = try allocator.create(BatchSpanProcessor);
@@ -235,13 +245,55 @@ pub const BatchSpanProcessor = struct {
                     .default_backpressure = .block,
                 });
                 self.pool = pool;
+
+                // Start the periodic-drain timer (ADR-0002). Bound by
+                // `schedule_delay_ms`; opt out by setting that to 0.
+                if (options.schedule_delay_ms > 0) {
+                    self.timer_thread = std.Thread.spawn(.{}, timerLoop, .{self}) catch null;
+                }
             }
         }
         return self;
     }
 
+    fn timerLoop(self: *BatchSpanProcessor) void {
+        if (!build_options.use_devnw_pool) return;
+        const delay_ns: u64 = self.options.schedule_delay_ms * std.time.ns_per_ms;
+        while (!self.shutdown_requested.load(.acquire)) {
+            self.shutdown_mu.lock();
+            // timedWait may return early via spurious wakeup or a
+            // shutdown broadcast. The shutdown flag check on every
+            // outer-loop iteration handles both.
+            self.shutdown_cond.timedWait(&self.shutdown_mu, delay_ns) catch {};
+            self.shutdown_mu.unlock();
+
+            if (self.shutdown_requested.load(.acquire)) return;
+
+            // If the queue has anything in it, kick a drain. The
+            // queue-fill trigger in `batchOnEnd` is unchanged; this
+            // timer only catches under-batch-size queues that would
+            // otherwise sit until the next forceFlush.
+            self.mutex.lock();
+            const has_items = self.queue.items.len > 0;
+            self.mutex.unlock();
+            if (has_items) async_pool.submitDrain(self);
+        }
+    }
+
     pub fn deinit(self: *BatchSpanProcessor) void {
-        // Tear down the pool first so no in-flight drain task can race
+        // Stop the timer first: set the shutdown flag, wake the
+        // sleeping timer, and join. Order matters — the timer can
+        // call `submitDrain` on the pool, so it must exit before
+        // we tear the pool down.
+        if (self.timer_thread) |t| {
+            self.shutdown_requested.store(true, .release);
+            self.shutdown_mu.lock();
+            self.shutdown_cond.broadcast();
+            self.shutdown_mu.unlock();
+            t.join();
+            self.timer_thread = null;
+        }
+        // Tear down the pool next so no in-flight drain task can race
         // with the queue cleanup below. `.drain` waits for queued and
         // executing tasks; the timeout is a safety net.
         if (build_options.use_devnw_pool) {

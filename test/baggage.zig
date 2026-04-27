@@ -41,3 +41,61 @@ test "baggage propagator round-trip" {
     try std.testing.expectEqualStrings("v1", decoded.get("k1").?);
     try std.testing.expectEqualStrings("value with spaces", decoded.get("k2").?);
 }
+
+// PR-6 / #139 — Baggage.put dupe-before-dedup regression.
+//
+// Pre-fix, `put` performed `arena.dupe(key)` + `arena.dupe(value)` (and
+// metadata) BEFORE searching for an existing entry. On the hit path the
+// duped key bytes became permanent arena waste; N consecutive puts of the
+// same key grew arena bytes proportional to N × (key_len + value_len + meta_len)
+// instead of N × (value_len + meta_len).
+//
+// This test pins two complementary invariants:
+//   1. Pointer stability — after the first put establishes the entry, the
+//      stored `key.ptr` must remain identical across subsequent puts of the
+//      same key (the original arena bytes are reused, never re-duped).
+//   2. Bounded arena growth — `queryCapacity()` after N hit-path puts grows
+//      by less than N × (key_len + value_len) i.e. the per-iteration cost
+//      drops the key contribution.
+test "Baggage.put hit-path does not re-dupe the key (PR-6 / #139)" {
+    var bag = otel.api.baggage.Baggage.init(std.testing.allocator);
+    defer bag.deinit();
+
+    // Long key + 1-byte value so the pre-fix waste dominates per iteration.
+    const key = "a-deliberately-long-baggage-key-so-the-leak-is-obvious-58B";
+    const value = "v";
+
+    try bag.put(key, value, null);
+    const original_key_ptr = bag.entries.items[0].key.ptr;
+    const baseline_capacity = bag.arena.queryCapacity();
+
+    const iterations: usize = 1024;
+    var i: usize = 0;
+    while (i < iterations) : (i += 1) {
+        try bag.put(key, value, null);
+    }
+
+    // Invariant 1 — key pointer stability across the hit path.
+    try std.testing.expectEqual(original_key_ptr, bag.entries.items[0].key.ptr);
+
+    // Invariant 2 — bounded growth. Pre-fix, each hit-path put leaks
+    // key.len (~58 B) + value.len (1 B) + alignment, so 1024 iterations
+    // grows the arena by ~64 KiB. Post-fix only value.len (~1-8 B with
+    // alignment) is duped per iteration, so 1024 iterations grows by at
+    // most ~16 KiB (and typically much less because the arena's chunk size
+    // already absorbs many small dupes into one bump). Use a bound that
+    // catches the pre-fix leak (≥ 1024 × 58 B = 59 392 B of strict key
+    // bytes) but is loose enough to tolerate arena chunk over-allocation.
+    //
+    // Bound choice: iterations × 32 B = 32 768 B. Pre-fix grows by
+    // ~iterations × ~64 B ≥ 65 536 B (well over the bound). Post-fix grows
+    // by < iterations × 8 B ≪ 32 768 B.
+    const post_capacity = bag.arena.queryCapacity();
+    const grew_by = post_capacity - baseline_capacity;
+    const value_only_bound = iterations * 32;
+    try std.testing.expect(grew_by < value_only_bound);
+
+    // Sanity — the entry still reflects the most recent put + only one entry.
+    try std.testing.expectEqualStrings(value, bag.get(key).?);
+    try std.testing.expectEqual(@as(usize, 1), bag.count());
+}

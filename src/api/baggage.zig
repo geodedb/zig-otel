@@ -57,18 +57,25 @@ pub const Baggage = struct {
         try validateKey(key);
         try validateValue(value);
         const arena_alloc = self.arena.allocator();
-        const owned_key = try arena_alloc.dupe(u8, key);
-        const owned_value = try arena_alloc.dupe(u8, value);
-        const owned_meta = if (metadata) |m| try arena_alloc.dupe(u8, m) else null;
 
+        // PR-6 / #139: search FIRST so the hit path doesn't dupe the key
+        // (and only dupes value + metadata). Pre-fix this method dupe'd
+        // key + value + metadata before the dedup loop, so N consecutive
+        // puts of the same key bled key_len bytes per call into arena
+        // waste. On miss we still dupe key + value + metadata as before.
         for (self.entries.items, 0..) |e, i| {
             if (std.mem.eql(u8, e.key, key)) {
+                const owned_value = try arena_alloc.dupe(u8, value);
+                const owned_meta = if (metadata) |m| try arena_alloc.dupe(u8, m) else null;
                 self.entries.items[i].value = owned_value;
                 self.entries.items[i].metadata = owned_meta;
                 return;
             }
         }
         if (self.entries.items.len >= max_entries) return error.BaggageFull;
+        const owned_key = try arena_alloc.dupe(u8, key);
+        const owned_value = try arena_alloc.dupe(u8, value);
+        const owned_meta = if (metadata) |m| try arena_alloc.dupe(u8, m) else null;
         try self.entries.append(self.arena.child_allocator, .{ .key = owned_key, .value = owned_value, .metadata = owned_meta });
     }
 

@@ -16,19 +16,20 @@
 | PerfSeverity | Open Issues | Validated/Closed | Notes |
 |---|---:|---:|---:|
 | **P0** | 4 | 8 | Validated: PR-1 (#135), PR-2 (#36), PR-3 (#136), P0-1 (#5), P0-2 (#6), P0-4 (#15), P-N1 (#122), P-N2 (#126). |
-| **P1** | 17 | 2 | Adds PR-5/PR-6/PR-8/PR-9/PR-10 + tracking issues BENCH-BASELINES-MISSING (#166), PERF-SLO-DEFINE (#167). PR-7 closed 2026-04-27 (Won't Do — closed-by-other: P0-1 #5). |
+| **P1** | 16 | 3 | Adds PR-5/PR-8/PR-9/PR-10 + tracking issues BENCH-BASELINES-MISSING (#166), PERF-SLO-DEFINE (#167). PR-7 closed 2026-04-27 (Won't Do — closed-by-other: P0-1 #5). PR-6 closed 2026-04-27 — search-then-dupe on the hit path. |
 | **P2** | 3 | — | Adds PR-11 (#148), PR-12 (#153). |
 | **P3** | 1 | — | Adds PR-13 (#155). |
-| **Validated/Closed total** | — | **10** | #2 BENCH-HARNESS, #43 P1-5 forceFlush, #5/#6/#15/#36/#122/#126/#135 + previously CHANGELOG'd P0-9/P0-10. |
-| **Total open** | **27** | **10** | — |
+| **Validated/Closed total** | — | **11** | #2 BENCH-HARNESS, #43 P1-5 forceFlush, #5/#6/#15/#36/#122/#126/#135/#139 + previously CHANGELOG'd P0-9/P0-10. |
+| **Total open** | **26** | **11** | — |
 
 ### Top 5 risks (post-validation)
 
 1. **PR-4 — new `std.http.Client` per export, no keepalive** (P1, score 76) at `src/exporters/otlp_http.zig:243`. One TCP+TLS handshake per batch on the post-default-BSP hot path. → [#47](https://gitlab.com/devnw/zig/otel/-/work_items/47)
 2. **PR-5 — groupByScope linear scan** (P1, score 72) at `src/exporters/otlp_http.zig:402-423` (and now also the spans-side `groupSpansByScope` introduced by PR-3). Replace the linear scope-bucket scans with a hash-keyed grouping. → [#138](https://gitlab.com/devnw/zig/otel/-/work_items/138)
-3. **PR-6 — Baggage.put dupe-before-dedup** (P1, score 72) at `src/api/baggage.zig:56-73`. Two arena dupes per put before the dedup check; collapse on the hit path. → [#139](https://gitlab.com/devnw/zig/otel/-/work_items/139)
-4. **PR-8 — duplicate `clock.now` calls in metrics hot path** (P1, score 64) at `src/sdk/metrics.zig`. Two `clock.now` per record; coalesce. → [#141](https://gitlab.com/devnw/zig/otel/-/work_items/141)
+3. **PR-8 — duplicate `clock.now` calls in metrics hot path** (P1, score 64) at `src/sdk/metrics.zig`. Two `clock.now` per record; coalesce. → [#141](https://gitlab.com/devnw/zig/otel/-/work_items/141)
 
+> **PR-6 dropped from this list** ([#139](https://gitlab.com/devnw/zig/otel/-/work_items/139)) — closed 2026-04-27. `Baggage.put` now searches `entries.items` for an existing key BEFORE allocating; on the hit path only the new value (and metadata, when non-null) are arena-duped — the caller's `key` slice is reused, so N consecutive puts of the same key grow arena bytes by O(N × value_len) instead of O(N × (key_len + value_len)). Evidence: `src/api/baggage.zig:56-80` (the dedup search is now ahead of the alloc; on miss the key + value + metadata are duped and appended as before). Regression test `test "Baggage.put hit-path does not re-dupe the key (PR-6 / #139)"` at `test/baggage.zig:45-101` pins both invariants — `entries.items[0].key.ptr` stays stable across 1024 hit-path puts AND `arena.queryCapacity()` grows by < 32 KiB total (pre-fix grew by ≥ 64 KiB on the same workload). Test FAILS on `main` pre-fix and PASSES post-fix.
+>
 > **PR-7 dropped from this list** ([#146](https://gitlab.com/devnw/zig/otel/-/work_items/146)) — closed 2026-04-27 as Won't Do (closed-by-other: P0-1 #5). The original "score 82" finding assumed an in-loop label sort; re-investigation against the current Prometheus exporter confirms there is no sort call. Insertion-order is stable by construction via `AttributeSet`. Evidence: `src/exporters/prometheus.zig:67-77` (`render` bucket loop iterates `pt.attributes.entries.items` directly), `src/exporters/prometheus.zig:159-189` (`writeBucketLabels` / `writeBucketLabelsInf` iterate `a.entries.items` in insertion order — no sort, no copy), `src/internal/attributes.zig:31-44` (`AttributeSet` doc-comment guarantees deterministic insertion-order iteration). `grep -n "std.sort\|std.mem.sort\|sortFn\|lessThan" src/exporters/prometheus.zig` returns nothing. Day-1 plan flagged this exact discrepancy at `docs/audit/gap-closure/PLAN_2026-04-27_TOP_QUEUE.md:117,141`.
 >
 > **Closed top risks:**
@@ -39,13 +40,14 @@
 >
 > **PR-1** ([#135](https://gitlab.com/devnw/zig/otel/-/work_items/135), score 92) — `MeterProvider.pointFor` concurrency race fixed 2026-04-27. Per-instrument `InstrumentMutex` wraps every record-path and the `collect()` snapshot loop; `pointIndexFor` now returns indices not pointers; `collect()` deep-copies attribute sets and histogram buffers so the snapshot fully detaches from `inst.points`. Coverage in `test/metrics_concurrency.zig` (3 tests, including a 2-thread writer stress and a writer-vs-collector stress). Pre-fix the writer-stress test reliably crashes with a HashMap pointer-stability assert; post-fix it passes deterministically.
 
-### Validated this sweep (8 issues closed)
+### Validated this sweep (9 issues closed)
 
 | ID | Issue | Validation source |
 |---|---|---|
 | PR-1 | [#135](https://gitlab.com/devnw/zig/otel/-/work_items/135) | CHANGELOG: per-instrument mutex on metric pointFor / collect — race-free under concurrent record + collect; `test/metrics_concurrency.zig` (3 tests). |
 | PR-2 | [#36](https://gitlab.com/devnw/zig/otel/-/work_items/36) | CHANGELOG: deferred-compaction `Writer.toOwnedSlice` — single O(N) sweep replaces per-commit `copyForwards`; `src/generated/otlp.zig` (6 PR-2 tests) + `test/otlp_wire_parity.zig` (3 byte-equality tests); `bench-micro` `micro_encode_spans_proto_{64,512,4096}` flat ~50 K spans/s. |
 | PR-3 | [#136](https://gitlab.com/devnw/zig/otel/-/work_items/136) | CHANGELOG: `groupSpansByScope` keyed on `(name, version, schema_url)`; trace encoder emits one `ScopeSpans` per bucket on both in-repo and DevNW paths; new `test/otlp_spans_multi_scope.zig` (5 tests) — multi-scope cases FAIL on `main` pre-fix and PASS post-fix; single-scope batches stay byte-identical. |
+| PR-6 | [#139](https://gitlab.com/devnw/zig/otel/-/work_items/139) | `src/api/baggage.zig:56-80` search-then-dupe on the hit path — caller-provided `key` slice is reused (no `arena.dupe`), only `value` (and `metadata` when non-null) are duped. Regression `test "Baggage.put hit-path does not re-dupe the key (PR-6 / #139)"` at `test/baggage.zig:45-101` pins pointer stability + bounded `arena.queryCapacity()` growth across 1024 same-key puts; FAIL pre-fix, PASS post-fix. SLO gate clean (Rule 3 p99=29.79 ns/op; Rule 4 allocs/op=0.00150). |
 | P-N1 | [#122](https://gitlab.com/devnw/zig/otel/-/work_items/122) | CHANGELOG: per-call retry backoff sleep added in OTLP/HTTP. |
 | P-N2 | [#126](https://gitlab.com/devnw/zig/otel/-/work_items/126) | CHANGELOG: per-call retry backoff sleep added in OTLP/gRPC. |
 | P0-1 | [#5](https://gitlab.com/devnw/zig/otel/-/work_items/5) | CHANGELOG: AttributeSet.put O(1) hash index — ~11× at 120-attr prefill. |
@@ -69,7 +71,7 @@
 | 4 | **P0** | **78** | **PR-3** | exporters | `src/exporters/otlp_http.zig:1039-1124,1378-1457` | confirmed | [#136](https://gitlab.com/devnw/zig/otel/-/work_items/136) | **closed 2026-04-27** — `groupSpansByScope` keys on `(name, version, schema_url)`; trace encoder emits one `ScopeSpans` per bucket on both in-repo (`encodeSpansProto`) and DevNW (`encodeSpansProtoDevnw`) paths; `ScopeSpans.schema_url` (field 3) wired through; new tests in `test/otlp_spans_multi_scope.zig` (5) cover multi-scope by name/version/schema_url, single-scope byte-parity fast path, and DevNW↔in-repo wire parity; FAIL on `main` pre-fix, PASS post-fix; PR-5 (#138) replaces the linear scan next. |
 | 5 | **P1** | **76** | **PR-4** | exporters | `src/exporters/otlp_http.zig:243` | confirmed | [#47](https://gitlab.com/devnw/zig/otel/-/work_items/47) | triage |
 | 6 | **P1** | **72** | **PR-5** | exporters | `src/exporters/otlp_http.zig:402-423` | confirmed | [#138](https://gitlab.com/devnw/zig/otel/-/work_items/138) | triage |
-| 7 | **P1** | **72** | **PR-6** | api | `src/api/baggage.zig:56-73` | confirmed | [#139](https://gitlab.com/devnw/zig/otel/-/work_items/139) | triage |
+| 7 | **P1** | **72** | **PR-6** | api | `src/api/baggage.zig:56-80` | confirmed | [#139](https://gitlab.com/devnw/zig/otel/-/work_items/139) | **closed 2026-04-27** — `Baggage.put` searches `entries.items` for an existing key BEFORE allocating; on the hit path only the new value (and metadata when non-null) are arena-duped — the caller's `key` slice is reused. Regression `test/baggage.zig:45-101` ("Baggage.put hit-path does not re-dupe the key (PR-6 / #139)") FAILS on `main` pre-fix and PASSES post-fix; pins both `entries.items[0].key.ptr` stability and bounded `arena.queryCapacity()` growth across 1024 same-key puts. SLO gate clean. |
 | 8 | **P1** | **64** | **PR-8** | sdk | `src/sdk/metrics.zig` (clock.now ×2) | confirmed | [#141](https://gitlab.com/devnw/zig/otel/-/work_items/141) | **closed 2026-04-27** — single `provider.clock.now()` captured before the lock and reused for `pt.last_unix_nano`; `src/sdk/metrics.zig:527,560,595,619`; SLO gate clean (Rule 3 attr_put_update p99=28.97 ns/op; Rule 4 counter allocs/op=0.00150). |
 | 9 | **P1** | **58** | **PR-9** | exporters | `src/exporters/otlp_grpc.zig:65,129,177` | confirmed | [#143](https://gitlab.com/devnw/zig/otel/-/work_items/143) | **closed 2026-04-27** — endpoint parsed once at `init` and cached in `OtlpGrpcExporter.parsed_endpoint`; the three former reparse sites (`checkExportPreconditions`, `expSpans`, `expMetrics`) now read from the cache; malformed endpoints fail fast at `init`. New regression suite `test/otlp_grpc_endpoint_cache.zig` (5 tests) pins the cache invariant including a "post-init mutation of `config.endpoint` does not affect dispatch" test. SLO gate clean (Rule 3 p99=27.89 ns/op; Rule 4 allocs/op=0.00150). |
 | 10 | **P1** | **56** | **PR-10** | api/internal | `src/internal/json_codec.zig:50,75,100` | confirmed | [#144](https://gitlab.com/devnw/zig/otel/-/work_items/144) | **closed 2026-04-27** — `spanToJson` / `metricToJson` / `logToJson` now return `try buf.toOwnedSlice(arena)` instead of `try arena.dupe(u8, buf.items)`; the redundant per-call full-payload memcpy is gone (arena `remap` is O(1) when the buffer was the last allocation). The defunct `defer buf.deinit(arena)` lines are also dropped — the caller's arena owns the lifetime. Wire-parity tests still byte-identical. SLO gate clean (Rule 3 p99=29.81 ns/op; Rule 4 allocs/op=0.00150). |
@@ -168,9 +170,9 @@ P0-9/P0-10 CHANGELOG-validated A/B follow-up tracker.
 
 ## Findings by area
 
-### `area::api` (5 + 1 validated)
+### `area::api` (4 + 2 validated)
 
-- **PR-6** Baggage.put dupe-before-dedup ([#139](https://gitlab.com/devnw/zig/otel/-/work_items/139)) — score 72
+- ~~**PR-6** Baggage.put dupe-before-dedup~~ ✅ closed 2026-04-27 ([#139](https://gitlab.com/devnw/zig/otel/-/work_items/139)) — search-then-dupe on the hit path; tests in `test/baggage.zig:45-101`
 - **PR-10** json_codec redundant arena.dupe ([#144](https://gitlab.com/devnw/zig/otel/-/work_items/144)) — score 56
 - **P0-3** setName arena-only ([#10](https://gitlab.com/devnw/zig/otel/-/work_items/10)) — score 24
 - **P1-7** sortedEntries cache or drop ([#45](https://gitlab.com/devnw/zig/otel/-/work_items/45)) — score 16
@@ -229,7 +231,7 @@ P0-9/P0-10 CHANGELOG-validated A/B follow-up tracker.
 | **PR-2** ([#36](https://gitlab.com/devnw/zig/otel/-/work_items/36)) | Subsumes original P1-1 line-range. Two-pass encoder rewrite also lands **P1-2** ([#40](https://gitlab.com/devnw/zig/otel/-/work_items/40)) stack-buffer fix. PR-3 ([#136](https://gitlab.com/devnw/zig/otel/-/work_items/136)) wire-shape fix is in the same encoder; co-implement. |
 | **PR-3** ([#136](https://gitlab.com/devnw/zig/otel/-/work_items/136)) ↔ **PR-5** ([#138](https://gitlab.com/devnw/zig/otel/-/work_items/138)) | PR-3 introduces groupByScope; PR-5 replaces its linear scan with a hash-keyed bucket table. |
 | **PR-4** ([#47](https://gitlab.com/devnw/zig/otel/-/work_items/47)) ↔ **PR-9** ([#143](https://gitlab.com/devnw/zig/otel/-/work_items/143)) ↔ **P1-11** ([#70](https://gitlab.com/devnw/zig/otel/-/work_items/70)) | Same struct shape: lift transport client + parsed endpoint to exporter init, mutex on call. Bundle. |
-| **PR-6** ([#139](https://gitlab.com/devnw/zig/otel/-/work_items/139)) | Same defect class as P0-1 (closed). Cross-link Quality M5 (#38). |
+| ~~**PR-6**~~ ([#139](https://gitlab.com/devnw/zig/otel/-/work_items/139)) | **Closed 2026-04-27** — same defect class as P0-1 (closed). Quality M5 (#38) cross-link still applies for any future Baggage refactor; no functional dependency remains. |
 | ~~**PR-7**~~ ([#146](https://gitlab.com/devnw/zig/otel/-/work_items/146)) ↔ **P1-8** ([#46](https://gitlab.com/devnw/zig/otel/-/work_items/46)) ↔ **PR-13** ([#155](https://gitlab.com/devnw/zig/otel/-/work_items/155)) | Same Prometheus render path. **PR-7 closed 2026-04-27** (Won't Do — closed-by-other: P0-1 #5; no in-loop sort exists). P1-8 (pre-size) + PR-13 (sanitized-name cache) remain bundleable. |
 | **PR-11** ([#148](https://gitlab.com/devnw/zig/otel/-/work_items/148)) | Co-implement with **P0-7** ([#18](https://gitlab.com/devnw/zig/otel/-/work_items/18)) — one helper, two call sites. |
 | **PR-12** ([#153](https://gitlab.com/devnw/zig/otel/-/work_items/153)) | Same shape as P-N6 ([#131](https://gitlab.com/devnw/zig/otel/-/work_items/131)) and P-N7 ([#132](https://gitlab.com/devnw/zig/otel/-/work_items/132)); bundle the three exporter arena hoists. |
@@ -261,7 +263,7 @@ P0-9/P0-10 CHANGELOG-validated A/B follow-up tracker.
 | ~~**PR-7**~~ | [#146](https://gitlab.com/devnw/zig/otel/-/work_items/146) | **82** | **Closed 2026-04-27 (Won't Do — closed-by-other: P0-1 #5).** No in-loop sort exists; insertion-order stable via `AttributeSet`. |
 | PR-4 | [#47](https://gitlab.com/devnw/zig/otel/-/work_items/47) | 76 | Persistent `std.http.Client`; co-implement with PR-9 + P1-11. |
 | PR-5 | [#138](https://gitlab.com/devnw/zig/otel/-/work_items/138) | 72 | Hash-keyed bucket table. After PR-3. |
-| PR-6 | [#139](https://gitlab.com/devnw/zig/otel/-/work_items/139) | 72 | Baggage dedup-before-dupe. Co-implement with Quality M5. |
+| ~~PR-6~~ | [#139](https://gitlab.com/devnw/zig/otel/-/work_items/139) | 72 | **Closed 2026-04-27** — search-then-dupe on the hit path; `src/api/baggage.zig:56-80`; regression test `test/baggage.zig:45-101`. |
 | PR-9 | [#143](https://gitlab.com/devnw/zig/otel/-/work_items/143) | 58 | Memoize parsed endpoint. Bundle with PR-4. |
 | P0-3 | [#10](https://gitlab.com/devnw/zig/otel/-/work_items/10) | 24 | Move `name` into the arena. Lands cleanest now that P0-2 closed. |
 | P1-3 / P1-4 | [#41](https://gitlab.com/devnw/zig/otel/-/work_items/41) [#42](https://gitlab.com/devnw/zig/otel/-/work_items/42) | 16 / 8 | P1-4 closed by P0-2; P1-3 still open. |
@@ -292,7 +294,7 @@ P0-9/P0-10 CHANGELOG-validated A/B follow-up tracker.
 4. **Prometheus bundle** — ~~PR-7 (#146 label sort hoist)~~ closed Won't Do 2026-04-27. P1-8 (#46 pre-size) + PR-13 (#155 sanitize cache) remain.
 5. **Exporter transport bundle** — **PR-4** (#47) + PR-9 (#143) + P1-11 (#70) + PR-12 (#153) + P-N6 (#131) + P-N7 (#132). Single struct refactor; six closes.
 6. **Mechanical** — PR-8 (#141), PR-10 (#144), P0-7 (#18) + PR-11 (#148), P0-3 (#10), P1-6 (#44), P1-10 (#56).
-7. **Tail** — PR-6 (#139 baggage), P1-3 (#41), P1-7 (#45).
+7. **Tail** — ~~PR-6 (#139 baggage)~~ ✅ closed 2026-04-27, P1-3 (#41), P1-7 (#45).
 8. **Strategic** — P0-8 (#21 BSP queue contention) after P0-9 A/B is captured.
 
 ---
@@ -309,7 +311,7 @@ Thirteen new findings + escalations from the Phase 3 perf-reviewer pass. Three a
 | ~~**PR-7**~~ | P1 | **82** | `src/exporters/prometheus.zig:67-77,159-189` | [#146](https://gitlab.com/devnw/zig/otel/-/work_items/146) | **Closed 2026-04-27 (Won't Do — closed-by-other: P0-1 #5).** Re-investigated against the current exporter: no sort call exists, `writeBucketLabels` / `writeBucketLabelsInf` iterate `entries.items` in insertion order, and `AttributeSet` (`src/internal/attributes.zig:31-44`) guarantees deterministic insertion-order iteration. `grep -n "std.sort\|std.mem.sort\|sortFn\|lessThan" src/exporters/prometheus.zig` returns nothing. |
 | **PR-4** | P1 | **76** | `src/exporters/otlp_http.zig:243` | [#47](https://gitlab.com/devnw/zig/otel/-/work_items/47) | Persistent `std.http.Client`; lazy-init; mutex on call. |
 | **PR-5** | P1 | 72 | `src/exporters/otlp_http.zig:402-423` | [#138](https://gitlab.com/devnw/zig/otel/-/work_items/138) | `AutoHashMap(*const InstrumentationScope, …)` for buckets. |
-| **PR-6** | P1 | 72 | `src/api/baggage.zig:56-73` | [#139](https://gitlab.com/devnw/zig/otel/-/work_items/139) | Defer-dupe; search first, then alloc. |
+| ~~**PR-6**~~ | P1 | 72 | `src/api/baggage.zig:56-80` | [#139](https://gitlab.com/devnw/zig/otel/-/work_items/139) | **Closed 2026-04-27** — search-then-dupe on hit path; caller-provided `key` slice reused. Regression `test/baggage.zig:45-101` pins pointer stability + bounded `arena.queryCapacity()` growth. |
 | **PR-8** | P1 | 64 | `src/sdk/metrics.zig` (clock.now ×2) | [#141](https://gitlab.com/devnw/zig/otel/-/work_items/141) | Capture `now_ns` once; thread through. |
 | **PR-9** | P1 | 58 | `src/exporters/otlp_grpc.zig:65,129,177` | [#143](https://gitlab.com/devnw/zig/otel/-/work_items/143) | Memoize parsed endpoint at init. |
 | **PR-10** | P1 | 56 | `src/internal/json_codec.zig:50,75,100` | [#144](https://gitlab.com/devnw/zig/otel/-/work_items/144) | Drop redundant `arena.dupe(buf.items)` at 3 sites. |

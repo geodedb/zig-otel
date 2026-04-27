@@ -15,6 +15,27 @@
 > `docs/SECURITY_GAP_ANALYSIS.md` §2.1 and the runbook is at
 > `docs/runbooks/h7-token-rotation.md`.
 
+## Blocked-upstream callouts (2026-04-27)
+
+- **GAP-GRPC-STATUS-PROPAGATION (#32)** — Blocked on
+  `gitlab.com/devnw/zig/grpc-zig`. The pinned client at
+  `zig-pkg/grpc_zig-0.1.0-7FnvpLrAAQAMxd1Mf0GfWePI0Ijw1vX-ZsEc6RCsIsq6/src/client.zig:43-64`
+  exposes `pub fn call(...) ![]u8`, returning only the response bytes —
+  HTTP/2 trailers (which carry `grpc-status` + `grpc-message` +
+  `Retry-After` per the gRPC HTTP/2 spec) are not surfaced. Without
+  trailer access, OTLP retry classification cannot use spec-mandated
+  gRPC status codes (e.g. `RESOURCE_EXHAUSTED`, `UNAVAILABLE`,
+  `DEADLINE_EXCEEDED`). The exporter at
+  `src/exporters/otlp_grpc.zig:291-295` documents this gap inline.
+  **Unblock steps:**
+  1. Open issue on `gitlab.com/devnw/zig/grpc-zig` requesting trailer
+     access in the client response API (e.g. extend `call` to return
+     a struct exposing both body and trailer headers).
+  2. Once the upstream change lands and is version-bumped, return to
+     issue #32 to consume the new API and wire `grpc-status` into the
+     retry classifier in `src/exporters/otlp_grpc.zig`.
+  - Operator todo tracked in `docs/runbooks/upstream-asks.md`.
+
 ## Status / Severity Summary
 
 | Severity | Open | Resolved | Total |
@@ -57,7 +78,7 @@
 | GAP-OTLP-COMPRESSION | gzip enum declared but encoder never applies it (HTTP or gRPC) | Not Implemented | High | [#27](https://gitlab.com/devnw/zig/otel/-/issues/27) |
 | GAP-PERIODIC-METRIC-READER | PeriodicExportingMetricReader missing — long-running services emit no metrics until shutdown | Not Implemented | High | [#29](https://gitlab.com/devnw/zig/otel/-/issues/29) |
 | GAP-OBSERVABLE-INSTRUMENTS | Observable Counter/UpDownCounter/Gauge API absent | Not Implemented | High | [#30](https://gitlab.com/devnw/zig/otel/-/issues/30) |
-| GAP-GRPC-STATUS-PROPAGATION | grpc-status trailers invisible to OTLP retry loop — server-side back-pressure dropped | Partial | High | [#32](https://gitlab.com/devnw/zig/otel/-/issues/32) |
+| GAP-GRPC-STATUS-PROPAGATION | grpc-status trailers invisible to OTLP retry loop — server-side back-pressure dropped | **Blocked (upstream-grpc_zig)** | High | [#32](https://gitlab.com/devnw/zig/otel/-/issues/32) |
 | GAP-ENV-BSP | OTEL_BSP_* env vars not parsed — BatchSpanProcessor unreconfigurable from env | Closed (`src/sdk/config.zig:193-198,415-422`, `src/sdk/export.zig:146-149`, `src/sdk/trace.zig:121-124,212`) | High | [#33](https://gitlab.com/devnw/zig/otel/-/issues/33) |
 | GAP-ENV-METRIC-INTERVAL | OTEL_METRIC_EXPORT_INTERVAL/_TIMEOUT env vars not parsed | Closed (`src/sdk/config.zig:209-212,231,445-446`) — env-var parse only; reader wiring tracked under #29 | High | [#35](https://gitlab.com/devnw/zig/otel/-/issues/35) |
 | GAP-VENDOR-PROTO | opentelemetry-proto v1.10.0 not vendored — golden tests cannot decode against canonical schema | Not Implemented | Medium | [#48](https://gitlab.com/devnw/zig/otel/-/issues/48) |

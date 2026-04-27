@@ -66,6 +66,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Notes
 
+- **GAP-GRPC-STATUS-PROPAGATION (#32) marked Blocked — upstream
+  `grpc_zig` client doesn't expose HTTP/2 trailers.** The pinned
+  `gitlab.com/devnw/zig/grpc-zig` client at
+  `zig-pkg/grpc_zig-0.1.0-7FnvpLrAAQAMxd1Mf0GfWePI0Ijw1vX-ZsEc6RCsIsq6/src/client.zig:43-64`
+  declares `pub fn call(...) ![]u8` and returns only the response
+  bytes — HTTP/2 trailers carrying `grpc-status`, `grpc-message`,
+  and `Retry-After` are not surfaced. Without trailer access, OTLP
+  retry classification cannot use spec-mandated gRPC status codes
+  (`RESOURCE_EXHAUSTED`, `UNAVAILABLE`, `DEADLINE_EXCEEDED`); the
+  consumer-side stub-out is documented at
+  `src/exporters/otlp_grpc.zig:291-295`. The fix has to land in
+  upstream `grpc_zig` first — extend the client API to expose
+  trailers — then this repo can consume it. Operator unblock
+  checklist (file upstream issue, land upstream change, bump pin,
+  wire in `unaryExport`, regression tests, close #32) tracked in
+  `docs/runbooks/upstream-asks.md` (new file). Row in
+  `docs/GAP_ANALYSIS.md` flipped from `Partial` →
+  `Blocked (upstream-grpc_zig)`. `docs/DEPENDENCIES.md` gRPC client
+  row also notes the outstanding upstream ask.
 - **GAP-OTLP-PROFILES-EXPORT (#25) recorded Won't Do — upstream proto
   is unstable (`/v1development/`).** The OTLP profiles proto remains
   under `opentelemetry/proto/profiles/v1development/` in the vendored

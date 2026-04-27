@@ -131,7 +131,7 @@
 | GAP-ENV-OTLP-MTLS | mTLS env vars not parsed; no fields for cert/key in OtlpConfig | Not Implemented | Low | [#97](https://gitlab.com/devnw/zig/otel/-/issues/97) |
 | GAP-ENV-BLRP | OTEL_BLRP_* env vars not parsed (no log batch processor exists yet) | Not Implemented | Low | [#98](https://gitlab.com/devnw/zig/otel/-/issues/98) |
 | GAP-FUZZ-DISABLED | zig-fuzz CI job disabled pending Zig 0.16 stdlib bug fix (upstream) | **Blocked (upstream-zig-stdlib)** | Low | [#99](https://gitlab.com/devnw/zig/otel/-/issues/99) |
-| GAP-WINDOWS-TESTS-DISABLED | Windows test jobs disabled pending devnw/ci-catalog fix (upstream) | Not Implemented | Low | [#100](https://gitlab.com/devnw/zig/otel/-/issues/100) |
+| GAP-WINDOWS-TESTS-DISABLED | Windows test jobs disabled pending devnw/ci-catalog fix (upstream) | **Blocked (upstream-devnw-ci-catalog)** | Low | [#100](https://gitlab.com/devnw/zig/otel/-/issues/100) |
 | GAP-BENCH-LOOPBACK-UNDOCUMENTED | bench loopback server (benchmarks/integration/loopback_server.zig) not declared in DEPENDENCIES.md or SPEC_COMPLIANCE.md | Partial | Low | [#112](https://gitlab.com/devnw/zig/otel/-/issues/112) |
 
 ## Dependency Graph

@@ -10,6 +10,7 @@
 |--------|-----|--------|---------|-------|
 | Open   | `gitlab.com/devnw/zig/grpc-zig` — expose HTTP/2 trailers in client response API | **Pending — operator action** | (file upstream issue) | <benji@codepros.org> |
 | Open   | `ziglang/zig` — `std.testing.fuzz` crash on corpus reseed (Zig 0.16) | **Pending — operator action** | URL: TBD — search ziglang/zig before filing (candidates: ziglang/zig#26040, ziglang/zig#21410) | <benji@codepros.org> |
+| Open   | `gitlab.com/devnw/ci-catalog` — PowerShell wrapper false-positive on stderr | **Pending — operator action** | URL: TBD — file in gitlab.com/devnw/ci-catalog if no duplicate | <benji@codepros.org> |
 
 ---
 
@@ -208,3 +209,88 @@ repro derived from `zig-out/.../fuzz/` corpus state on the runner.
   Implemented" to "Blocked (upstream-zig-stdlib)" after the Day-2
   re-investigation confirmed the disabled CI job's root cause is
   upstream-only.
+
+---
+
+## Upstream ask — devnw/ci-catalog PowerShell wrapper false-positive on stderr
+
+- **Upstream dep:** `gitlab.com/devnw/ci-catalog` (the shared GitLab
+  CI/CD job-catalog this repo's Windows runner inherits from).
+- **Consumer issue blocked:** [GAP-WINDOWS-TESTS-DISABLED (#100)](https://gitlab.com/devnw/zig/otel/-/issues/100).
+- **Severity in consumer:** Low. Three Windows test jobs
+  (`zig-test-windows-{unit,integration,stress}-0.16.0`) are disabled.
+  Linux test coverage is unaffected; the gap is platform parity for
+  Windows-specific regressions (path separators, `\r\n` line endings,
+  `std.fs.openFileAbsolute` semantics).
+
+### Evidence (verified 2026-04-27)
+
+The three Windows jobs are statically disabled at:
+
+```yaml
+# .gitlab-ci.yml:241-251
+zig-test-windows-unit-0.16.0:
+  rules:
+  - when: never
+
+zig-test-windows-integration-0.16.0:
+  rules:
+  - when: never
+
+zig-test-windows-stress-0.16.0:
+  rules:
+  - when: never
+```
+
+Block-comment cause documented inline at `.gitlab-ci.yml:225-235`:
+the ci-catalog PowerShell wrapper reports `NativeCommandError` on
+benign stderr writes even when zig exits 0. The job's actual zig run
+prints `Build Summary: 30/30 steps succeeded; 33/43 tests passed`
+before the wrapper trips. The Linux runners use a bash wrapper that
+does not exhibit this behaviour.
+
+### Asked-for change (upstream)
+
+A PowerShell-tolerant runner in `gitlab.com/devnw/ci-catalog` that
+either:
+
+- treats stderr writes as informational (do not fail the job on
+  non-zero stderr volume when the underlying process exits 0), or
+- adds an opt-in flag to the catalog template (e.g.
+  `tolerate_stderr: true`) that downstream consumers can set.
+
+### Operator unblock checklist
+
+1. **Confirm or file** the upstream ci-catalog issue. Run
+   `glab issue list --repo devnw/ci-catalog` first; as of 2026-04-27
+   the open-issue list returned empty. If still empty, file a new
+   issue with the block-comment quote from `.gitlab-ci.yml:225-235`
+   and a sample failing pipeline URL from before the jobs were
+   disabled.
+2. **Land the upstream change** (track in ci-catalog).
+3. **Re-enable CI**: at `.gitlab-ci.yml:241-251` replace
+   `rules: - when: never` with `rules: - when: on_success` (or the
+   ci-catalog-recommended idiom for the new template). Verify against
+   a sample MR pipeline.
+4. **Run all three Windows suites** against the re-enabled jobs;
+   capture the run URLs.
+5. **Close `gitlab.com/devnw/zig/otel/-/issues/100`** with the
+   `.gitlab-ci.yml` SHA and the three successful Windows pipeline
+   URLs.
+
+### Cross-references
+
+- Consumer flatfile row: `docs/GAP_ANALYSIS.md` —
+  `GAP-WINDOWS-TESTS-DISABLED` (status
+  `Blocked (upstream-devnw-ci-catalog)`).
+- Consumer CI: `.gitlab-ci.yml:225-235` (block-comment),
+  `.gitlab-ci.yml:241-251` (the three disabled jobs).
+
+### History
+
+- 2026-04-27 — created when issue #100 was reclassified from "Not
+  Implemented" to "Blocked (upstream-devnw-ci-catalog)" after the
+  Day-2 re-investigation confirmed the disabled CI jobs' root cause
+  is upstream-only. `glab issue list --repo devnw/ci-catalog`
+  returned no open issues at that time, so the upstream URL is
+  recorded as TBD pending operator filing.

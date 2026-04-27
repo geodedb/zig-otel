@@ -282,6 +282,10 @@ pub fn build(b: *std.Build) void {
         // exporter dispatch, plus *Provider.initFromConfig helpers and
         // factory lifecycle (deinit frees backing allocations).
         "test/exporter_factory.zig",
+        // GAP-OBSERVABLE-INSTRUMENTS (#30): asynchronous Counter /
+        // UpDownCounter / Gauge — callback registration, multi-callback
+        // ordering, idempotent unregister, cumulative semantics.
+        "test/observable_instruments.zig",
     };
     for (test_files) |path| {
         const m = b.createModule(.{

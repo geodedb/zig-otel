@@ -115,6 +115,18 @@ const InstrumentBackend = struct {
     /// Back-pointer so instrument operations can route through the
     /// provider without a threadlocal.
     provider: *MeterProvider,
+    /// Registered observable callbacks. Empty for synchronous
+    /// instruments. Populated by `Meter.createObservable*` and
+    /// `Meter.registerCallback`. `MeterProvider.collect()` invokes every
+    /// callback in registration order under `mu` before snapshotting,
+    /// per the OTel asynchronous-instrument contract.
+    /// GAP-OBSERVABLE-INSTRUMENTS (#30).
+    callbacks: std.ArrayList(ObservableCallbackEntry) = .empty,
+    /// Monotonic registration counter. Each `Meter.createObservable*` /
+    /// `Meter.registerCallback` increments this; the new entry's
+    /// `callback_id` lets `unregisterCallback` find and remove it
+    /// idempotently.
+    next_callback_id: u32 = 1,
     /// Mirror handle into the DevNW `metrics.Registry` when the
     /// `Backend.devnw` aggregation is selected. Counters and observable
     /// counters mirror to a DevNW Counter; up/down counters and gauges
@@ -131,8 +143,18 @@ const InstrumentBackend = struct {
         for (self.points.items) |*pt| pt.deinit(allocator);
         self.points.deinit(allocator);
         self.points_index.deinit(allocator);
+        self.callbacks.deinit(allocator);
         if (self.devnw_name) |n| allocator.free(n);
     }
+};
+
+/// One registered observable callback. The `id` lets unregister be
+/// idempotent — passing a stale id matches no entry. `user_ctx` is
+/// passed through to the callback verbatim.
+const ObservableCallbackEntry = struct {
+    id: u32,
+    callback: metrics_api.ObservableCallback,
+    user_ctx: ?*anyopaque,
 };
 
 /// Tagged borrowed handle into the DevNW registry. `none` for the
@@ -293,6 +315,11 @@ pub const MeterProvider = struct {
             .upDownCounterFn = makeUpDownCounter,
             .histogramFn = makeHistogram,
             .gaugeFn = makeGauge,
+            .observableCounterFn = makeObservableCounter,
+            .observableUpDownCounterFn = makeObservableUpDownCounter,
+            .observableGaugeFn = makeObservableGauge,
+            .registerCallbackFn = registerExtraCallback,
+            .unregisterCallbackFn = unregisterCallback,
         };
     }
 
@@ -675,6 +702,174 @@ fn gaugeSet(ctx: ?*anyopaque, value: f64, attributes: []const attrs_mod.Entry) v
     mirrorGaugeSet(inst, value);
 }
 
+// -------------------------------------------------------------- Observable instruments
+//
+// GAP-OBSERVABLE-INSTRUMENTS (#30). Asynchronous instruments register a
+// callback that is invoked under `inst.mu` at the start of each
+// `MeterProvider.collect()` call. The callback receives an Observer that
+// pumps `(value, attributes)` tuples through `pointIndexFor` — the same
+// hash-indexed path the synchronous record-side uses (P0-1) so we never
+// duplicate the points map.
+//
+// Concurrency: the callbacks list is mutated under `inst.mu`. Readers in
+// `collect()` walk it under the same lock, so callback registration /
+// unregistration is safe to interleave with concurrent sync writers and
+// in-flight collects (the lock serialises everything).
+
+fn makeObservableCounter(
+    ctx: ?*anyopaque,
+    d: metrics_api.InstrumentDescriptor,
+    callback: metrics_api.ObservableCallback,
+    user_ctx: ?*anyopaque,
+) anyerror!metrics_api.ObservableCounter {
+    const provider: *MeterProvider = @ptrCast(@alignCast(ctx.?));
+    var descriptor = d;
+    descriptor.kind = .observable_counter;
+    const inst = try provider.newInstrument(descriptor, .{ .name = "" });
+    const reg = try appendCallback(provider.allocator, inst, callback, user_ctx);
+    return .{ .ctx = inst, .descriptor = descriptor, .registration = reg };
+}
+
+fn makeObservableUpDownCounter(
+    ctx: ?*anyopaque,
+    d: metrics_api.InstrumentDescriptor,
+    callback: metrics_api.ObservableCallback,
+    user_ctx: ?*anyopaque,
+) anyerror!metrics_api.ObservableUpDownCounter {
+    const provider: *MeterProvider = @ptrCast(@alignCast(ctx.?));
+    var descriptor = d;
+    descriptor.kind = .observable_up_down_counter;
+    const inst = try provider.newInstrument(descriptor, .{ .name = "" });
+    const reg = try appendCallback(provider.allocator, inst, callback, user_ctx);
+    return .{ .ctx = inst, .descriptor = descriptor, .registration = reg };
+}
+
+fn makeObservableGauge(
+    ctx: ?*anyopaque,
+    d: metrics_api.InstrumentDescriptor,
+    callback: metrics_api.ObservableCallback,
+    user_ctx: ?*anyopaque,
+) anyerror!metrics_api.ObservableGauge {
+    const provider: *MeterProvider = @ptrCast(@alignCast(ctx.?));
+    var descriptor = d;
+    descriptor.kind = .observable_gauge;
+    const inst = try provider.newInstrument(descriptor, .{ .name = "" });
+    const reg = try appendCallback(provider.allocator, inst, callback, user_ctx);
+    return .{ .ctx = inst, .descriptor = descriptor, .registration = reg };
+}
+
+fn appendCallback(
+    allocator: std.mem.Allocator,
+    inst: *InstrumentBackend,
+    callback: metrics_api.ObservableCallback,
+    user_ctx: ?*anyopaque,
+) !metrics_api.ObservableRegistration {
+    inst.mu.lock();
+    defer inst.mu.unlock();
+    const id = inst.next_callback_id;
+    inst.next_callback_id += 1;
+    try inst.callbacks.append(allocator, .{
+        .id = id,
+        .callback = callback,
+        .user_ctx = user_ctx,
+    });
+    return .{ .instrument = inst, .callback_id = id };
+}
+
+fn registerExtraCallback(
+    ctx: ?*anyopaque,
+    on: metrics_api.ObservableRegistration,
+    callback: metrics_api.ObservableCallback,
+    user_ctx: ?*anyopaque,
+) anyerror!metrics_api.ObservableRegistration {
+    const provider: *MeterProvider = @ptrCast(@alignCast(ctx.?));
+    const inst_ptr = on.instrument orelse return error.InvalidRegistration;
+    const inst: *InstrumentBackend = @ptrCast(@alignCast(inst_ptr));
+    return try appendCallback(provider.allocator, inst, callback, user_ctx);
+}
+
+fn unregisterCallback(_: ?*anyopaque, registration: metrics_api.ObservableRegistration) void {
+    const inst_ptr = registration.instrument orelse return;
+    const inst: *InstrumentBackend = @ptrCast(@alignCast(inst_ptr));
+    inst.mu.lock();
+    defer inst.mu.unlock();
+    var i: usize = 0;
+    while (i < inst.callbacks.items.len) : (i += 1) {
+        if (inst.callbacks.items[i].id == registration.callback_id) {
+            _ = inst.callbacks.orderedRemove(i);
+            return;
+        }
+    }
+    // Idempotent: stale or already-unregistered ids are a no-op.
+}
+
+/// Observer state used while a single observable callback runs. Owns
+/// nothing — borrows the instrument and the provider so the observe
+/// helpers can route into `pointIndexFor`. The `inst.mu` is *already
+/// held* by the caller (`invokeCallbacksLocked`), so the observe
+/// helpers must not relock it.
+const ObserverCtx = struct {
+    inst: *InstrumentBackend,
+    provider: *MeterProvider,
+    now: u64,
+};
+
+fn observerObserveInt(ctx: ?*anyopaque, value: i64, attributes: []const attrs_mod.Entry) void {
+    const oc: *ObserverCtx = @ptrCast(@alignCast(ctx.?));
+    const idx = oc.provider.pointIndexFor(oc.inst, attributes, oc.now) catch return;
+    const pt = &oc.inst.points.items[idx];
+    switch (pt.value) {
+        // Asynchronous counter / up-down counter callbacks report the
+        // current cumulative value — last write wins for that attribute
+        // set within a single collect cycle (per OTel spec).
+        .sum_uint => |*v| {
+            if (value < 0) return; // observable_counter is monotonic
+            v.* = @intCast(value);
+        },
+        .sum_int => |*v| v.* = value,
+        .gauge_double => |*v| v.* = @floatFromInt(value),
+        else => {},
+    }
+    pt.last_unix_nano = oc.now;
+}
+
+fn observerObserveDouble(ctx: ?*anyopaque, value: f64, attributes: []const attrs_mod.Entry) void {
+    const oc: *ObserverCtx = @ptrCast(@alignCast(ctx.?));
+    const idx = oc.provider.pointIndexFor(oc.inst, attributes, oc.now) catch return;
+    const pt = &oc.inst.points.items[idx];
+    switch (pt.value) {
+        .gauge_double => |*v| v.* = value,
+        .sum_int => |*v| v.* = @intFromFloat(value),
+        .sum_uint => |*v| {
+            if (value < 0 or std.math.isNan(value)) return;
+            v.* = @intFromFloat(value);
+        },
+        else => {},
+    }
+    pt.last_unix_nano = oc.now;
+}
+
+/// Run every registered callback against `inst` while holding `inst.mu`.
+/// Callbacks observe values via the supplied `Observer`; the `ObserverCtx`
+/// routes those into `pointIndexFor` (same hash-indexed path as the
+/// synchronous record side). Errors from any individual callback are
+/// swallowed so a single bad callback can't take the whole collect cycle
+/// down.
+fn invokeCallbacksLocked(provider: *MeterProvider, inst: *InstrumentBackend, now: u64) void {
+    if (inst.callbacks.items.len == 0) return;
+    var oc = ObserverCtx{ .inst = inst, .provider = provider, .now = now };
+    const observer = metrics_api.Observer{
+        .ctx = &oc,
+        .observeIntFn = observerObserveInt,
+        .observeDoubleFn = observerObserveDouble,
+    };
+    for (inst.callbacks.items) |entry| {
+        entry.callback(entry.user_ctx, observer) catch {
+            // Swallowed: a bad callback cannot abort the collect cycle.
+        };
+    }
+}
+
 // ---------------------------------------------------------------- Mirror writes
 //
 // The mirror helpers fan-out updates into the DevNW `metrics.Registry`
@@ -761,12 +956,19 @@ pub fn collect(provider: *MeterProvider, out_alloc: std.mem.Allocator) ![]exp.Me
         out.deinit(out_alloc);
     }
 
+    const collect_now = provider.clock.now();
     for (provider.instruments.items) |inst| {
         // Take the per-instrument lock for the entire copy window so
         // (a) the source slice cannot grow underneath us, and
         // (b) concurrent recorders observe a consistent view of each
         // point's value/last_unix_nano.
+        // GAP-OBSERVABLE-INSTRUMENTS (#30): observable callbacks run
+        // BEFORE the empty/snapshot loop so they can populate the
+        // points map for this collection cycle. Same lock window as
+        // the snapshot so a concurrent sync writer can't race the
+        // observe-or-snapshot ordering.
         inst.mu.lock();
+        invokeCallbacksLocked(provider, inst, collect_now);
         const empty = inst.points.items.len == 0;
         if (empty) {
             inst.mu.unlock();

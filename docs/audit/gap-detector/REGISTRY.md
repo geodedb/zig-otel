@@ -54,7 +54,7 @@ Mapping vs catalog labels: `priority::critical → Critical`, `priority::high �
 | 9 | GAP-OTLP-COMPRESSION | #27 | High | Not Impl | `src/sdk/config.zig:52` enum + `src/exporters/otlp_grpc.zig:296` `out[0]=0` hardcode |
 | 10 | GAP-PERIODIC-METRIC-READER | #29 | High | Not Impl | 0 hits for `PeriodicExportingMetricReader` repo-wide |
 
-(Continuing down: #30 OBSERVABLE, #32 GRPC-STATUS-PROPAGATION-Partial, #33 ENV-BSP, #35 ENV-METRIC-INTERVAL — all High.)
+(Continuing down: #32 GRPC-STATUS-PROPAGATION-Partial, #33 ENV-BSP, #35 ENV-METRIC-INTERVAL — all High. #30 GAP-OBSERVABLE-INSTRUMENTS now Closed — `src/api/metrics.zig` `Meter.createObservable*`/`registerCallback`/`unregisterCallback` vtable; `src/sdk/metrics.zig` `InstrumentBackend.callbacks` + `invokeCallbacksLocked` invoked at the head of `collect()` under `inst.mu`; `test/observable_instruments.zig`.)
 
 ---
 

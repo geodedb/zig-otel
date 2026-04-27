@@ -99,7 +99,7 @@ Per-phase artifacts:
 | 3 | Security | **NEW-H-1** (#134🔒) | proto/semconv manifests hash only LICENSE — provenance gate is decorative (CWE-345) | High | 7.5 | docs/proto-manifest.txt:4 |
 | 4 | Quality | **OTEL-Q-001** (#149) | otlp_http.zig 1407 LOC, triple-encoder family — split by signal/encoder | High | 85 | src/exporters/otlp_http.zig |
 | 5 | Quality | **OTEL-Q-NEW-A** (#163) | Fragile fn-pointer-identity dispatch sentinel (LTO/inline-fragile) | High | 82 | otlp_http.zig:303-306,372-375 |
-| 6 | Perf | **PR-7** (#146) | Prometheus per-bucket label re-sort (16× cost on default histograms) | P1 | 82 | src/exporters/prometheus.zig:70-80,162-177 |
+| 6 | Perf | ~~**PR-7** (#146)~~ | ~~Prometheus per-bucket label re-sort (16× cost on default histograms)~~ — **closed 2026-04-27 (Won't Do — closed-by-other: P0-1 #5)**: re-investigation confirmed no sort call exists in `src/exporters/prometheus.zig`; insertion-order stability is guaranteed by `AttributeSet` (`src/internal/attributes.zig:31-44`). | P1 | 82 | src/exporters/prometheus.zig:67-77,159-189 |
 | 7 | Quality | **OTEL-Q-002** (#150) | Extract `exportSignal` helper — `expSpans`/`expMetrics` byte-identical retry loops | High | 80 | otlp_http.zig:277-322 vs 348-392 |
 | 8 | Perf+Correctness | **PR-3** (#136) | OTLP trace encoder uses `items[0].instrumentation_scope` only — multi-tracer batches mislabeled | P0 | 78 | otlp_http.zig:1055-1093 |
 | 9 | Quality | **OTEL-Q-003** (#152) | OTLP log export missing — SimpleLogProcessor exists, no expLogs/encodeLogs | High | 78 | src/sdk/logs.zig:43 |

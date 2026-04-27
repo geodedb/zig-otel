@@ -187,3 +187,26 @@ Five deferred follow-up items from the §"Operator-Pending Follow-Ups" list abov
 **Net session estimate vs actual:** ~2.5 hours predicted; landed 5 commits (`914579e..94866d2`) on `main` (not yet pushed at hand-off).
 
 **Doc reconciliation in this pass:** corrected `docs/PERF_GAP_ANALYSIS.md:99` and `CHANGELOG.md` to read "18 deferred + 2 won't-do" (was "14 untracked gaps"); the deferred-probes table itself was always 18 rows. Plan-time wording in `docs/audit/gap-closure/PLAN_2026-04-27_FOLLOWUPS.md` left as historical artefact.
+
+## Top-Queue Day-1 Closures — 2026-04-27
+
+Eight-item Day-1 batch from the 22-item Critical+High top-queue sweep landed against `main` in the same calendar day. Plan: `docs/audit/gap-closure/PLAN_2026-04-27_TOP_QUEUE.md`. Completion report: `docs/audit/gap-closure/COMPLETION_REPORT_2026-04-27_TOP_QUEUE.md`. Verifier verdict: **ALL PASS — `zig build test --summary all` → 132/25/0 default, 141/16/0 with DevNW codecs; zero regressions.**
+
+| # | Gap | Issue | Commit | Status | Domain | Evidence (file:line + tests) |
+|--:|-----|------:|--------|--------|--------|------------------------------|
+| 1 | GAP-OTLP-METRIC-EXPORT (tracker drift) | [#7](https://gitlab.com/devnw/zig/otel/-/issues/7) | (already shipped `ac68bff`) | Closed | Functional / Exporters | `src/exporters/otlp_http/metrics.zig:39` `metric_path = "/v1/metrics"`; `src/exporters/otlp_grpc.zig:99` `metrics_export_method = "MetricsService/Export"`; `test/otlp_metrics.zig` (8) + `test/remote_otlp.zig` live test |
+| 2 | GAP-DEPRECATED-SPAN-EVENTS-FLAG (docs-only) | [#101](https://gitlab.com/devnw/zig/otel/-/issues/101) | (Phase 3 classification, no code) | Closed | Quality / Docs | `src/api/trace.zig:215-218` — by-design build gate per spec deprecation |
+| 3 | PR-8 — single `clock.now()` per metric record | [#141](https://gitlab.com/devnw/zig/otel/-/issues/141) | `b934ac3` | Closed | Performance (P1) | `src/sdk/metrics.zig:517,531,554,565,579,601,615,626`; SLO gate Rule 3 p99=28.97 ns/op, Rule 4 allocs/op=0.00150 |
+| 4 | PR-9 — cache parsed gRPC endpoint at init | [#143](https://gitlab.com/devnw/zig/otel/-/issues/143) | `0f9de4f` | Closed | Performance (P1) | `src/exporters/otlp_grpc.zig` (`parsed_endpoint` cached at init); `test/otlp_grpc_endpoint_cache.zig` (5 tests) |
+| 5 | PR-10 — `toOwnedSlice` replaces redundant `arena.dupe` | [#144](https://gitlab.com/devnw/zig/otel/-/issues/144) | `8bc8a09` | Closed | Performance (P1) | `src/internal/json_codec.zig:50,75,100`; wire-parity tests byte-identical |
+| 6 | GAP-ENV-BSP — parse `OTEL_BSP_*` env vars | [#33](https://gitlab.com/devnw/zig/otel/-/issues/33) | `9539b8b` | Closed | Functional / SDK | `src/sdk/config.zig:193-198,415-422`; `src/sdk/export.zig:146-149`; `src/sdk/trace.zig:121-124,212`; 4 new `test/config.zig` cases |
+| 7 | GAP-ENV-METRIC-INTERVAL — parse `OTEL_METRIC_EXPORT_INTERVAL/_TIMEOUT` | [#35](https://gitlab.com/devnw/zig/otel/-/issues/35) | `636d9e9` | Closed | Functional / SDK | `src/sdk/config.zig:209-212,231,445-446`; 3 new `test/config.zig` cases. Reader runtime wiring deferred to #29 |
+| 8 | GAP-OTLP-WIRE-SCHEMA-URL — emit `Resource.schema_url` | [#26](https://gitlab.com/devnw/zig/otel/-/issues/26) | `d1d3bd7` | Closed | Functional / Exporters | `src/exporters/otlp_http/encode_proto.zig:333-342` (ResourceSpans field 3) + `:106-113` (ResourceMetrics field 3); DevNW path `:160-172,201-205`; `test/otlp_resource_schema_url.zig` (5 tests). Logs path deferred to #8 |
+| 9 | GAP-OTLP-WIRE-EVENTS-LINKS — emit `Span.events`/`Span.links` | [#9](https://gitlab.com/devnw/zig/otel/-/issues/9) | `87875d1` | Closed | Functional / Exporters (Critical) | `src/exporters/otlp_http/encode_proto.zig:281-291,310-323,332-344`; DevNW path `:124-156,173-191,312-340`; `test/otlp_span_events_links.zig` (7 tests) |
+| 10 | GAP-OTLP-PROFILES-EXPORT | [#25](https://gitlab.com/devnw/zig/otel/-/issues/25) | `c116d3e` | **Won't Do** | Functional / Exporters | Upstream proto under `/v1development/`; README + SPEC_COMPLIANCE flipped to NOT IMPLEMENTED; inert `error.UnsupportedTransport` stub preserved as forward-compat insurance. Re-open trigger: upstream `/v1/` promotion |
+| 11 | GAP-GRPC-STATUS-PROPAGATION | [#32](https://gitlab.com/devnw/zig/otel/-/issues/32) | `9eaeec2` (docs flip only) | **Blocked (upstream)** — issue stays OPEN | Functional / Exporters | Pinned `grpc_zig.client.call(...) ![]u8` returns only response bytes; trailers (`grpc-status`, `grpc-message`, `Retry-After`) not surfaced. Source: `zig-pkg/grpc_zig-…/src/client.zig:43-64` + consumer-side `src/exporters/otlp_grpc.zig:291-295`. **Unblock runbook:** `docs/runbooks/upstream-asks.md` § ASK-GRPC-ZIG-TRAILERS (6-step checklist) |
+
+**Issues closed on tracker:** 9 (#7, #9, #25, #26, #33, #35, #101, #141, #143, #144 — note #7 and #101 were already closed as tracker drift).
+**Issues kept open with status comment:** 1 (#32 — Blocked-upstream).
+**Commits on `main` this run:** 9 (`b934ac3..9eaeec2`), not yet pushed at hand-off.
+**Net Day-1 capacity vs plan:** 8 Day-1 items planned (per `PLAN_2026-04-27_TOP_QUEUE.md` §3) + 2 carried tracker-drift = 10 items addressed; only #32 left in Blocked-upstream state.

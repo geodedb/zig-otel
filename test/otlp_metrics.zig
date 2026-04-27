@@ -97,7 +97,7 @@ test "OTLP metric exporter posts to /v1/metrics" {
         .protocol = .http_protobuf,
         .timeout_ms = 100,
     });
-    exporter.transport = fakeTransport;
+    exporter.transport = .{ .custom = fakeTransport };
     defer exporter.deinit();
 
     const result = try exporter.metricExporter().exportMetrics(snapshot);
@@ -140,7 +140,7 @@ test "OTLP metric exporter retries on 503 then succeeds on 200" {
         .protocol = .http_protobuf,
         .timeout_ms = 100,
     });
-    exporter.transport = RetryFake.t;
+    exporter.transport = .{ .custom = RetryFake.t };
     defer exporter.deinit();
 
     const result = try exporter.metricExporter().exportMetrics(snapshot);
@@ -312,7 +312,7 @@ test "OTLP metric exporter accepts JSON protocol via /v1/metrics" {
         .protocol = .http_json,
         .timeout_ms = 100,
     });
-    exporter.transport = fakeTransport;
+    exporter.transport = .{ .custom = fakeTransport };
     defer exporter.deinit();
 
     _ = try exporter.metricExporter().exportMetrics(snapshot);

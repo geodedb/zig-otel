@@ -1,27 +1,39 @@
 # Quality Gap Analysis
 
-Last updated: 2026-04-26
+Last updated: 2026-04-27
 
 This document tracks the codepros Phase-3 quality findings, their
 PriorityScore, GitLab issue links, and current remediation status.
 Source: `docs/audit/QUALITY_REVIEW.md` (Phase 3) re-scoring
-`docs/audit/QUALITY_SCAN.md` (Phase 2).
+`docs/audit/QUALITY_SCAN.md` (Phase 2), supplemented by the 2026-04-27
+deep re-review (OTEL-Q-001..010 + OTEL-Q-NEW-A..E, see section
+"Phase 3 deep re-review (2026-04-27)" below).
 
-PriorityScore = `SeverityWeight × BlastRadius × FixConfidence`
+PriorityScore (legacy formula): `SeverityWeight × BlastRadius × FixConfidence`
 (weights: Critical=8, High=4, Medium=2, Low=1; Blast 1-3; FixConf 1-3).
+
+PriorityScore (2026-04-27 re-review formula): `Impact(1-5) × Likelihood(1-5) × 4`,
+yielding 0-100. The two formulas coexist; rows are tagged with the
+formula they were last scored under.
 
 ## Summary
 
-**Total findings:** 40. **GitLab issues:** 33 (3 findings folded into the
-dead-code cleanup bundle: M3, L7, L10; 9 net-new from the 2026-04-26
-re-audit: Q32-Q38, DOC-1, DOC-2).
+**Total findings:** 55. **GitLab issues:** 45 (3 findings folded into the
+dead-code cleanup bundle: M3, L7, L10; 9 from the 2026-04-26 re-audit:
+Q32-Q38 + DOC-1, DOC-2; 12 from the 2026-04-27 deep re-review:
+OTEL-Q-001/002/003/004/005/006/008/009/010 + OTEL-Q-NEW-A/B/D; 2 of the
+2026-04-27 audit findings (OTEL-Q-007 and OTEL-Q-NEW-C) folded into
+existing issues #19 and #53 via comment with audit Quality-ID; 1
+(OTEL-Q-NEW-E) folded into OTEL-Q-004's body; OTEL-Q-011..016
+catalogued as Low without dedicated issues — to be expanded if they
+escalate).
 
 | Severity | Count |
 |----------|-------|
 | Critical | 3     |
-| High     | 8     |
-| Medium   | 12    |
-| Low      | 17    |
+| High     | 11    |
+| Medium   | 18    |
+| Low      | 23    |
 
 **Top 5 risks (by PriorityScore):**
 
@@ -111,6 +123,41 @@ holistically — verdict: ACCEPTABLE AS-IS for benchmark-tier code; the
 > in parallel with the next docs PR. Q32-Q34 / Q36-Q38 cluster naturally
 > into one bench-cleanup PR (all touch `benchmarks/integration/*`).
 
+## Phase 3 deep re-review (2026-04-27)
+
+A targeted re-review of the exporter, SDK, and config layers produced
+18 findings (0 Critical / 3 High / 9 Medium / 6 Low). Scoring formula
+is `Impact(1-5) × Likelihood(1-5) × 4`, range 0-100. New issues use the
+**OTEL-Q-NNN** prefix; two findings (OTEL-Q-007, OTEL-Q-NEW-C) mapped
+onto existing work items via comments with audit Quality-ID rather
+than creating duplicates; OTEL-Q-NEW-E was folded into OTEL-Q-004's
+body.
+
+| Q-ID            | Severity | Score | Category        | Finding                                                              | Component                | Evidence                                              | Issue URL                                                     | Status |
+|-----------------|----------|-------|-----------------|----------------------------------------------------------------------|--------------------------|-------------------------------------------------------|---------------------------------------------------------------|--------|
+| OTEL-Q-001      | High     | 85    | architecture    | Split `exporters/otlp_http.zig` (~1407 lines) by signal/encoder      | exporters                | `src/exporters/otlp_http.zig:1407` (pre-fix) → split into `src/exporters/otlp_http/{exporter,transport,headers,encode_proto,encode_proto_devnw,encode_json,spans,metrics}.zig`; facade at `src/exporters/otlp_http.zig:1` (85 LOC) | <https://gitlab.com/devnw/zig/otel/-/work_items/149>          | Closed |
+| OTEL-Q-NEW-A    | High     | 82    | architecture    | Replace fragile fn-ptr identity sentinel with tagged-union Transport | exporters                | pre-fix: `self.transport == httpTransport` at `otlp_http.zig:303-306, 372-375` → `Transport = union(enum) { stdlib_io, custom: CustomFn }` at `src/exporters/otlp_http/transport.zig:58`; dispatch is now `switch (self.transport)` at `src/exporters/otlp_http/exporter.zig:163` | <https://gitlab.com/devnw/zig/otel/-/work_items/163>          | Closed |
+| OTEL-Q-002      | High     | 80    | maintainability | Extract `exportSignal` helper from OTLP/HTTP                          | exporters                | `src/exporters/otlp_http.zig:277-322, 348-392`        | <https://gitlab.com/devnw/zig/otel/-/work_items/150>          | Open   |
+| OTEL-Q-003      | High     | 78    | api-contract    | Implement OTLP log export (HTTP + gRPC)                               | sdk + exporters          | `src/sdk/logs.zig:43`; missing `expLogs/encodeLogs*`  | <https://gitlab.com/devnw/zig/otel/-/work_items/152>          | Open   |
+| OTEL-Q-004      | Medium   | 70    | maintainability | Replace 13× `catch {}` with breadcrumb logger (folds OTEL-Q-NEW-E)    | sdk/export, propagation  | `src/sdk/export.zig:121,267,303,363,528 +8`; `propagation/composite.zig:29-37` | <https://gitlab.com/devnw/zig/otel/-/work_items/154>          | Open   |
+| OTEL-Q-005      | Medium   | 60    | maintainability | Replace `applyEnvFromMap` if-chain with comptime `env_table`          | sdk/config               | `src/sdk/config.zig:328-392`                          | <https://gitlab.com/devnw/zig/otel/-/work_items/156>          | Open   |
+| OTEL-Q-NEW-B    | Medium   | 60    | maintainability | Move `encode*Proto/Json` to shared `exporters/otlp_codec.zig`         | exporters                | `src/exporters/otlp_grpc.zig:122`                     | <https://gitlab.com/devnw/zig/otel/-/work_items/164>          | Open   |
+| OTEL-Q-006      | Medium   | 55    | readability     | Hoist `last_response_body[1024]` magic size to named const            | exporters                | `src/exporters/otlp_http.zig:45`                      | <https://gitlab.com/devnw/zig/otel/-/work_items/157>          | Open   |
+| OTEL-Q-007      | Medium   | 55    | docs            | Add public-API doc comments (api/metrics + `propagation/*` + `internal/*`) | api + propagation + internal | `src/api/metrics.zig` + `src/propagation/*` + `src/internal/*` | <https://gitlab.com/devnw/zig/otel/-/work_items/19> (existing H8 — note added) | Open |
+| OTEL-Q-NEW-C    | Medium   | 55    | maintainability | HTTP retry classifier missing 408/425; extract `retryClassifyHttp`    | exporters                | `src/exporters/otlp_http.zig:296-321`                 | <https://gitlab.com/devnw/zig/otel/-/work_items/53> (existing M6 — note added) | Open |
+| OTEL-Q-008      | Medium   | 50    | maintainability | Split `validateEndpoint` into focused validators                       | sdk/config               | `src/sdk/config.zig:95-161`                           | <https://gitlab.com/devnw/zig/otel/-/work_items/158>          | Open   |
+| OTEL-Q-009      | Medium   | 45    | maintainability | Collapse `setOwned*` helpers to a single comptime helper               | sdk/config               | `src/sdk/config.zig:260-279`                          | <https://gitlab.com/devnw/zig/otel/-/work_items/159>          | Open   |
+| OTEL-Q-010      | Medium   | 45    | architecture    | Centralize feature flags in `feature_matrix.zig` + `docs/FEATURES.md` | build + sdk              | `build.zig` + 13 `build_options.*` fan-out             | <https://gitlab.com/devnw/zig/otel/-/work_items/161>          | Open   |
+| OTEL-Q-NEW-D    | Low      | 30    | cleanup         | Promote duplicated shutdown timeout to `default_shutdown_timeout_ms`   | sdk/export               | `src/sdk/export.zig:303` + sibling                    | <https://gitlab.com/devnw/zig/otel/-/work_items/165>          | Open   |
+| OTEL-Q-NEW-E    | Low      | 25    | maintainability | propagation breadcrumb (folded under OTEL-Q-004)                       | propagation              | `src/propagation/composite.zig:29-37`                  | (folded into OTEL-Q-004 #154)                                  | Open   |
+| OTEL-Q-011..016 | Low      | ≤25   | (mixed)         | Lower-priority items deferred (no individual issues yet)              | various                  | see Phase-3 review                                    | n/a (catalogued)                                               | Deferred |
+
+> **Sequencing (2026-04-27 re-review):**
+>
+> 1. **Tier-A (Score ≥ 78)**: OTEL-Q-001 → OTEL-Q-NEW-A → OTEL-Q-002 → OTEL-Q-003. These four are all in the exporter critical path; sequencing is mechanical because OTEL-Q-001 (split) enables OTEL-Q-002 (extract), which enables OTEL-Q-003 (logs export), and OTEL-Q-NEW-A (tagged-union Transport) is best landed inside the OTEL-Q-002 extraction PR.
+> 2. **Tier-B (Score 50-70)**: OTEL-Q-004 (breadcrumbs), OTEL-Q-005 (env_table) and OTEL-Q-NEW-B (shared codec) — independent tracks, run in parallel.
+> 3. **Tier-C (Score ≤ 50)**: OTEL-Q-006/008/009/010 + OTEL-Q-NEW-D — warm-up commits and central refactors; pair with Tier-B tracks where the surfaces overlap (e.g. OTEL-Q-009 lands cleanly with #34 M9).
+
 ## Findings by Category
 
 ### api-contract (8)
@@ -148,6 +195,20 @@ C2 (#13).
 L9 (#111).
 
 ## Roadmap
+
+### Phase-3 deep re-review (2026-04-27) overlay
+
+The 2026-04-27 re-review uses a different scoring formula
+(Impact*Likelihood*4) so its tier breaks differ from the legacy roadmap.
+Combined sequencing recommendation:
+
+1. Land **OTEL-Q-001/002/NEW-A** as one PR family (exporter file-split + exportSignal helper + tagged-union Transport) — unblocks **OTEL-Q-003** (OTLP logs export) and **OTEL-Q-NEW-B** (shared codec module).
+2. Land **OTEL-Q-004** (breadcrumb logger) before any other reliability work — gives operators visibility on the failure modes uncovered by the rest of this audit.
+3. Land **OTEL-Q-NEW-C** (retry classifier 408/425) as part of the existing **#53 M6** PR — already commented there.
+4. **OTEL-Q-007** (public-API docs) folds into existing **#19 H8** PR — already commented there.
+5. Sequence Medium-tier config items (**OTEL-Q-005/008/009**) inside the same `sdk/config.zig` rewrite that closes **#34 M9** — single touchpoint, lower review cost.
+6. **OTEL-Q-006/NEW-D** are warm-up commits — assign to first-time contributors.
+7. **OTEL-Q-010** (feature_matrix + FEATURES.md) closes the README half of **DOC-2 #124** — schedule with the docs PR.
 
 ### Tier 1 — Score ≥ 24 (7 issues, top of the queue)
 

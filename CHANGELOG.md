@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Refactor
+
+- **OTLP/HTTP exporter split into a module tree.** `src/exporters/otlp_http.zig`
+  was a 1407-LOC single file mixing transport dispatch, retry
+  classifier, header validation, and three encoder families (proto,
+  JSON-stdlib, JSON-DevNW) per signal. It is now a thin facade
+  re-exporting from `src/exporters/otlp_http/`:
+  `exporter.zig`, `transport.zig`, `headers.zig`, `encode_proto.zig`,
+  `encode_proto_devnw.zig`, `encode_json.zig`, `spans.zig`,
+  `metrics.zig`. Largest module is 582 LOC; facade is 85 LOC.
+  Wire-parity, multi-scope grouping, and security tests are
+  unchanged. The duplicated retry/dispatch loops in `expSpans` and
+  `expMetrics` collapsed into a shared `OtlpHttpExporter.exportSignal`
+  helper, and the magic 1024-byte response stash is now
+  `transport.last_response_body_capacity`. The HTTP retry rules live
+  in `transport.retryClassifyHttp` (success / partial / retryable /
+  fatal) so OTEL-Q-NEW-C (#164, 408/425) can land at one site.
+  (OTEL-Q-001, gitlab #149)
+- **`Transport` is now a tagged union.** Pre-refactor the export loop
+  routed between the in-house transport and test-injected fakes by
+  comparing function pointers (`self.transport == httpTransport`) at
+  `otlp_http.zig:303-306, 372-375`. LTO/inlining or wrapping the fn
+  in a closure would have silently broken the production path. The
+  field is now `Transport = union(enum) { stdlib_io, custom: CustomFn }`
+  and dispatch is an exhaustive `switch (self.transport)`. Tests
+  inject fakes as `.{ .custom = fakeTransport }`. (OTEL-Q-NEW-A,
+  gitlab #163)
+
 ### Performance
 
 - **OTLP encoder is now O(N) on nested submessages.**

@@ -49,7 +49,10 @@ test "OTLP exporter retries on 503" {
         .protocol = .http_protobuf,
         .timeout_ms = 100,
     });
-    exporter.transport = fakeTransport;
+    // OTEL-Q-NEW-A (#163): Transport is a tagged union; tests inject
+    // their fake under the `.custom` tag so the production path stays a
+    // type-checked switch instead of a fn-pointer-identity sentinel.
+    exporter.transport = .{ .custom = fakeTransport };
     defer exporter.deinit();
 
     const span: otel.sdk.exporter.SpanData = .{
@@ -76,7 +79,7 @@ test "OTLP exporter returns PartialSuccess on 207" {
     var attr_set = otel.internal.attributes.AttributeSet.init(std.testing.allocator);
     defer attr_set.deinit();
     var exporter = try otel.exporters.otlp_http.OtlpHttpExporter.init(std.testing.allocator, .{ .endpoint = "http://localhost:4318" });
-    exporter.transport = fakeTransport;
+    exporter.transport = .{ .custom = fakeTransport };
     defer exporter.deinit();
     const span: otel.sdk.exporter.SpanData = .{
         .name = "x",
@@ -110,7 +113,7 @@ test "OTLP HTTP JSON body wraps in resourceSpans" {
         .endpoint = "http://localhost:4318",
         .protocol = .http_json,
     });
-    exporter.transport = fakeTransport;
+    exporter.transport = .{ .custom = fakeTransport };
     defer exporter.deinit();
     const span: otel.sdk.exporter.SpanData = .{
         .name = "x",
@@ -145,7 +148,7 @@ test "OTLP HTTP JSON envelope wraps DevNW-encoded body identically" {
         .endpoint = "http://localhost:4318",
         .protocol = .http_json,
     });
-    exporter.transport = fakeTransport;
+    exporter.transport = .{ .custom = fakeTransport };
     defer exporter.deinit();
     const span: otel.sdk.exporter.SpanData = .{
         .name = "x",

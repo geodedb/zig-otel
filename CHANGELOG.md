@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Proto + semconv manifest provenance gate now anchors the actual
+  upstream sources (NEW-H-1, gitlab #134, CONFIDENTIAL).** The previous
+  state of `docs/proto-manifest.txt` and `docs/semconv-manifest.txt`
+  hashed only the `LICENSE` file in each `third_party/<pin>/`
+  directory — a structural facade that did not anchor any of the
+  `.proto` / YAML model bytes the hand-rolled `src/generated/otlp.zig`
+  encoder and `src/generated/semconv.zig` constants were derived from.
+  CWE-345 (Insufficient Verification of Authenticity).
+  Path A taken (vendor real upstream sources): the relevant subset of
+  `opentelemetry-proto v1.10.0` (16 files: 10 `.proto` + 3
+  `_http.yaml` Google-API HTTP gateway annotations + 1 README + 1
+  LICENSE + 1 collector README) and the entire `model/` directory of
+  `semantic-conventions v1.40.0` (244 model files + LICENSE) are now
+  vendored in-tree. The shared manifest engine
+  (`tools/manifest.zig`) walks every regular file, sorts by POSIX
+  path, and emits a SHA-256 line per file; the new
+  `requireSpecPayload` invariant fails loud (exit 2 with a clear
+  diagnostic) if the upstream tree contains nothing but LICENSE.
+  Generators expose `--emit` (default) and `--verify` modes; the
+  build wires `zig build verify-proto-manifest`,
+  `zig build verify-semconv-manifest`, and the `verify-manifests`
+  aggregator. `make verify-manifests` is the CI hook (now part of
+  `make ci`). Five new regression tests in
+  `test/manifest_provenance.zig` pin the structural assertion that a
+  LICENSE-only state must fail and that the vendored canonical files
+  (e.g. `opentelemetry/proto/trace/v1/trace.proto`,
+  `model/version.properties`) are present.
+
 ### Refactor
 
 - **OTLP/HTTP exporter split into a module tree.** `src/exporters/otlp_http.zig`

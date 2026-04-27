@@ -11,6 +11,7 @@ CURRENT ?= benchmarks/results/latest.json
 .PHONY: example run install help
 .PHONY: pre-commit-install pre-commit pre-commit-run
 .PHONY: bench bench-save bench-compare bench-micro scale-bench tools
+.PHONY: verify-proto-manifest verify-semconv-manifest verify-manifests
 
 all: build test-unit
 
@@ -76,9 +77,25 @@ scale-bench:
 tools:
 	$(ZIG) build tools
 
+# NEW-H-1 / GAP-SEC-M-2 manifest provenance gate.
+#
+# `verify-manifests` re-walks `third_party/opentelemetry-proto-v1.10.0/`
+# and `third_party/semantic-conventions-v1.40.0/` and exits non-zero if
+# the on-disk SHA-256 manifest disagrees. CI gates on this so an
+# attacker silently editing the vendored proto/YAML sources without
+# refreshing the manifest trips the build.
+verify-proto-manifest:
+	$(ZIG) build verify-proto-manifest
+
+verify-semconv-manifest:
+	$(ZIG) build verify-semconv-manifest
+
+verify-manifests:
+	$(ZIG) build verify-manifests
+
 dev: fmt check test-unit
 
-ci: clean check test-all
+ci: clean check test-all verify-manifests
 
 clean:
 	rm -rf .zig-cache zig-cache zig-out
@@ -131,6 +148,11 @@ help:
 	@echo "  bench-micro          Run all micro-benchmarks"
 	@echo "  scale-bench          Run scale benchmark suite"
 	@echo "  tools                Build benchmark tooling artifacts"
+	@echo ""
+	@echo "Provenance:"
+	@echo "  verify-proto-manifest    Verify docs/proto-manifest.txt vs vendored proto tree"
+	@echo "  verify-semconv-manifest  Verify docs/semconv-manifest.txt vs vendored semconv tree"
+	@echo "  verify-manifests         Run both verifiers (NEW-H-1 supply-chain gate)"
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  clean                Remove build artifacts"

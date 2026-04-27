@@ -1,4 +1,19 @@
-# otel proto-tree manifest (SHA-256 per file)
+# otel manifest (SHA-256 per file)
 # upstream pin: opentelemetry-proto v1.10.0
-# regenerate: zig build gen-otlp > docs/proto-manifest.txt
+# regenerate:   zig build gen-otlp > docs/proto-manifest.txt
 4736951814613ff540052481a504e628437bdaea3a233713253390d11e73a237  third_party/opentelemetry-proto-v1.10.0/LICENSE
+8fd9bb7a611ae64420cb7a8074001f710afc90605f6ee49c1e1afa3533b02cc1  third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/collector/README.md
+0252687fc8f59d139ced709d383e83678e9bd4957bdbe76077242f1c32363fa5  third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/collector/logs/v1/logs_service.proto
+3603a173aedcba8311b55fe59f12af6b66f0b50a443ee8987f2a10868565ded9  third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/collector/logs/v1/logs_service_http.yaml
+2bb3c6adee5f7609c8a32c5e4b1ec57057320015e298e9cf136699a42abc24d7  third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/collector/metrics/v1/metrics_service.proto
+9cc04d90ee9f767559e68bf2d91b9c3d79d9d9a238f61ad43516c1d645f24fe6  third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/collector/metrics/v1/metrics_service_http.yaml
+934161a0a59b8031cf96b3d2950f0c28ef72f064c3d505fab9aa52969bc6512c  third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/collector/profiles/v1development/profiles_service.proto
+75c9320179746971b600b0f612798aa486a42960a42e57d3eff64bce32698784  third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/collector/profiles/v1development/profiles_service_http.yaml
+03c8cc4e3e101087d884392d6eda32152ad5cd696e6344f50deaa59804a75c7a  third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/collector/trace/v1/trace_service.proto
+a0580f68f90a7086f211033f6374d5ba91eca900bc237721d350301e5308f9dd  third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/collector/trace/v1/trace_service_http.yaml
+833db934b8b08be193940aa412f26a9ed8c564dfa8ea3517dc583f5064142731  third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/common/v1/common.proto
+6b2e1eba0c01ae2da47927c63eabfaf3f151ee7ad846f2cdf3b2b71fb61004fe  third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/logs/v1/logs.proto
+d0a53dda45ad100edbf25675f5b339ce8bf689bdc51816f8cf19b0d51464e1a4  third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/metrics/v1/metrics.proto
+1e4d0bd2961d13650e7b9e9b309ff232a3163ccc726deab53ca7ec89f640a3e3  third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/profiles/v1development/profiles.proto
+e0a7cdc0ffcfeffaa2606e8611839735ebffaa2d6acdf33e9356f2c48ae692d3  third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/resource/v1/resource.proto
+c3fb1385c90b8bc08a2a462e28b5d0c422c7b524a839f75f75e3cd9f64f36956  third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/trace/v1/trace.proto

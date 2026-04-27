@@ -57,37 +57,52 @@ resolution time.
 
 ## Third-party LICENSE notices
 
-The OpenTelemetry Proto and Semantic Conventions repositories are
-referenced as data only; the relevant LICENSE excerpts live under
-`third_party/opentelemetry-proto-v1.10.0/LICENSE` and
-`third_party/semantic-conventions-v1.40.0/LICENSE`.
+The OpenTelemetry Proto and Semantic Conventions sources are vendored
+in-tree under `third_party/opentelemetry-proto-v1.10.0/` (Apache-2.0)
+and `third_party/semantic-conventions-v1.40.0/` (Apache-2.0). The
+vendored subset is the spec source actually consumed by the generators
+— `.proto` files for the proto tree, the `model/` YAML directory for
+semconv. A LICENSE-only state at either path is rejected by the
+manifest gate (NEW-H-1).
 
-## Generated-file provenance (GAP-SEC-M-2)
+## Generated-file provenance (GAP-SEC-M-2 / NEW-H-1, gitlab #134)
 
 Two files under `src/generated/` started life as hand-rolled translations
 of upstream specs:
 
 | File                           | Upstream                                                  |
 |--------------------------------|-----------------------------------------------------------|
-| `src/generated/otlp.zig`       | `third_party/opentelemetry-proto-v1.10.0/`                |
-| `src/generated/semconv.zig`    | `third_party/semantic-conventions-v1.40.0/`               |
+| `src/generated/otlp.zig`       | `third_party/opentelemetry-proto-v1.10.0/opentelemetry/proto/` |
+| `src/generated/semconv.zig`    | `third_party/semantic-conventions-v1.40.0/model/`         |
 
-Two `tools/gen_*.zig` programs emit a SHA-256 manifest of the upstream
-trees so CI can detect drift:
+Two `tools/gen_*.zig` programs walk every regular file under the
+vendored upstream tree, emit a deterministic (path-sorted) SHA-256
+manifest, and refuse loudly if the upstream directory contains nothing
+but `LICENSE` (the original NEW-H-1 toothless state):
 
 ```sh
+# Refresh:
 zig build gen-otlp     > docs/proto-manifest.txt
 zig build gen-semconv  > docs/semconv-manifest.txt
+
+# Verify (CI gate, exits 2 on drift):
+zig build verify-proto-manifest
+zig build verify-semconv-manifest
+zig build verify-manifests           # both at once
+make verify-manifests
 ```
 
-The CI job `regen-check` runs both programs and `git diff --exit-code`s
-the manifests against the committed copies. A mismatch indicates the
-upstream tree changed and the hand-rolled `src/generated/` files need a
-manual review.
+The CI job runs `make verify-manifests` so any silent edit to a
+vendored `.proto` or `.yaml` file without refreshing the manifest
+trips the build with a non-zero exit and a one-line diff hint. A
+regression test in `test/manifest_provenance.zig` pins the structural
+invariant: if the upstream tree is ever pruned back to LICENSE-only,
+the test suite fails before CI even reaches the manifest verifier.
 
 When upgrading an upstream pin: bump the `third_party/<pin>/` directory
 to the new tag, regenerate both manifests, and document the diff in the
-upgrade PR.
+upgrade PR. The `requireSpecPayload` invariant prevents a bump that
+accidentally strips out the spec body.
 
 ## Signing & Verification (GAP-SEC-M-3)
 

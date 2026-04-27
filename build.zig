@@ -218,6 +218,19 @@ pub fn build(b: *std.Build) void {
     if (tsan) unit_tests.root_module.sanitize_thread = true;
     unit_step.dependOn(&b.addRunArtifact(unit_tests).step);
 
+    // NEW-H-1 / GAP-SEC-M-2: shared manifest engine module.
+    //
+    // Both the proto/semconv generators and the regression test
+    // (`test/manifest_provenance.zig`) consume `tools/manifest.zig`
+    // through this module so the `requireSpecPayload` / `compute`
+    // invariants stay test-anchored. Declared early so the test loop
+    // below can wire it as an import.
+    const manifest_module = b.createModule(.{
+        .root_source_file = b.path("tools/manifest.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // External test suites under test/.
     const test_files = [_][]const u8{
         "test/context.zig",
@@ -248,6 +261,25 @@ pub fn build(b: *std.Build) void {
             },
         });
         const t = b.addTest(.{ .root_module = m });
+        if (tsan) t.root_module.sanitize_thread = true;
+        unit_step.dependOn(&b.addRunArtifact(t).step);
+        check_step.dependOn(&t.step);
+    }
+
+    // NEW-H-1 / GAP-SEC-M-2: manifest provenance regression tests. The
+    // test imports `tools/manifest.zig` directly (separate root from the
+    // library) so it gets its own module entry rather than riding along
+    // the `otel`-import test loop above.
+    {
+        const manifest_test_module = b.createModule(.{
+            .root_source_file = b.path("test/manifest_provenance.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "manifest", .module = manifest_module },
+            },
+        });
+        const t = b.addTest(.{ .root_module = manifest_test_module });
         if (tsan) t.root_module.sanitize_thread = true;
         unit_step.dependOn(&b.addRunArtifact(t).step);
         check_step.dependOn(&t.step);
@@ -304,12 +336,30 @@ pub fn build(b: *std.Build) void {
     golden_step.dependOn(&run_golden.step);
 
     // ------------------------------------------------------------------
-    // GAP-SEC-M-2: deterministic generators for `src/generated/`.
+    // NEW-H-1 / GAP-SEC-M-2: deterministic generators + verifiers for
+    // `src/generated/` provenance. The shared `manifest_module` is
+    // declared earlier so the regression test can consume the same
+    // module identity.
+    //
+    // Each generator is exposed twice:
+    //   * `zig build gen-*`       — emits the manifest to stdout
+    //                               (regenerate recipe in the header).
+    //   * `zig build verify-*-manifest`
+    //                              — re-computes against the on-disk
+    //                                manifest and exits 2 on drift.
+    //
+    // The shared engine (`tools/manifest.zig`) refuses to emit a
+    // "successful" manifest when the upstream tree contains only
+    // LICENSE — closing the NEW-H-1 (CWE-345) supply-chain forgery
+    // primitive that the previous LICENSE-only manifest left open.
     // ------------------------------------------------------------------
     const gen_otlp_module = b.createModule(.{
         .root_source_file = b.path("tools/gen_otlp.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{
+            .{ .name = "manifest", .module = manifest_module },
+        },
     });
     const gen_otlp_exe = b.addExecutable(.{
         .name = "gen-otlp",
@@ -318,13 +368,29 @@ pub fn build(b: *std.Build) void {
     const run_gen_otlp = b.addRunArtifact(gen_otlp_exe);
     if (b.args) |args| run_gen_otlp.addArgs(args);
     run_gen_otlp.stdio = .inherit;
+    // The generators consult the working tree directly, so they must
+    // never see a stale cache result. Mark each invocation as having
+    // side effects so the build runner re-runs the artifact on every
+    // request (otherwise CI would compare the manifest against a cached
+    // last-good run rather than against the live vendored tree).
+    run_gen_otlp.has_side_effects = true;
     const gen_otlp_step = b.step("gen-otlp", "Emit a SHA-256 manifest of third_party/opentelemetry-proto-v1.10.0/");
     gen_otlp_step.dependOn(&run_gen_otlp.step);
+
+    const verify_proto_run = b.addRunArtifact(gen_otlp_exe);
+    verify_proto_run.addArg("--verify");
+    verify_proto_run.has_side_effects = true;
+    verify_proto_run.stdio = .inherit;
+    const verify_proto_step = b.step("verify-proto-manifest", "Verify docs/proto-manifest.txt matches third_party/opentelemetry-proto-v1.10.0/ (NEW-H-1)");
+    verify_proto_step.dependOn(&verify_proto_run.step);
 
     const gen_semconv_module = b.createModule(.{
         .root_source_file = b.path("tools/gen_semconv.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{
+            .{ .name = "manifest", .module = manifest_module },
+        },
     });
     const gen_semconv_exe = b.addExecutable(.{
         .name = "gen-semconv",
@@ -333,8 +399,21 @@ pub fn build(b: *std.Build) void {
     const run_gen_semconv = b.addRunArtifact(gen_semconv_exe);
     if (b.args) |args| run_gen_semconv.addArgs(args);
     run_gen_semconv.stdio = .inherit;
+    run_gen_semconv.has_side_effects = true;
     const gen_semconv_step = b.step("gen-semconv", "Emit a SHA-256 manifest of third_party/semantic-conventions-v1.40.0/");
     gen_semconv_step.dependOn(&run_gen_semconv.step);
+
+    const verify_semconv_run = b.addRunArtifact(gen_semconv_exe);
+    verify_semconv_run.addArg("--verify");
+    verify_semconv_run.has_side_effects = true;
+    verify_semconv_run.stdio = .inherit;
+    const verify_semconv_step = b.step("verify-semconv-manifest", "Verify docs/semconv-manifest.txt matches third_party/semantic-conventions-v1.40.0/ (NEW-H-1)");
+    verify_semconv_step.dependOn(&verify_semconv_run.step);
+
+    // Convenience aggregator — the CI gate runs both at once.
+    const verify_manifests_step = b.step("verify-manifests", "Verify both proto + semconv manifests against the vendored upstream trees");
+    verify_manifests_step.dependOn(verify_proto_step);
+    verify_manifests_step.dependOn(verify_semconv_step);
 
     // ------------------------------------------------------------------
     // Examples.

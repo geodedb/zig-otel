@@ -1,9 +1,9 @@
 # Security Gap Analysis — `otel` (Zig 0.16 OpenTelemetry SDK)
 
-**Last updated:** 2026-04-26 PM
-**Source:** `docs/audit/SECURITY_REVIEW.md` (Phase 3 security-reviewer report — 22 confirmed, 3 suspected, 25 total) + Phase 3 PM re-audit (4 new bench-only findings)
+**Last updated:** 2026-04-27
+**Source:** `docs/audit/SECURITY_REVIEW.md` (Phase 3 security-reviewer report — 22 confirmed, 3 suspected, 25 total) + Phase 3 PM re-audit (4 new bench-only findings) + Phase 3 2026-04-27 re-audit (9 new findings: 1 High, 2 Medium, 4 Low, 2 Info — bench/post-closure residuals)
 
-**Verdict (2026-04-26 PM):** 22 actionable code-side findings closed 2026-04-26 AM; Phase 3 PM re-audit found 4 new (1 Low, 3 Info, all bench-only). Production attack surface unchanged. H-7 operator action and M-3 upstream signing remain open.
+**Verdict (2026-04-27):** Original 22 actionable code-side findings remain closed (re-confirmed 2026-04-27 in tracker comments on #54, #61, #67, #69, #71, #72, #73, #74, #77, #81, #86). 2026-04-27 re-audit surfaced **9 new** findings (NEW-H-1 / NEW-M-1 / NEW-M-2 / NEW-L-1..L-4 / NEW-INFO-1 / NEW-INFO-2). Three are confidential (NEW-H-1, NEW-M-1, NEW-M-2). **NEW-H-1 closed 2026-04-27** (vendored upstream proto + semconv sources, manifest engine refuses LICENSE-only state, CI gate via `make verify-manifests`). Production attack surface still bounded; H-7 operator action remains open with a 2026-05-03 deadline (6 days remaining).
 **Repository:** `gitlab.com/devnw/zig/otel`
 **Scoring:** Risk Score = Likelihood (1–5) x Impact (1–5).
 **Confidentiality policy:** This document is public. Findings flagged `[CONFIDENTIAL]` are tracked in private GitLab issues; this doc lists their title, status, and issue URL only — no exploit specifics, no PoC strings, no attack scenarios.
@@ -217,6 +217,46 @@ Re-audit run after the 2026-04-26 AM closure. Scope: full re-scan (gitleaks 0 le
 
 ---
 
+## 6.2 Phase 3 re-audit findings (2026-04-27)
+
+Second re-audit after the 2026-04-26 closure run, focused on residual surface in the parts of the codebase that were not in the original 25-finding scope (manifests, file-exporter symlink semantics, env-driven paths, instrumentation paths, vendored grpc-zig). 9 new findings; 3 confidential.
+
+| ID         | Severity | Risk | Confidence | Title                                                                                                          | File / Component                                                       | CWE / OWASP                | Issue URL                                                                | Status |
+|------------|----------|-----:|------------|----------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------|----------------------------|--------------------------------------------------------------------------|--------|
+| NEW-H-1    | High     | 7.5  | Confirmed  | proto/semconv manifests only hash `LICENSE`; deterministic provenance gate is toothless [CONFIDENTIAL]          | `docs/proto-manifest.txt:4` + `docs/semconv-manifest.txt:4`            | CWE-345 / A08:2021         | <https://gitlab.com/devnw/zig/otel/-/work_items/134> | Closed (2026-04-27) — vendored upstream proto subset (16 files, ~132 KiB) + semconv `model/` (244 files, ~1.7 MiB); manifests now hash every file (path-sorted SHA-256) at `docs/proto-manifest.txt` (19 lines) + `docs/semconv-manifest.txt` (248 lines); generators (`tools/gen_otlp.zig`, `tools/gen_semconv.zig`) reject LICENSE-only state via `tools/manifest.zig::requireSpecPayload` and add `--verify` mode wired through `zig build verify-manifests` + `make verify-manifests`; structural regression tests in `test/manifest_provenance.zig` (5 tests). |
+| NEW-M-1    | Medium   | 6.5  | Confirmed  | `OTEL_CONFIG_FILE` arbitrary 1 MiB file open; no allowlist / symlink guard [CONFIDENTIAL]                      | `src/sdk/config.zig:299-300`                                            | CWE-22 / A01:2021          | <https://gitlab.com/devnw/zig/otel/-/work_items/137> | Open — needs allowlist + realpath; SLA 90d (due 2026-07-26) |
+| NEW-M-2    | Medium   | 5.5  | Suspected  | File exporter `createFile` lacks O_NOFOLLOW; symlink follow can clobber arbitrary files [CONFIDENTIAL]          | `src/exporters/file.zig:34`                                             | CWE-59 / A01:2021          | <https://gitlab.com/devnw/zig/otel/-/work_items/140> | Open — **follow-up**: confirm Zig 0.16 `std.fs.Dir.createFile` default symlink-follow before remediating; SLA 90d |
+| NEW-L-1    | Low      | 4.0  | Confirmed  | `OTEL_RESOURCE_ATTRIBUTES` key not validated/length-capped (CR/LF in keys)                                     | `src/sdk/resource.zig:87-97`                                            | CWE-117 (partial)          | <https://gitlab.com/devnw/zig/otel/-/work_items/142> | Open — log-injection partial primitive; SLA 180d |
+| NEW-L-2    | Low      | 4.0  | Confirmed  | Loopback gRPC test server binds 0.0.0.0 (upstream-fixed in grpc-zig)                                            | `src/exporters/otlp_grpc_test_server.zig:112-114` + `third_party/grpc_zig/server.zig:32` | CWE-668 / A05:2021         | <https://gitlab.com/devnw/zig/otel/-/work_items/145> | Open — needs upstream PR or local wrapper; SLA 180d |
+| NEW-L-3    | Low      | 3.5  | Confirmed  | grpc-zig `readFrame` allocates 16 MiB without enforcing SETTINGS_MAX_FRAME_SIZE                                | `third_party/grpc_zig/transport.zig:196-218`                            | CWE-770                    | <https://gitlab.com/devnw/zig/otel/-/work_items/147> | Open — DoS guard / RFC 7540 §4.2; SLA 180d |
+| NEW-L-4    | Low      | 3.0  | Confirmed  | http server span `url.path` emitted verbatim; no PII filter                                                    | `src/instrumentation/http.zig:54`                                       | CWE-532 / A09:2021         | <https://gitlab.com/devnw/zig/otel/-/work_items/151> | Open — accept optional `path_template`; SLA 180d |
+| NEW-INFO-1 | Info     | 2.0  | Confirmed  | `SECURITY.md` references GitHub on a GitLab project                                                            | `SECURITY.md`                                                           | —                          | <https://gitlab.com/devnw/zig/otel/-/work_items/160> | Open — doc fix; backlog |
+| NEW-INFO-2 | Info     | 2.0  | Confirmed  | `src/internal/json_codec.zig:181` dead `writeValue` (no redaction; regression hazard for H-6)                  | `src/internal/json_codec.zig:181-189`                                   | CWE-1164                   | <https://gitlab.com/devnw/zig/otel/-/work_items/162> | Open — delete or rename + warn; backlog |
+
+### Operator-pending follow-ups (re-confirmed 2026-04-27)
+
+- **H-7 operator side** — rotate `OTEL_INTEGRATION_AUTH_HEADER` GitLab CI/CD variable; deadline **2026-05-03** (6 days). Code side remains closed (`43330db`); tracker issue #80 (confidential) stays open until rotation + 30-day log audit complete.
+- **M-3 upstream side** — DevNW Sigstore/cosign signatures for vendored source tarballs; tracker issue #84 stays open.
+- **NEW-M-2** — confirmation needed: read Zig 0.16 `std/fs/Dir.zig` `createFile` implementation to verify default symlink-follow semantics. If Zig 0.16 already defaults to `O_NOFOLLOW` on POSIX, downgrade NEW-M-2 to Info / Won't-Do with the Zig source citation.
+
+### Re-audit closure-confirmation comments (2026-04-27)
+
+The following previously-closed issues received re-audit closure-evidence notes today (no state change — still closed; re-confirmed clean):
+
+| Gap | Issue | File:line re-verified                                                                  | Note URL |
+|-----|-------|----------------------------------------------------------------------------------------|----------|
+| C-2 | #61   | `src/exporters/otlp_grpc.zig` (https honored)                                           | <https://gitlab.com/devnw/zig/otel/-/work_items/61#note_3289973146> |
+| C-3 | #67   | `src/exporters/otlp_grpc.zig` (header propagation)                                      | <https://gitlab.com/devnw/zig/otel/-/work_items/67#note_3289973237> |
+| H-1 | #69   | `src/exporters/otlp_http.zig` (header parser)                                           | <https://gitlab.com/devnw/zig/otel/-/work_items/69#note_3289972505> |
+| H-3 | #72   | `src/exporters/file.zig:25-34` (`validateSubPath`)                                      | <https://gitlab.com/devnw/zig/otel/-/work_items/72#note_3289972606> |
+| H-4 | #73   | `src/sdk/config.zig` + exporters (`skip_tls_verify` plumbed)                            | <https://gitlab.com/devnw/zig/otel/-/work_items/73#note_3289972691> |
+| H-5 | #74   | `src/sdk/trace.zig` + `src/internal/id.zig` (CSPRNG)                                    | <https://gitlab.com/devnw/zig/otel/-/work_items/74#note_3289972890> |
+| H-6 | #77   | `src/internal/redact.zig` + exporters (redact wired)                                    | <https://gitlab.com/devnw/zig/otel/-/work_items/77#note_3289973313> |
+| M-1 | #81   | `src/exporters/otlp_grpc_test_server.zig:115-124` (per-run CSPRNG token)                | <https://gitlab.com/devnw/zig/otel/-/work_items/81#note_3289972978> |
+| M-5 | #86   | `src/sdk/config.zig` (endpoint scheme/host validation)                                  | <https://gitlab.com/devnw/zig/otel/-/work_items/86#note_3289973061> |
+
+---
+
 ## 7. Confidentiality Marker
 
-This document itself is public. Findings flagged `[CONFIDENTIAL]` (C-1, C-2, H-1, H-2, H-7, M-4, M-5) appear here only as title + status + issue URL — exploit specifics live in the private GitLab issues only. The closing comments posted to GitLab on 2026-04-26 for those issues are deliberately brief (commit SHA + reference to `docs/audit/SECURITY_VERIFY.md`) — no exploit detail.
+This document itself is public. Findings flagged `[CONFIDENTIAL]` (C-1, C-2, H-1, H-2, H-7, M-4, M-5, **NEW-H-1, NEW-M-1, NEW-M-2**) appear here only as title + status + issue URL — exploit specifics live in the private GitLab issues only. The closing comments posted to GitLab on 2026-04-26 for those issues are deliberately brief (commit SHA + reference to `docs/audit/SECURITY_VERIFY.md`) — no exploit detail. The 2026-04-27 re-audit closure-evidence comments are similarly brief.

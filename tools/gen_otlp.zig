@@ -1,94 +1,81 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 DevNW
 //
-// GAP-SEC-M-2: deterministic provenance for `src/generated/otlp.zig`.
+// NEW-H-1 / GAP-SEC-M-2: deterministic provenance for `src/generated/otlp.zig`.
 //
 // This tool walks `third_party/opentelemetry-proto-v1.10.0/`, emits a
-// SHA-256 over every regular file, and prints a manifest line per file.
-// The manifest is also written to `docs/DEPENDENCIES.md`'s "Provenance"
-// section (manually for now; see the README for the regeneration
-// recipe). CI runs this tool and compares the manifest to the in-tree
-// copy — any drift fails the pipeline.
+// SHA-256 over every regular file (sorted by path so the output is
+// deterministic across machines), and either:
 //
-// The actual hand-rolled encoder in `src/generated/otlp.zig` is NOT
-// re-emitted by this tool. The encoder is small and stable; the
-// provenance check is what we need to detect upstream changes that
-// would require a manual update.
+//   * `zig build gen-otlp`               — prints the manifest to stdout
+//     (typical `zig build gen-otlp > docs/proto-manifest.txt` recipe).
 //
-// Usage:
-//   zig build gen-otlp                # prints the manifest to stdout
+//   * `zig build verify-proto-manifest`  — re-computes the manifest
+//     against the on-disk vendored tree and exits with code 2 on any
+//     drift between the live tree and `docs/proto-manifest.txt`.
 //
-// Acceptance (CI):
-//   tools/gen_otlp.zig manifest output is reproducible across two runs
-//   on the same commit. Any difference indicates upstream drift.
+// NEW-H-1 closure: prior to this change the upstream directory contained
+// only `LICENSE`, so the manifest gate was a structural facade. The
+// generator now refuses to emit a "successful" manifest if the upstream
+// tree contains nothing but LICENSE — see `tools/manifest.zig` for the
+// `requireSpecPayload()` invariant.
 
 const std = @import("std");
+const manifest = @import("manifest");
 
 const upstream_dir = "third_party/opentelemetry-proto-v1.10.0";
+const manifest_path = "docs/proto-manifest.txt";
+const upstream_pin = "opentelemetry-proto v1.10.0";
+const recipe = "zig build gen-otlp > docs/proto-manifest.txt";
+const tool_name = "gen-otlp";
 
-pub fn main() !void {
-    var gpa: std.heap.DebugAllocator(.{}) = .init;
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var threaded = std.Io.Threaded.init(allocator, .{});
-    defer threaded.deinit();
-    const io = threaded.io();
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.gpa;
+    const io = init.io;
 
     var stdout_buf: [4096]u8 = undefined;
     var stdout_w = std.Io.File.stdout().writer(io, &stdout_buf);
     const out = &stdout_w.interface;
     defer out.flush() catch {};
 
-    try out.print("# otel proto-tree manifest (SHA-256 per file)\n", .{});
-    try out.print("# upstream pin: opentelemetry-proto v1.10.0\n", .{});
-    try out.print("# regenerate: zig build gen-otlp > docs/proto-manifest.txt\n", .{});
+    var stderr_buf: [4096]u8 = undefined;
+    var stderr_w = std.Io.File.stderr().writer(io, &stderr_buf);
+    const err = &stderr_w.interface;
+    defer err.flush() catch {};
 
-    var dir = std.Io.Dir.cwd().openDir(io, upstream_dir, .{ .iterate = true }) catch |err| {
-        try out.print("warning: cannot open {s}: {s}\n", .{ upstream_dir, @errorName(err) });
-        return;
-    };
-    defer dir.close(io);
-
-    try walkAndHash(allocator, io, &dir, upstream_dir, out);
-}
-
-fn walkAndHash(allocator: std.mem.Allocator, io: std.Io, dir: *std.Io.Dir, prefix: []const u8, out: *std.Io.Writer) !void {
-    var it = dir.iterate();
-    while (try it.next(io)) |entry| {
-        const child_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ prefix, entry.name });
-        defer allocator.free(child_path);
-        switch (entry.kind) {
-            .file => {
-                const Sha256 = std.crypto.hash.sha2.Sha256;
-                var digest: [Sha256.digest_length]u8 = undefined;
-                var hasher = Sha256.init(.{});
-                var f = try dir.openFile(io, entry.name, .{});
-                defer f.close(io);
-                var buf: [4096]u8 = undefined;
-                while (true) {
-                    const n = f.readStreaming(io, &.{&buf}) catch |err| switch (err) {
-                        error.EndOfStream => 0,
-                        else => return err,
-                    };
-                    if (n == 0) break;
-                    hasher.update(buf[0..n]);
-                }
-                hasher.final(&digest);
-                var hex_buf: [Sha256.digest_length * 2]u8 = undefined;
-                const alphabet = "0123456789abcdef";
-                for (digest, 0..) |b, i| {
-                    hex_buf[i * 2] = alphabet[(b >> 4) & 0x0f];
-                    hex_buf[i * 2 + 1] = alphabet[b & 0x0f];
-                }
-                try out.print("{s}  {s}\n", .{ hex_buf[0..], child_path });
-            },
-            .directory => {
-                var sub = try dir.openDir(io, entry.name, .{ .iterate = true });
-                defer sub.close(io);
-                try walkAndHash(allocator, io, &sub, child_path, out);
-            },
-            else => {},
+    var mode: manifest.Mode = .emit;
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const argv = try init.minimal.args.toSlice(arena.allocator());
+    for (argv[1..]) |arg_z| {
+        const arg: []const u8 = arg_z;
+        if (std.mem.eql(u8, arg, "--verify")) {
+            mode = .verify;
+        } else if (std.mem.eql(u8, arg, "--emit")) {
+            mode = .emit;
+        } else {
+            try err.print("{s}: unknown arg `{s}` (expected --emit or --verify)\n", .{ tool_name, arg });
+            err.flush() catch {};
+            std.process.exit(2);
         }
     }
+
+    manifest.run(allocator, io, mode, .{
+        .upstream_dir = upstream_dir,
+        .manifest_path = manifest_path,
+        .upstream_pin = upstream_pin,
+        .regenerate_recipe = recipe,
+        .tool_name = tool_name,
+    }, out, err) catch |e| switch (e) {
+        manifest.ManifestError.OnlyLicenseFound,
+        manifest.ManifestError.UpstreamTreeEmpty,
+        manifest.ManifestError.ManifestDrift,
+        manifest.ManifestError.ManifestMissing,
+        => {
+            out.flush() catch {};
+            err.flush() catch {};
+            std.process.exit(2);
+        },
+        else => return e,
+    };
 }

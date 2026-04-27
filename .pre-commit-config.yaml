@@ -10,11 +10,16 @@ repos:
   rev: v5.0.0
   hooks:
   - id: trailing-whitespace
-    exclude: ^\.gitlab/
+    # NEW-H-1: vendored upstream sources under `third_party/` MUST stay
+    # byte-for-byte identical to upstream so the SHA-256 manifest in
+    # `docs/{proto,semconv}-manifest.txt` anchors actual upstream
+    # content; auto-fixing whitespace would silently break the gate.
+    exclude: ^(\.gitlab/|third_party/)
   - id: end-of-file-fixer
-    exclude: ^\.gitlab/
+    exclude: ^(\.gitlab/|third_party/)
   - id: mixed-line-ending
     args: [--fix=lf]
+    exclude: ^third_party/
   - id: check-yaml
     args: [--unsafe]
   - id: check-json
@@ -22,6 +27,10 @@ repos:
   - id: check-xml
   - id: check-added-large-files
     args: [--maxkb=1024]
+    # The semconv `model/` tree contains a few YAML files >100 KB; the
+    # whole vendored tree is well under the repo-policy MB threshold,
+    # so the per-file size check is excluded for that subtree.
+    exclude: ^third_party/semantic-conventions-v1\.40\.0/model/
   - id: check-merge-conflict
   - id: check-executables-have-shebangs
   - id: check-shebang-scripts-are-executable
@@ -40,7 +49,9 @@ repos:
   hooks:
   - id: markdownlint
     args: [--config, .markdownlint.json]
-    exclude: ^CHANGELOG\.md$
+    # CHANGELOG style is intentionally non-conformant; vendored
+    # `third_party/` markdown is upstream-owned (see NEW-H-1 note above).
+    exclude: ^(CHANGELOG\.md$|third_party/)
 
   # YAML formatting
 - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
@@ -48,7 +59,7 @@ repos:
   hooks:
   - id: pretty-format-yaml
     args: [--autofix, --indent, '2']
-    exclude: ^\.gitlab-ci\.yml$
+    exclude: ^(\.gitlab-ci\.yml$|third_party/)
 
   # Conventional commits
 - repo: https://github.com/commitizen-tools/commitizen

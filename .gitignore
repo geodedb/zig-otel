@@ -13,6 +13,9 @@ zig-out/
 *.swo
 *~
 
+# Local git worktrees (per-feature isolated checkouts)
+.worktrees/
+
 # OS files
 .DS_Store
 Thumbs.db

@@ -1,13 +1,30 @@
 #!/usr/bin/env bash
-# verify-consumer-noop.sh [--skip-build] <consumer-repo-name>
+# verify-consumer-noop.sh [--skip-build] [--worktree <name> | --zig-out <path>] <consumer-repo-name>
 #
 # Build the consumer with -Dwith_otel=false and grep for otel/observability
 # symbols in the resulting object/exe set. If any appear, fail loudly.
 #
-# `--skip-build` skips the `zig build` step and only walks an existing
-# `zig-out/`. This is intended for the test harness, which synthesizes a
-# `zig-out/` containing a known-leaky archive to exercise the guard's
-# find/nm/grep path without running a real Zig build.
+# Flags:
+#   --skip-build         Skip the `zig build` step and only walk an existing
+#                        `zig-out/`. Intended for the test harness, which
+#                        synthesizes a `zig-out/` containing a known-leaky
+#                        archive to exercise the guard's find/nm/grep path
+#                        without running a real Zig build.
+#   --worktree <name>    Build (or skip-build) and walk
+#                        `<repo>/.worktrees/<name>/` instead of `<repo>/`.
+#                        Use this when the consumer's build happened inside
+#                        a git worktree rather than the main checkout.
+#   --zig-out <path>     Walk the literal <path> directly. Mutually exclusive
+#                        with --worktree. Implies --skip-build (the script
+#                        will not invoke `zig build` against an arbitrary
+#                        path).
+#
+# Auto-detection: if neither --worktree nor --zig-out is passed and
+# `<repo>/.worktrees/` contains exactly ONE subdirectory with a `zig-out/`,
+# that worktree is selected automatically. If multiple worktrees have a
+# `zig-out/`, the script refuses to guess and requires an explicit
+# `--worktree`. If no worktree has a `zig-out/`, it falls back to the main
+# checkout (`<repo>/zig-out/`) — the original behavior.
 #
 # ROOT resolution mirrors list-public-siblings.sh / pull-public-siblings.sh
 # so this works whether the script is invoked from the main otel checkout
@@ -17,12 +34,42 @@
 set -euo pipefail
 
 skip_build=0
-while [ "${1:-}" = "--skip-build" ]; do
-    skip_build=1
-    shift
+worktree_name=""
+zig_out_override=""
+while [ $# -gt 0 ]; do
+    case "${1:-}" in
+        --skip-build)
+            skip_build=1
+            shift
+            ;;
+        --worktree)
+            worktree_name="${2:?--worktree requires a name}"
+            shift 2
+            ;;
+        --zig-out)
+            zig_out_override="${2:?--zig-out requires a path}"
+            shift 2
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            echo "ERROR: unknown flag: $1" >&2
+            exit 2
+            ;;
+        *)
+            break
+            ;;
+    esac
 done
 
-repo="${1:?usage: verify-consumer-noop.sh [--skip-build] <consumer-repo>}"
+if [ -n "$worktree_name" ] && [ -n "$zig_out_override" ]; then
+    echo "ERROR: --worktree and --zig-out are mutually exclusive" >&2
+    exit 2
+fi
+
+repo="${1:?usage: verify-consumer-noop.sh [--skip-build] [--worktree <name> | --zig-out <path>] <consumer-repo>}"
 [ "$repo" != "otel" ] || { echo "ERROR: 'otel' is not a consumer target" >&2; exit 2; }
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
@@ -38,9 +85,54 @@ fi
 dir="$ROOT/$repo"
 [ -d "$dir" ] || { echo "no such repo dir: $dir" >&2; exit 2; }
 
+# Resolve the build directory (where `zig build` will run, if it runs) AND
+# the walk directory (the parent of the `zig-out/` we'll grep through). In
+# the simple/main-checkout case these are the same. With a worktree they
+# both point at `<repo>/.worktrees/<name>/`. With --zig-out they diverge:
+# the build is skipped and we walk only the literal override path.
+build_dir=""
+walk_dir=""
+if [ -n "$zig_out_override" ]; then
+    # Explicit zig-out path: don't try to build, just walk what we're told.
+    [ -d "$zig_out_override" ] || {
+        echo "no such zig-out dir: $zig_out_override" >&2; exit 2; }
+    walk_dir="$(cd "$zig_out_override/.." && pwd)"
+    skip_build=1
+elif [ -n "$worktree_name" ]; then
+    candidate="$dir/.worktrees/$worktree_name"
+    [ -d "$candidate" ] || {
+        echo "no such worktree: $candidate" >&2; exit 2; }
+    build_dir="$candidate"
+    walk_dir="$candidate"
+else
+    # Auto-detect: find subdirs of `<repo>/.worktrees/` that contain a
+    # `zig-out/`. Zero -> fall back to main checkout. One -> use it.
+    # More than one -> refuse to guess.
+    auto=""
+    auto_count=0
+    if [ -d "$dir/.worktrees" ]; then
+        for wt in "$dir"/.worktrees/*/; do
+            [ -d "${wt}zig-out" ] || continue
+            auto="${wt%/}"
+            auto_count=$((auto_count + 1))
+        done
+    fi
+    if [ "$auto_count" -gt 1 ]; then
+        echo "ERROR: multiple worktrees under $dir/.worktrees have a zig-out/." >&2
+        echo "       Pass --worktree <name> to disambiguate." >&2
+        exit 2
+    elif [ "$auto_count" -eq 1 ]; then
+        build_dir="$auto"
+        walk_dir="$auto"
+    else
+        build_dir="$dir"
+        walk_dir="$dir"
+    fi
+fi
+
 if [ "$skip_build" -eq 0 ]; then
     (
-        cd "$dir"
+        cd "$build_dir"
         rm -rf zig-out .zig-cache
         zig build -Dwith_otel=false -Doptimize=ReleaseSafe
     )
@@ -106,7 +198,7 @@ while IFS= read -r f; do
         echo "FAIL: otel symbols leaked into $f ($leaked symbol table)" >&2
         hits=$((hits + 1))
     fi
-done < <(find "$dir/zig-out" -type f \( -executable -o -name '*.a' -o -name '*.so' \))
+done < <(find "$walk_dir/zig-out" -type f \( -executable -o -name '*.a' -o -name '*.so' \))
 
 if [ "$unreadable" -gt 0 ]; then
     echo "FAIL: $unreadable artifact(s) unreadable by nm — refusing to claim clean" >&2

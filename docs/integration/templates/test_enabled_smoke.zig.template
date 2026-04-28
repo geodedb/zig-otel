@@ -1,0 +1,40 @@
+//! Verifies one client span lands in an in-memory recorder when
+//! -Dwith_otel=true. TODO[REPO]: replace <consumer> + the request shim.
+
+const std = @import("std");
+const otel = @import("otel");
+const consumer = @import("<consumer>");
+
+test "one span recorded when otel enabled" {
+    if (!consumer.observability.enabled) return error.SkipZigTest;
+
+    const allocator = std.testing.allocator;
+
+    var resource = try otel.sdk.resource.defaultResource(allocator);
+    defer resource.deinit();
+    try resource.attributes.putString(otel.semconv.service_name, "<consumer>-test");
+
+    var recorder = otel.exporters.in_memory.Recorder.init(allocator);
+    var tp = try otel.sdk.trace.TracerProvider.init(allocator, .{
+        .resource = &resource,
+        .default_exporter = recorder.spanExporter(),
+    });
+    defer tp.deinit();
+
+    var tracer = tp.tracer(.{ .name = "<consumer>-test" });
+    consumer.observability.global.tracer = &tracer;
+    defer consumer.observability.global.tracer = null;
+
+    var span = consumer.observability.startClientSpan(.{
+        .method_string = struct {
+            fn s() []const u8 { return "GET"; }
+        }.s,
+        .url_string = struct {
+            fn s() []const u8 { return "https://x"; }
+        }.s,
+    });
+    consumer.observability.endClientSpan(span, 200);
+
+    try tp.forceFlush(1_000);
+    try std.testing.expectEqual(@as(usize, 1), recorder.spans.items.len);
+}

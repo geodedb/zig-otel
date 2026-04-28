@@ -1,0 +1,9 @@
+// Paste this entry into your build.zig.zon under .dependencies = .{ ... }.
+// Zig only fetches dependencies that are reached by a b.dependency(...) /
+// b.lazyDependency(...) call at build time, so gating the dependency in
+// build.zig (behind -Dwith_otel) automatically gates the fetch as well.
+.otel = .{
+    .url = "git+https://gitlab.com/devnw/zig/otel#<PIN_SHA>",
+    .hash = "<PIN_HASH>",
+    .lazy = true,
+},

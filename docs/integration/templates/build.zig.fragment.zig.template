@@ -1,0 +1,22 @@
+// Paste/merge into your build.zig. Replace <root_module_var> with the
+// existing variable name for the consumer's primary module
+// (e.g. `lib_module`, `client_module`, `h3_module`). Keep the option
+// default = false.
+
+const with_otel = b.option(
+    bool,
+    "with_otel",
+    "Compile in otel instrumentation (off by default; zero overhead when off)",
+) orelse false;
+
+const build_options = b.addOptions();
+build_options.addOption(bool, "with_otel", with_otel);
+<root_module_var>.addOptions("build_options", build_options);
+
+if (with_otel) {
+    const otel_dep = b.lazyDependency("otel", .{
+        .target = target,
+        .optimize = optimize,
+    }) orelse return;
+    <root_module_var>.addImport("otel", otel_dep.module("otel"));
+}

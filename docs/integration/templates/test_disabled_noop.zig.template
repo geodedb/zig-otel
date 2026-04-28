@@ -1,0 +1,34 @@
+//! Verifies the no-op invariant when -Dwith_otel=false (the default).
+//! TODO[REPO]: replace `<consumer>` with the consumer's module name.
+
+const std = @import("std");
+const consumer = @import("<consumer>");
+
+test "build_options.with_otel exists and defaults to false" {
+    const build_options = @import("build_options");
+    try std.testing.expect(@hasDecl(build_options, "with_otel"));
+    try std.testing.expectEqual(false, build_options.with_otel);
+}
+
+test "observability.enabled tracks build_options.with_otel" {
+    const build_options = @import("build_options");
+    try std.testing.expectEqual(build_options.with_otel, consumer.observability.enabled);
+}
+
+test "no-op when otel disabled" {
+    if (consumer.observability.enabled) return error.SkipZigTest;
+    var span = consumer.observability.startClientSpan(.{
+        .method_string = struct {
+            fn s() []const u8 { return "GET"; }
+        }.s,
+        .url_string = struct {
+            fn s() []const u8 { return "https://x"; }
+        }.s,
+    });
+    consumer.observability.endClientSpan(span, 200);
+    // Belt-and-suspenders: callers may also invoke `span.end(null)`
+    // directly. The seam's `endClientSpan` already covers the lifecycle;
+    // this line just verifies the no-op fallback signature matches the
+    // real API's `Span.end(?u64) void`.
+    span.end(null);
+}

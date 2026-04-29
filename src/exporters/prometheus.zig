@@ -33,14 +33,16 @@ pub const Prometheus = struct {
         for (datas) |m| {
             const sanitized = try sanitize(self.allocator, m.name);
             defer self.allocator.free(sanitized);
-            try buf.writer(self.allocator).print("# HELP {s} {s}\n", .{ sanitized, m.description });
+            // Zig 0.16: std.ArrayList uses the allocator-passing (unmanaged)
+            // shape; there is no .writer() method. Use .print(gpa, fmt, args).
+            try buf.print(self.allocator, "# HELP {s} {s}\n", .{ sanitized, m.description });
             const promkind: []const u8 = switch (m.kind) {
                 .counter, .observable_counter => "counter",
                 .histogram => "histogram",
                 .gauge, .observable_gauge => "gauge",
                 .up_down_counter, .observable_up_down_counter => "gauge",
             };
-            try buf.writer(self.allocator).print("# TYPE {s} {s}\n", .{ sanitized, promkind });
+            try buf.print(self.allocator, "# TYPE {s} {s}\n", .{ sanitized, promkind });
             for (m.points) |pt| {
                 switch (pt.value) {
                     .number => |n| {
@@ -48,8 +50,8 @@ pub const Prometheus = struct {
                         try writeLabels(self.allocator, &buf, pt.attributes);
                         try buf.append(self.allocator, ' ');
                         switch (n) {
-                            .int => |i| try buf.writer(self.allocator).print("{d}", .{i}),
-                            .double => |d| try buf.writer(self.allocator).print("{d}", .{d}),
+                            .int => |i| try buf.print(self.allocator, "{d}", .{i}),
+                            .double => |d| try buf.print(self.allocator, "{d}", .{d}),
                         }
                         try buf.append(self.allocator, '\n');
                     },
@@ -58,23 +60,23 @@ pub const Prometheus = struct {
                         try buf.appendSlice(self.allocator, sanitized);
                         try buf.appendSlice(self.allocator, "_count");
                         try writeLabels(self.allocator, &buf, pt.attributes);
-                        try buf.writer(self.allocator).print(" {d}\n", .{h.count});
+                        try buf.print(self.allocator, " {d}\n", .{h.count});
                         try buf.appendSlice(self.allocator, sanitized);
                         try buf.appendSlice(self.allocator, "_sum");
                         try writeLabels(self.allocator, &buf, pt.attributes);
-                        try buf.writer(self.allocator).print(" {d}\n", .{h.sum});
+                        try buf.print(self.allocator, " {d}\n", .{h.sum});
 
                         for (h.bounds, 0..) |b, idx| {
                             try buf.appendSlice(self.allocator, sanitized);
                             try buf.appendSlice(self.allocator, "_bucket");
                             try writeBucketLabels(self.allocator, &buf, pt.attributes, b);
-                            try buf.writer(self.allocator).print(" {d}\n", .{h.counts[idx]});
+                            try buf.print(self.allocator, " {d}\n", .{h.counts[idx]});
                         }
                         // +Inf bucket
                         try buf.appendSlice(self.allocator, sanitized);
                         try buf.appendSlice(self.allocator, "_bucket");
                         try writeBucketLabelsInf(self.allocator, &buf, pt.attributes);
-                        try buf.writer(self.allocator).print(" {d}\n", .{h.count});
+                        try buf.print(self.allocator, " {d}\n", .{h.count});
                     },
                 }
             }
@@ -169,7 +171,7 @@ fn writeBucketLabels(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), attr
         }
     }
     try buf.appendSlice(allocator, "le=\"");
-    try buf.writer(allocator).print("{d}", .{le});
+    try buf.print(allocator, "{d}", .{le});
     try buf.appendSlice(allocator, "\"}");
 }
 
@@ -201,8 +203,8 @@ fn writeStringValue(allocator: std.mem.Allocator, buf: *std.ArrayList(u8), key: 
             try buf.appendSlice(allocator, escaped);
         },
         .bool => |b| try buf.appendSlice(allocator, if (b) "true" else "false"),
-        .int => |i| try buf.writer(allocator).print("{d}", .{i}),
-        .double => |d| try buf.writer(allocator).print("{d}", .{d}),
+        .int => |i| try buf.print(allocator, "{d}", .{i}),
+        .double => |d| try buf.print(allocator, "{d}", .{d}),
         else => try buf.appendSlice(allocator, "<array>"),
     }
 }

@@ -21,6 +21,7 @@ const build_options = @import("build_options");
 // every reference in this file is gated behind the same `if` check and
 // dead-code-eliminated.
 const tp = if (build_options.use_devnw_pool) @import("thread_pool") else struct {};
+const internal_sync = @import("../internal/sync.zig");
 
 // ---------------------------------------------------------------- Span export
 
@@ -161,16 +162,20 @@ pub const BatchSpanProcessorOptions = struct {
 /// synchronous-drain hot path is untouched.
 const PoolHandle = if (build_options.use_devnw_pool) ?*tp.ThreadPool else ?*void;
 
-/// Queue mutex. With the pool active, both producer threads (`onEnd`)
-/// and worker drain tasks touch the queue; without the pool, only the
-/// producer thread does, so a no-op mutex saves the futex traffic. The
-/// thread-pool's `sync.Mutex` wraps `std.Io.Mutex` with the legacy
-/// zero-arg API so we don't have to plumb an `io` through the
-/// processor surface.
-const QueueMutex = if (build_options.use_devnw_pool) tp.sync.Mutex else struct {
-    pub fn lock(_: *@This()) void {}
-    pub fn unlock(_: *@This()) void {}
-};
+/// Queue mutex. Real on both build paths because `onEnd` can be called
+/// concurrently from many producer threads (e.g. a shard-worker pool
+/// fanning span emission across cores) regardless of whether the BSP
+/// drains synchronously or via the DevNW thread-pool. The previous
+/// no-op fallback assumed a single producer thread and let
+/// `std.ArrayList(...).append` race on the synchronous-drain path,
+/// corrupting `queue.items` and tearing the `@memcpy(out, items[0..n])`
+/// inside `drainLocked`. The thread-pool's `sync.Mutex` wraps
+/// `std.Io.Mutex` with the legacy zero-arg API so we don't have to
+/// plumb an `io` through the processor surface; the no-pool path uses
+/// `internal/sync.zig`'s `Mutex` (a thin local wrapper around
+/// `std.Io.Mutex.lockUncancelable`) to keep the same zero-arg shape
+/// without taking on the thread-pool import.
+const QueueMutex = if (build_options.use_devnw_pool) tp.sync.Mutex else internal_sync.Mutex;
 
 /// Flush-completion condition variable. `batchForceFlush` waits on it
 /// instead of busy-polling; workers broadcast when they decrement

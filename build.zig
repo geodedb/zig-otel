@@ -264,6 +264,10 @@ pub fn build(b: *std.Build) void {
         "test/otlp_logs_wire.zig",
         "test/tls_loopback.zig",
         "test/batch_async.zig",
+        // BSP concurrent-producer race (geode shard-worker pool) — pins
+        // that with N threads × M spans each, forceFlush observes every
+        // span exactly once on the synchronous-drain code path.
+        "test/batch_concurrent.zig",
         "test/comptime_disabled.zig",
         // NEW-M-2 (#140, CONFIDENTIAL): regression test for CWE-59
         // symlink following in `src/exporters/file.zig`. See the file

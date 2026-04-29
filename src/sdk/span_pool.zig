@@ -11,16 +11,16 @@ const std = @import("std");
 const trace_api = @import("../api/trace.zig");
 const build_options = @import("build_options");
 const tp = if (build_options.use_devnw_pool) @import("thread_pool") else struct {};
+const internal_sync = @import("../internal/sync.zig");
 
-/// Lock that becomes a no-op when the async pool is off (single-thread
-/// producer = consumer, no contention possible) and a real mutex when
-/// the pool is on (BSP exporter thread can recycle in parallel with a
-/// producer thread starting a new span). Mirrors the QueueMutex
+/// Real mutex on both build paths. The previous no-op-when-disabled
+/// shape assumed a single producer thread, but real consumers (e.g.
+/// geode's shard-worker pool) call `Tracer.startSpan` from many
+/// threads concurrently — each call hits `tryAcquire`, and concurrent
+/// `tryAcquire` / `tryRelease` on a plain `std.ArrayListUnmanaged`
+/// freelist tears the underlying slice. Mirrors the `QueueMutex`
 /// pattern in `sdk/export.zig`.
-const PoolMutex = if (build_options.use_devnw_pool) tp.sync.Mutex else struct {
-    pub fn lock(_: *@This()) void {}
-    pub fn unlock(_: *@This()) void {}
-};
+const PoolMutex = if (build_options.use_devnw_pool) tp.sync.Mutex else internal_sync.Mutex;
 
 pub const default_max: u32 = 128;
 

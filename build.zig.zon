@@ -45,6 +45,10 @@
             .url = "git+https://gitlab.com/devnw/zig/thread-pool#ad878c812a5ee000098bc32b6ec3508b45289354",
             .hash = "thread_pool-0.2.0-11B1BrLfdQCw8kH30ZfQCBMJK3BC0E3qg-WEzjjvIgJl",
         },
+        .otel = .{
+            .url = "git+https://gitlab.com/devnw/zig/otel.git#ee492166dfefc7914229979c933411e6da9e504e",
+            .hash = "otel-0.1.0-B0v3lr2UMwA5qFJCa20OT-1huDPLm1sTIFD22PQBADDD",
+        },
     },
     .paths = .{
         "build.zig",

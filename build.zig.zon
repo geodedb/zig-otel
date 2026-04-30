@@ -10,8 +10,8 @@
     // build option (e.g. -Dotel_use_devnw_slog=true) in build.zig.
     .dependencies = .{
         .slog = .{
-            .url = "git+https://gitlab.com/devnw/zig/slog.git#c4769254e2dd6e72cea63f5e2c9180e0679ce4c3",
-            .hash = "slog-0.1.0-SamED3i2BgD9Q8FF2kc9I1YhL_SkBorS3VrWXo3V6-1N",
+            .url = "git+https://gitlab.com/devnw/zig/slog.git#0c0a203cd2f4e14f36b37bd6d2a9fc4bc27fc270",
+            .hash = "slog-0.1.0-SamED3i2BgACzyoqY4yqFVUbAgEuAQB-RBfI-LvfUU-z",
         },
         .json = .{
             .url = "git+https://gitlab.com/devnw/zig/json.git#27bcf1afddd128dfb262a9e804de0ff565b27833",
@@ -30,12 +30,12 @@
             .hash = "protobuf-3.0.0-0e82akVdKQBR-5UyQkdGI2f9WiRtiENLEMw_nH7HusOd",
         },
         .metrics = .{
-            .url = "git+https://gitlab.com/devnw/zig/metrics.git#f41e523985d3c38a096e40b94182c77861965fce",
-            .hash = "metrics-0.1.0-uPGXFhzPAQCbsGiMMrgOU3LCSZu36eBV66CvKwwuu9EY",
+            .url = "git+https://gitlab.com/devnw/zig/metrics.git#634de7df447fc6f16c8ec06c8f0ac15967372245",
+            .hash = "metrics-0.1.0-uPGXFhzPAQDXdqLCNGG1qhGL33dH9-EoNPKHdqiAJ8xC",
         },
         .tls = .{
-            .url = "git+https://gitlab.com/devnw/zig/tls.git#40d1de8e3b695fc3b353a9b93fa98cfb7e852fb4",
-            .hash = "tls-0.2.0-mtEaLBxpEwDNTOdfMAjxRRkhOPUpqtByiuWSEDWuiifT",
+            .url = "git+https://gitlab.com/devnw/zig/tls.git#81a9d0faaeeb0c4192dbc338c25e62f0725226cd",
+            .hash = "tls-0.2.0-mtEaLBxpEwCyLogPHqiRA_Bz2maFU4cKI_hhQpyFurLc",
         },
         .grpc_zig = .{
             .url = "git+https://gitlab.com/devnw/zig/grpc-zig#fd5405b860f25e3dd9226b3d63b676ab58f183d4",
@@ -46,8 +46,8 @@
             .hash = "thread_pool-0.2.1-11B1BsqSdgCqx_EsSPzdPqfGhNFzonijUGYfDuy0fpTb",
         },
         .otel = .{
-            .url = "git+https://gitlab.com/devnw/zig/otel.git#7e014ec8ba14609affc495903293f150643e2382",
-            .hash = "otel-0.1.0-B0v3lrgNNABYMMqtuvc8JP-C7njK9T33jXC2APeGSSsA",
+            .url = "git+https://gitlab.com/devnw/zig/otel.git#efe116b388d43472eaab5b6c24a13725156df417",
+            .hash = "otel-0.1.0-B0v3lrgNNAAbt_xZDbOsBAS1bFFkspiibIElaWuVMK4M",
         },
     },
     .paths = .{

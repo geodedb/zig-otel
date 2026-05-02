@@ -1,6 +1,6 @@
 .{
     .name = .otel,
-    .version = "0.1.4",
+    .version = "0.1.5",
     .fingerprint = 0x4d774a5496f74b07,
     .minimum_zig_version = "0.16.0",
     // Initial delivery is hermetic: stdlib + in-repo implementations only.
@@ -10,8 +10,8 @@
     // build option (e.g. -Dotel_use_devnw_slog=true) in build.zig.
     .dependencies = .{
         .slog = .{
-            .url = "git+https://gitlab.com/devnw/zig/slog.git#v0.1.5",
-            .hash = "slog-0.1.5-SamED_-yBgAJrHgCdSmGG3eSSV-03nW-unL1WrPSwZBI",
+            .url = "git+https://gitlab.com/devnw/zig/slog.git#v0.1.6",
+            .hash = "slog-0.1.6-SamED3a0BgDKjw46AFx8V4q34Ry6o2fYIxWI1ai9haLW",
         },
         .json = .{
             .url = "git+https://gitlab.com/devnw/zig/json.git#v0.1.4",
@@ -26,16 +26,16 @@
             .hash = "config-0.1.4-TiLumm9gCgDHWkoWUcwmTo3H-hFox_5hWzq8ldzdz08s",
         },
         .protobuf = .{
-            .url = "git+https://gitlab.com/devnw/zig/protobuf.git#v0.1.2",
-            .hash = "protobuf-0.1.2-0e82ao4uKgB_TB4xfWr6Th-GspMSrDMEzQ8T0UTKyt8-",
+            .url = "git+https://gitlab.com/devnw/zig/protobuf.git#v0.1.3",
+            .hash = "protobuf-0.1.3-0e82atItKgCa9vTBNuWV_YmwYbb17HLBnyCfik5UWvg_",
         },
         .metrics = .{
-            .url = "git+https://gitlab.com/devnw/zig/metrics.git#v0.1.2",
-            .hash = "metrics-0.1.2-uPGXFvzKAQDvAS858csqw-2Xw5NN9iJD2rtXj88ZeErk",
+            .url = "git+https://gitlab.com/devnw/zig/metrics.git#v0.1.3",
+            .hash = "metrics-0.1.3-uPGXFnPMAQCjOQE8dvRPmHuJS0ELTd2q0B9NeRYiUcFC",
         },
         .tls = .{
-            .url = "git+https://gitlab.com/devnw/zig/tls.git#v0.1.6",
-            .hash = "tls-0.1.6-mtEaLF1nEwDPONDdfywes7uB0NkPOnnJbtXpGsvOm8le",
+            .url = "git+https://gitlab.com/devnw/zig/tls.git#v0.1.7",
+            .hash = "tls-0.1.7-mtEaLNRoEwAm6kC9N1iQRAHBDXuOmxKVvMf--UM6ZgX9",
         },
         .grpc_zig = .{
             .url = "git+https://gitlab.com/devnw/zig/grpc-zig.git#v0.1.5",

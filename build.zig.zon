@@ -38,8 +38,8 @@
             .hash = "tls-0.1.7-mtEaLNRoEwAm6kC9N1iQRAHBDXuOmxKVvMf--UM6ZgX9",
         },
         .grpc_zig = .{
-            .url = "git+https://gitlab.com/devnw/zig/grpc-zig.git#v0.1.5",
-            .hash = "grpc_zig-0.1.5-7FnvpFXnBAAk9m2q8L2cl-TXYoPQjrFn5SGbwCAOvB3C",
+            .url = "git+https://gitlab.com/devnw/zig/grpc-zig.git#v0.1.7",
+            .hash = "grpc_zig-0.1.7-7FnvpMzoBACCZPkjD_o2IvAL52HIQBKqBK0rYUf_coVo",
         },
         .thread_pool = .{
             .url = "git+https://gitlab.com/devnw/zig/thread-pool.git#v0.2.4",

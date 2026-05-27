@@ -10,8 +10,8 @@
     // build option (e.g. -Dotel_use_devnw_slog=true) in build.zig.
     .dependencies = .{
         .slog = .{
-            .url = "git+https://gitlab.com/devnw/zig/slog.git#b52759252c36155c33f3db19dc078d9f363ea1a1",
-            .hash = "slog-0.1.6-SamED7q0BgAH-AhCKgsXZ5Dtrhq7orNE4t4tCGhHvA14",
+            .url = "git+https://gitlab.com/devnw/zig/slog.git#bd50a7fdbc3e9ce77e66278910bf1b33af045ef3",
+            .hash = "slog-0.1.6-SamED7q0BgDuLGxkg2cuBmFY1cA7q8ePuABqfTwXzSEn",
         },
         .json = .{
             .url = "git+https://gitlab.com/devnw/zig/json.git#284b1390d3f03498a4dd022d70d178823370e8ff",
@@ -22,8 +22,8 @@
             .hash = "yaml-0.1.4-lcW-hHyjBACeIatLNi0L1vxaP8A1uMnQdiIv9BqdQjov",
         },
         .config = .{
-            .url = "git+https://gitlab.com/devnw/zig/config.git#c7077f40fd00adc186eb5145bd626984f2a20513",
-            .hash = "config-0.1.4-TiLumvdgCgC4VsY0V4HKOtCSYlwWjXPkiREwxxSuRC0S",
+            .url = "git+https://gitlab.com/devnw/zig/config.git#dbf3ceaba175cf196a1ae7806b90bcd5ec0df009",
+            .hash = "config-0.1.4-TiLumvdgCgCi-N6NyOTB85Erl-hseWjkXhlhFIz1Aju8",
         },
         .protobuf = .{
             .url = "git+https://gitlab.com/devnw/zig/protobuf.git#b842402e5e96ca320038b75a63b417b58ce9ffaa",

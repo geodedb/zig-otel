@@ -268,6 +268,14 @@ pub fn build(b: *std.Build) void {
         // that with N threads × M spans each, forceFlush observes every
         // span exactly once on the synchronous-drain code path.
         "test/batch_concurrent.zig",
+        // BSP span-reuse use-after-free (docs/BUG_BSP_SPAN_REUSE_UAF.md):
+        // the non-atomic `SpanState.ended` flag let two threads ending
+        // the SAME span both fire on_end → double-enqueue → double-recycle
+        // → GP-fault in exportBatch. Pins exactly-once end()/recycle under
+        // a same-span double-end race plus the 8-producer integration
+        // shape. Run under -Dtsan=true for the deterministic data-race
+        // signal on `ended`.
+        "test/bsp_span_reuse_race.zig",
         "test/comptime_disabled.zig",
         // NEW-M-2 (#140, CONFIDENTIAL): regression test for CWE-59
         // symlink following in `src/exporters/file.zig`. See the file

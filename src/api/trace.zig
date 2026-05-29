@@ -98,7 +98,15 @@ pub const SpanState = struct {
     /// Recording guards setStatus/addEvent so callers can opt-in to a
     /// non-recording span without paying for mutation work.
     recording: bool = true,
-    ended: bool = false,
+    /// End-claim flag. Atomic so concurrent `Span.end()` calls on the
+    /// same SpanState resolve to exactly one winner: the first caller to
+    /// `swap(true, ...)` observes the prior `false` and proceeds to fire
+    /// `on_end` (which enqueues the span into the processor); every other
+    /// caller observes `true` and returns. Without this, a non-atomic
+    /// check-then-set let two threads both pass the guard, both fire
+    /// `on_end`, and the span was enqueued/recycled twice — the
+    /// span-reuse use-after-free in docs/BUG_BSP_SPAN_REUSE_UAF.md.
+    ended: std.atomic.Value(bool) = .init(false),
     /// Optional reuse hook. When set, `recycle()` resets transient
     /// state and returns the SpanState to the SDK's pool instead of
     /// freeing the struct + arena pages. Null on caller-constructed
@@ -183,7 +191,10 @@ pub const SpanState = struct {
         self.on_end_ctx = null;
         self.on_end = null;
         self.recording = true;
-        self.ended = false;
+        // Release-store so a thread that subsequently re-acquires this
+        // SpanState from the pool (via `Pool.tryAcquire`, ordered by the
+        // pool mutex) observes a cleared end-claim.
+        self.ended.store(false, .release);
         if (r.returnFn(r.ctx, self)) return;
         // Pool was full: tear down the rest of the state.
         self.attributes.deinit();
@@ -205,13 +216,17 @@ pub const Span = struct {
 
     pub fn isRecording(self: Span) bool {
         const s = self.state orelse return false;
-        return s.recording and !s.ended;
+        return s.recording and !s.ended.load(.acquire);
     }
 
     pub fn end(self: Span, end_unix_nano: ?u64) void {
         const s = self.state orelse return;
-        if (s.ended) return;
-        s.ended = true;
+        // Atomic end-claim: only the first caller to flip `ended` from
+        // false to true proceeds to set the end time and fire `on_end`.
+        // Concurrent `end()` calls on the same SpanState observe the
+        // prior `true` and return, so the span is enqueued/recycled
+        // exactly once. See docs/BUG_BSP_SPAN_REUSE_UAF.md.
+        if (s.ended.swap(true, .acq_rel)) return;
         s.end_unix_nano = end_unix_nano orelse posixNow(s.start_unix_nano);
         if (s.on_end) |cb| cb(s.on_end_ctx, s);
     }
@@ -223,7 +238,7 @@ pub const Span = struct {
 
     pub fn setName(self: Span, name: []const u8) void {
         const s = self.state orelse return;
-        if (!s.recording or s.ended) return;
+        if (!s.recording or s.ended.load(.acquire)) return;
         const child = s.arena.child_allocator;
         child.free(s.name);
         s.name = child.dupe(u8, name) catch return;
@@ -231,7 +246,7 @@ pub const Span = struct {
 
     pub fn setStatus(self: Span, code: StatusCode, description: []const u8) void {
         const s = self.state orelse return;
-        if (!s.recording or s.ended) return;
+        if (!s.recording or s.ended.load(.acquire)) return;
         // Spec: setStatus(Ok) ignores any description; setStatus(Error) keeps it.
         const child = s.arena.child_allocator;
         if (s.status_description.len != 0) child.free(s.status_description);
@@ -244,7 +259,7 @@ pub const Span = struct {
 
     pub fn setAttribute(self: Span, key: []const u8, value: attrs.Value) !void {
         const s = self.state orelse return;
-        if (!s.recording or s.ended) return;
+        if (!s.recording or s.ended.load(.acquire)) return;
         try s.attributes.put(key, value);
     }
 
@@ -260,7 +275,7 @@ pub const Span = struct {
         // Bridged to logs in SDK; here we just stash a synthetic event so
         // golden-style tests can observe it without log plumbing.
         const s = self.state orelse return;
-        if (!s.recording or s.ended) return;
+        if (!s.recording or s.ended.load(.acquire)) return;
         const child = s.arena.child_allocator;
         const arena = self.eventArena(s);
         const ev_attrs = arena.create(attrs.AttributeSet) catch return;
@@ -282,7 +297,7 @@ pub const Span = struct {
             @compileError("Span.addEvent requires -Ddeprecated_span_events=true; use the logs API instead");
         }
         const s = self.state orelse return;
-        if (!s.recording or s.ended) return;
+        if (!s.recording or s.ended.load(.acquire)) return;
         const child = s.arena.child_allocator;
         const t = time_unix_nano orelse posixNow(s.start_unix_nano);
         try s.events.append(child, .{ .name = name, .time_unix_nano = t, .attributes = null });

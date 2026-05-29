@@ -1,8 +1,17 @@
 # BUG: BatchSpanProcessor span-reuse UAF in synchronous-drain path
 
-**Status:** OPEN — second race surface, distinct from the queue-mutex
-race fixed in `0c34ce9 fix(bsp): close concurrent-producer race in
-synchronous-drain build` (2026-04-30, current `main`).
+**Status:** FIXED — `SpanState.ended` is now `std.atomic.Value(bool)` and
+`Span.end()` claims it with a single `swap(true, .acq_rel)`, so a span
+fires `on_end` (and is therefore enqueued/recycled) exactly once even
+under concurrent `end()` on the same SpanState. This closes the
+double-enqueue → double-recycle UAF. Regression cover:
+`test/bsp_span_reuse_race.zig` (deterministic same-span double-end
+exactly-once assertion + 8-producer integration shape). Closes the
+second BSP race surface after `0c34ce9`.
+
+**Status (historical):** OPEN — second race surface, distinct from the
+queue-mutex race fixed in `0c34ce9 fix(bsp): close concurrent-producer
+race in synchronous-drain build` (2026-04-30, current `main`).
 **Filed:** 2026-04-30
 **Affected version:** post-`0c34ce9` HEAD (i.e. with the queue mutex
 in place).

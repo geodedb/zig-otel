@@ -8,6 +8,7 @@
 const std = @import("std");
 const id = @import("../internal/id.zig");
 const attrs = @import("../internal/attributes.zig");
+const ctx_mod = @import("context.zig");
 const SpanContext = @import("context.zig").SpanContext;
 const Context = @import("context.zig").Context;
 const build_options = @import("build_options");
@@ -286,6 +287,26 @@ pub const Span = struct {
         const child = s.arena.child_allocator;
         const t = time_unix_nano orelse posixNow(s.start_unix_nano);
         try s.events.append(child, .{ .name = name, .time_unix_nano = t, .attributes = null });
+    }
+
+    /// Make this span the ambient *current* span for the calling thread, so
+    /// code that cannot thread a `Context` through its signature — most
+    /// importantly the logs emit path (`Logger.emit` takes only a
+    /// `LogRecord`) — auto-correlates emitted records with it. This is the
+    /// idiomatic, explicit activation (OTel's `makeCurrent`/`Scope` model);
+    /// span creation deliberately does NOT auto-activate. Returns a `Token`;
+    /// pair it with `defer otel.api.context.restore(token)` (LIFO scope):
+    ///
+    ///     var span = tracer.startSpan(.{ .name = "work" });
+    ///     defer span.end(null);
+    ///     const scope = span.makeCurrent();
+    ///     defer otel.api.context.restore(scope);
+    ///     logger.emit(.{ .body = .{ .string = "in span" } }); // correlated
+    ///
+    /// The new ambient Context preserves the rest of the prior context
+    /// (e.g. baggage); only the active span/span-context is replaced.
+    pub fn makeCurrent(self: Span) ctx_mod.Token {
+        return ctx_mod.attach(ctx_mod.current().withSpan(self));
     }
 
     /// Used by Context.activeSpan. Round-trips the underlying state pointer.

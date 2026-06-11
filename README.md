@@ -110,6 +110,28 @@ pub fn main() !void {
 }
 ```
 
+### Log/trace correlation
+
+Spans are not made "current" automatically (the SDK follows OpenTelemetry's
+explicit-activation model). To have logs emitted on this thread carry the
+active span's `trace_id`/`span_id`, activate the span with `makeCurrent()`
+and restore the prior context when the scope ends:
+
+```zig
+var span = try tracer.startSpan(.empty(), "work", .{});
+defer span.end(null);
+
+const scope = span.makeCurrent();        // span is now the ambient context
+defer otel.api.context.restore(scope);   // pop back on scope exit (LIFO)
+
+logger.emit(.{ .severity = .info, .body = .{ .string = "in span" } });
+// ^ trace_id/span_id are stamped from `span` automatically.
+```
+
+Correlation is fill-if-empty: a record that already carries an explicit
+trace/span identity is never overwritten, and emits outside any active span
+stay uncorrelated.
+
 See [`examples/basic.zig`](examples/basic.zig) and
 [`examples/http_client.zig`](examples/http_client.zig) for runnable demos.
 

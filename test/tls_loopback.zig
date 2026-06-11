@@ -49,6 +49,9 @@ test "OtlpHttpExporter round-trips a span over loopback HTTP" {
         .endpoint = endpoint,
         .protocol = .http_protobuf,
         .timeout_ms = 5_000,
+        // AS-1: the in-process test server binds 127.0.0.1; opt into the
+        // loopback path so the construction-time SSRF guard allows it.
+        .allow_loopback = true,
     });
     defer exporter.deinit();
 

@@ -23,6 +23,112 @@ test "OTLP exporter rejects HTTP scheme outside http(s)" {
     try std.testing.expectError(error.InvalidEndpoint, otel.exporters.otlp_http.OtlpHttpExporter.init(std.testing.allocator, .{ .endpoint = "ftp://x" }));
 }
 
+// -------------------------------------------------------------------------
+// AS-1 (SSRF endpoint guard at exporter construction): the link-local /
+// loopback / instance-metadata guard previously only fired inside
+// Config.validate() -> Config.resolve(). The factory and direct
+// construction paths bypassed it, letting TracerProvider.initFromConfig
+// reach e.g. http://169.254.169.254/ (cloud metadata SSRF). The guard is
+// now enforced inside OtlpHttpExporter.init / OtlpGrpcExporter.init.
+// -------------------------------------------------------------------------
+
+test "AS-1: HTTP exporter init rejects link-local metadata endpoint" {
+    try std.testing.expectError(
+        error.InvalidEndpoint,
+        otel.exporters.otlp_http.OtlpHttpExporter.init(std.testing.allocator, .{
+            .endpoint = "http://169.254.169.254/latest/meta-data/",
+        }),
+    );
+}
+
+test "AS-1: HTTP exporter init rejects link-local IPv6 endpoint" {
+    try std.testing.expectError(
+        error.InvalidEndpoint,
+        otel.exporters.otlp_http.OtlpHttpExporter.init(std.testing.allocator, .{
+            .endpoint = "http://[fe80::1]:4318",
+        }),
+    );
+}
+
+test "AS-1: HTTP exporter init rejects loopback without allow_loopback" {
+    try std.testing.expectError(
+        error.InvalidEndpoint,
+        otel.exporters.otlp_http.OtlpHttpExporter.init(std.testing.allocator, .{
+            .endpoint = "http://127.0.0.1:4318",
+        }),
+    );
+}
+
+test "AS-1: HTTP exporter init still accepts spec-default localhost (grandfathered)" {
+    var ex = try otel.exporters.otlp_http.OtlpHttpExporter.init(std.testing.allocator, .{
+        .endpoint = "http://localhost:4318",
+    });
+    defer ex.deinit();
+}
+
+test "AS-1: HTTP exporter init accepts loopback with allow_loopback opt-in" {
+    var ex = try otel.exporters.otlp_http.OtlpHttpExporter.init(std.testing.allocator, .{
+        .endpoint = "http://127.0.0.1:4318",
+        .allow_loopback = true,
+    });
+    defer ex.deinit();
+}
+
+test "AS-1: gRPC exporter init rejects link-local metadata endpoint" {
+    try std.testing.expectError(
+        error.InvalidEndpoint,
+        otel.exporters.otlp_grpc.OtlpGrpcExporter.init(std.testing.allocator, .{
+            .endpoint = "http://169.254.169.254:4317",
+            .protocol = .grpc,
+        }),
+    );
+}
+
+test "AS-1: gRPC exporter init rejects bare host:port metadata endpoint (no scheme)" {
+    // The gRPC endpoint form is commonly `host:port` with no scheme; the
+    // guard must catch the metadata IP even without an http(s):// prefix.
+    try std.testing.expectError(
+        error.InvalidEndpoint,
+        otel.exporters.otlp_grpc.OtlpGrpcExporter.init(std.testing.allocator, .{
+            .endpoint = "169.254.169.254:4317",
+            .protocol = .grpc,
+        }),
+    );
+}
+
+test "AS-1: gRPC exporter init rejects loopback without allow_loopback" {
+    try std.testing.expectError(
+        error.InvalidEndpoint,
+        otel.exporters.otlp_grpc.OtlpGrpcExporter.init(std.testing.allocator, .{
+            .endpoint = "http://127.0.0.1:4317",
+            .protocol = .grpc,
+        }),
+    );
+}
+
+test "AS-1: gRPC exporter init accepts loopback with allow_loopback opt-in" {
+    var ex = try otel.exporters.otlp_grpc.OtlpGrpcExporter.init(std.testing.allocator, .{
+        .endpoint = "http://127.0.0.1:4317",
+        .protocol = .grpc,
+        .allow_loopback = true,
+    });
+    defer ex.deinit();
+}
+
+test "AS-1: initFromConfig refuses metadata endpoint without going through resolve()" {
+    if (@import("build_options").otel_disabled) return error.SkipZigTest;
+    var cfg: otel.sdk.config.Config = .{
+        .traces = .{
+            .exporter = .otlp_http,
+            .otlp = .{ .endpoint = "http://169.254.169.254" },
+        },
+    };
+    try std.testing.expectError(
+        error.InvalidEndpoint,
+        otel.sdk.trace.TracerProvider.initFromConfig(std.testing.allocator, &cfg),
+    );
+}
+
 test "attribute set caps string values" {
     var as = otel.internal.attributes.AttributeSet.init(std.testing.allocator);
     defer as.deinit();
@@ -355,6 +461,8 @@ test "M-7: frame() accepts a small body" {
 test "M-6: lastResponseBody returns empty slice on a fresh exporter" {
     var ex = try otel.exporters.otlp_http.OtlpHttpExporter.init(std.testing.allocator, .{
         .endpoint = "http://127.0.0.1:4318",
+        // AS-1: loopback now requires explicit opt-in at construction.
+        .allow_loopback = true,
     });
     defer ex.deinit();
     try std.testing.expectEqual(@as(usize, 0), ex.lastResponseBody().len);
@@ -392,10 +500,14 @@ test "H-5: two TracerProviders produce different first trace IDs" {
 test "L-5: two OtlpHttpExporters produce different first backoff samples" {
     var ex_a = try otel.exporters.otlp_http.OtlpHttpExporter.init(std.testing.allocator, .{
         .endpoint = "http://127.0.0.1:4318",
+        // AS-1: loopback now requires explicit opt-in at construction.
+        .allow_loopback = true,
     });
     defer ex_a.deinit();
     var ex_b = try otel.exporters.otlp_http.OtlpHttpExporter.init(std.testing.allocator, .{
         .endpoint = "http://127.0.0.1:4318",
+        // AS-1: loopback now requires explicit opt-in at construction.
+        .allow_loopback = true,
     });
     defer ex_b.deinit();
 
@@ -408,11 +520,13 @@ test "L-5: two OtlpGrpcExporters produce different first backoff samples" {
     var ex_a = try otel.exporters.otlp_grpc.OtlpGrpcExporter.init(std.testing.allocator, .{
         .endpoint = "http://127.0.0.1:4317",
         .protocol = .grpc,
+        .allow_loopback = true,
     });
     defer ex_a.deinit();
     var ex_b = try otel.exporters.otlp_grpc.OtlpGrpcExporter.init(std.testing.allocator, .{
         .endpoint = "http://127.0.0.1:4317",
         .protocol = .grpc,
+        .allow_loopback = true,
     });
     defer ex_b.deinit();
 
@@ -485,6 +599,7 @@ test "C-3: gRPC exporter refuses to export when headers are configured" {
         .endpoint = "http://127.0.0.1:4317",
         .protocol = .grpc,
         .headers = "Authorization=Bearer x",
+        .allow_loopback = true,
     });
     defer exporter.deinit();
 

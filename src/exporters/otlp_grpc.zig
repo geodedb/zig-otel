@@ -54,6 +54,14 @@ pub const OtlpGrpcExporter = struct {
         // the original `config.endpoint` storage alive (same lifetime
         // contract as before).
         const parsed = try parseGrpcEndpoint(config.endpoint);
+        // AS-1: SSRF guard at construction. The gRPC endpoint form is
+        // commonly `host:port` with no `http(s)://` scheme, so we validate
+        // the already-parsed host directly via `validateHost` rather than
+        // `validateEndpoint` (which requires a scheme). This applies the
+        // same link-local / loopback / instance-metadata blocklist the HTTP
+        // path uses, closing the cloud-metadata SSRF (169.254.169.254) on
+        // the factory / initFromConfig / direct-construction paths.
+        try config_mod.validateHost(parsed.host, config.allow_loopback);
         return .{
             .allocator = allocator,
             .config = config,

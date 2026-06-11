@@ -95,7 +95,7 @@ pub const max_otlp_timeout_ms: u64 = 600_000;
 ///     `http://localhost:4318` is grandfathered: callers don't have to
 ///     opt-in for the OTel-spec default, only for *user-supplied*
 ///     loopback endpoints.
-fn validateEndpoint(endpoint: []const u8, allow_loopback: bool) !void {
+pub fn validateEndpoint(endpoint: []const u8, allow_loopback: bool) !void {
     if (endpoint.len == 0) return error.InvalidEndpoint;
 
     // Grandfather the default — many callers never set an endpoint at all
@@ -131,6 +131,23 @@ fn validateEndpoint(endpoint: []const u8, allow_loopback: bool) !void {
         }
         host = rest[0..end_idx];
     }
+
+    return validateHost(host, allow_loopback);
+}
+
+/// Validate a bare host (no scheme, no port, no brackets) against the
+/// same link-local / loopback / instance-metadata blocklist that
+/// `validateEndpoint` applies. Split out so transports that store the
+/// endpoint without an `http(s)://` scheme — e.g. the OTLP/gRPC exporter,
+/// whose endpoint form is `host:port` — can apply the SSRF guard against
+/// their already-parsed host without re-deriving a URL.
+///
+/// AS-1: enforced at exporter construction (`OtlpHttpExporter.init` /
+/// `OtlpGrpcExporter.init`), not just inside `Config.validate()`. The
+/// factory / `initFromConfig` / direct-construction paths previously
+/// bypassed the guard, letting an attacker-controlled endpoint reach the
+/// cloud instance-metadata service (169.254.169.254).
+pub fn validateHost(host: []const u8, allow_loopback: bool) !void {
     if (host.len == 0) return error.InvalidEndpoint;
 
     // Normalise host for substring matching: lowercase ASCII.

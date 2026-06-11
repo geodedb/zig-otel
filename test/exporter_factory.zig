@@ -46,6 +46,10 @@ test "OTEL_TRACES_EXPORTER=otlp_grpc selects grpc span exporter" {
     try cfg_mod.applyEnvFromMap(&cfg, std.testing.allocator, &env_map);
     try std.testing.expectEqual(cfg_mod.ExporterKind.otlp_grpc, cfg.traces.exporter);
 
+    // AS-1: the default endpoint host (localhost) is loopback; the gRPC
+    // exporter validates the parsed host at construction, so opt in.
+    cfg.traces.otlp.allow_loopback = true;
+
     var bundle = (try factory.spanExporterFromConfig(std.testing.allocator, &cfg)).?;
     defer bundle.deinit();
 }
@@ -131,6 +135,10 @@ test "OTEL_METRICS_EXPORTER=otlp_grpc picks grpc metric exporter" {
     defer cfg.deinit(std.testing.allocator);
     try cfg_mod.applyEnvFromMap(&cfg, std.testing.allocator, &env_map);
     try std.testing.expectEqual(cfg_mod.ExporterKind.otlp_grpc, cfg.metrics.exporter);
+
+    // AS-1: the default endpoint host (localhost) is loopback; the gRPC
+    // exporter validates the parsed host at construction, so opt in.
+    cfg.metrics.otlp.allow_loopback = true;
 
     var bundle = (try factory.metricExporterFromConfig(std.testing.allocator, &cfg)).?;
     defer bundle.deinit();

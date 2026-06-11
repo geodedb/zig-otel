@@ -53,6 +53,8 @@ test "PR-9: post-init mutation of config.endpoint does not affect cache" {
     var exporter = try otel.exporters.otlp_grpc.OtlpGrpcExporter.init(std.testing.allocator, .{
         .endpoint = "http://127.0.0.1:4317",
         .protocol = .grpc,
+        // AS-1: loopback host requires explicit opt-in at construction.
+        .allow_loopback = true,
     });
     defer exporter.deinit();
 
@@ -87,6 +89,8 @@ test "PR-9: checkExportPreconditions still refuses non-empty headers (C-3)" {
         .endpoint = "http://127.0.0.1:4317",
         .protocol = .grpc,
         .headers = "Authorization=Bearer x",
+        // AS-1: loopback host requires explicit opt-in at construction.
+        .allow_loopback = true,
     });
     defer exporter.deinit();
     try std.testing.expectError(error.UnsupportedTransport, exporter.checkExportPreconditions());

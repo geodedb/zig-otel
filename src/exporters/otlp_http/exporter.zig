@@ -75,6 +75,13 @@ pub const OtlpHttpExporter = struct {
         if (!std.mem.startsWith(u8, config.endpoint, "http://") and !std.mem.startsWith(u8, config.endpoint, "https://")) {
             return error.InvalidEndpoint;
         }
+        // AS-1: SSRF guard at construction. Previously only Config.validate()
+        // (reached via Config.resolve()) ran this check, so the factory /
+        // initFromConfig / direct-construction paths could reach
+        // http://169.254.169.254/ (cloud instance-metadata SSRF) and other
+        // link-local / loopback hosts. Enforce it here so every exporter
+        // construction path is covered.
+        try config_mod.validateEndpoint(config.endpoint, config.allow_loopback);
         return .{
             .allocator = allocator,
             .config = config,

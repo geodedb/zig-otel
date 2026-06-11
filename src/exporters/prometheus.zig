@@ -35,7 +35,11 @@ pub const Prometheus = struct {
             defer self.allocator.free(sanitized);
             // Zig 0.16: std.ArrayList uses the allocator-passing (unmanaged)
             // shape; there is no .writer() method. Use .print(gpa, fmt, args).
-            try buf.print(self.allocator, "# HELP {s} {s}\n", .{ sanitized, m.description });
+            // AS-2: escape the description so a `\n` (or `\\`) in it cannot
+            // terminate the HELP line and inject a forged exposition line.
+            const help = try escapeHelp(self.allocator, m.description);
+            defer self.allocator.free(help);
+            try buf.print(self.allocator, "# HELP {s} {s}\n", .{ sanitized, help });
             const promkind: []const u8 = switch (m.kind) {
                 .counter, .observable_counter => "counter",
                 .histogram => "histogram",
@@ -117,6 +121,26 @@ pub fn sanitiseLabelName(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
         oi += 1;
     }
     return out;
+}
+
+/// Escape a Prometheus `# HELP` description per the 0.0.4 text format.
+/// HELP text escapes `\\` -> `\\\\` and `\n` -> `\\n`; unlike label
+/// *values* it does NOT escape `"`. Without this a newline in a
+/// user-supplied metric description would terminate the HELP line and let
+/// the remainder be parsed as a forged exposition line (AS-2). Caller
+/// owns the returned slice.
+pub fn escapeHelp(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
+    // Worst case: every byte expands to 2 chars.
+    var out = try std.ArrayList(u8).initCapacity(allocator, s.len);
+    errdefer out.deinit(allocator);
+    for (s) |c| {
+        switch (c) {
+            '\\' => try out.appendSlice(allocator, "\\\\"),
+            '\n' => try out.appendSlice(allocator, "\\n"),
+            else => try out.append(allocator, c),
+        }
+    }
+    return try out.toOwnedSlice(allocator);
 }
 
 /// Escape a Prometheus label *value* per the 0.0.4 text format:

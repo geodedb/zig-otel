@@ -309,6 +309,45 @@ test "H-2: sanitiseLabelName prefixes leading digit with underscore" {
 }
 
 // -------------------------------------------------------------------------
+// AS-2: the Prometheus `# HELP` line interpolated the metric description
+// raw. A newline byte in a description would terminate the HELP line and
+// inject a forged exposition line below it. The description must be
+// escaped (`\\` -> `\\\\`, `\n` -> `\\n`) like the 0.0.4 text format
+// requires (HELP does NOT escape `"`).
+// -------------------------------------------------------------------------
+
+test "AS-2: Prometheus escapes newline in HELP description" {
+    if (@import("build_options").otel_disabled) return error.SkipZigTest;
+    var resource = try otel.sdk.resource.defaultResource(std.testing.allocator);
+    defer resource.deinit();
+    var mp = try otel.sdk.metrics.MeterProvider.init(std.testing.allocator, .{ .resource = &resource });
+    defer mp.deinit();
+
+    const m = mp.meter(.{ .name = "demo" });
+    const c = try m.counter(.{
+        .name = "events",
+        .kind = .counter,
+        // Real newline byte — without escaping this terminates the HELP
+        // line and the second half ("line2") becomes a forged exposition
+        // line that a Prometheus scraper would parse as data.
+        .description = "line1\nline2",
+    });
+    c.add(1, &.{});
+
+    var prom = otel.exporters.prometheus.Prometheus.init(std.testing.allocator, &mp);
+    const out = try prom.render();
+    defer std.testing.allocator.free(out);
+
+    // The escaped sequence must appear...
+    try std.testing.expect(std.mem.indexOf(u8, out, "line1\\nline2") != null);
+    // ...and there must be no raw newline embedded in the HELP text (which
+    // would mean the forged line was injected).
+    try std.testing.expect(std.mem.indexOf(u8, out, "line1\nline2") == null);
+    // The HELP line itself must be intact and single-line.
+    try std.testing.expect(std.mem.indexOf(u8, out, "# HELP events line1\\nline2\n") != null);
+}
+
+// -------------------------------------------------------------------------
 // GAP-SEC-H-6 / GAP-SEC-L-4: every attribute writer must invoke
 // redact.maskString so sensitive values never reach the wire / disk.
 // Covers:

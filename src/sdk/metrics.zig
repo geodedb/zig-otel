@@ -15,6 +15,7 @@ const Resource = @import("resource.zig").Resource;
 const exp = @import("export.zig");
 const config_mod = @import("config.zig");
 const exporter_factory = @import("exporter_factory.zig");
+const internal_sync = @import("../internal/sync.zig");
 
 /// DevNW metrics module — only resolved when the build flag is on. The
 /// in-repo aggregation pipeline owns the OpenTelemetry data-point shape;
@@ -23,33 +24,18 @@ const exporter_factory = @import("exporter_factory.zig");
 /// alongside OTLP. See docs/DEPENDENCIES.md for the rationale.
 const devnw_metrics = if (build_options.use_devnw_metrics) @import("devnw_metrics") else struct {};
 
-/// Zero-arg mutex wrapper around `std.Io.Mutex`'s `*Uncancelable` API
-/// using the global single-threaded I/O instance. Mirrors the
-/// `tp.sync.Mutex` shape used elsewhere in the SDK so we don't have to
-/// plumb an `io` through every record-path. Safe to call from any
-/// thread regardless of whether the caller is registered with a
-/// `Threaded` runtime — `lockUncancelable`/`unlock` ignore the futex
-/// vtable's userdata.
+/// Zero-arg mutex used to guard per-instrument aggregation state. This
+/// is the shared `internal/sync.zig` `Mutex` (a thin local wrapper around
+/// `std.Io.Mutex`'s `*Uncancelable` API on the global single-threaded I/O
+/// instance) — the same primitive `export.zig` and `span_pool.zig` use.
+/// Safe to call from any thread regardless of whether the caller is
+/// registered with a `Threaded` runtime.
 ///
-/// PR-1 / gitlab #135: this is intentionally an *unconditional* real
-/// mutex (not a flag-gated no-op) because the race the lock closes is
-/// triggered by any external `std.Thread.spawn` caller, regardless of
-/// whether the `-Dotel_use_devnw_pool` build flag is set.
-const InstrumentMutex = struct {
-    inner: std.Io.Mutex = .init,
-
-    inline fn io() std.Io {
-        return std.Io.Threaded.global_single_threaded.io();
-    }
-
-    pub fn lock(self: *InstrumentMutex) void {
-        self.inner.lockUncancelable(io());
-    }
-
-    pub fn unlock(self: *InstrumentMutex) void {
-        self.inner.unlock(io());
-    }
-};
+/// PR-1 / gitlab #135: this lock is intentionally *unconditional* (not a
+/// flag-gated no-op) because the race it closes is triggered by any
+/// external `std.Thread.spawn` caller, regardless of whether the
+/// `-Dotel_use_devnw_pool` build flag is set.
+const InstrumentMutex = internal_sync.Mutex;
 
 /// Selects the aggregation backend. The in-repo backend is always
 /// available; `devnw` mirrors counter/up-down/histogram/gauge writes

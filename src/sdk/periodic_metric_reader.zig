@@ -31,27 +31,16 @@ const exp = @import("export.zig");
 const sdk_metrics = @import("metrics.zig");
 const config_mod = @import("config.zig");
 const clock_mod = @import("../internal/clock.zig");
+const internal_sync = @import("../internal/sync.zig");
 
-/// Zero-arg `Mutex` wrapper around `std.Io.Mutex`'s `*Uncancelable` API
-/// using the global single-threaded I/O instance. Mirrors
-/// `InstrumentMutex` in `metrics.zig` so we don't take a build-flag
-/// dependency on the DevNW thread-pool's `tp.sync` shim — this reader
-/// must work in every build configuration.
-const ReaderMutex = struct {
-    inner: std.Io.Mutex = .init,
-
-    inline fn io() std.Io {
-        return std.Io.Threaded.global_single_threaded.io();
-    }
-
-    pub fn lock(self: *ReaderMutex) void {
-        self.inner.lockUncancelable(io());
-    }
-
-    pub fn unlock(self: *ReaderMutex) void {
-        self.inner.unlock(io());
-    }
-};
+/// Zero-arg `Mutex` used to guard the reader's shutdown / flush
+/// signalling. This is the shared `internal/sync.zig` `Mutex` — a thin
+/// wrapper around `std.Io.Mutex`'s `*Uncancelable` API on the global
+/// single-threaded I/O instance — so the reader takes no build-flag
+/// dependency on the DevNW thread-pool's `tp.sync` shim and works in
+/// every build configuration. `ReaderCondition` reaches into `.inner`
+/// directly, which the shared wrapper exposes with the same shape.
+const ReaderMutex = internal_sync.Mutex;
 
 /// Condition variable with `wait` and `timedWait` plus `signal` /
 /// `broadcast`, built directly on top of `std.Io`'s futex primitive

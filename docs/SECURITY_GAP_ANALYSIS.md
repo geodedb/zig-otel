@@ -272,3 +272,22 @@ The following previously-closed issues received re-audit closure-evidence notes 
 ## 7. Confidentiality Marker
 
 This document itself is public. Findings flagged `[CONFIDENTIAL]` (C-1, C-2, H-1, H-2, H-7, M-4, M-5, **NEW-H-1, NEW-M-1, NEW-M-2**) appear here only as title + status + issue URL — exploit specifics live in the private GitLab issues only. The closing comments posted to GitLab on 2026-04-26 for those issues are deliberately brief (commit SHA + reference to `docs/audit/SECURITY_VERIFY.md`) — no exploit detail. The 2026-04-27 re-audit closure-evidence comments are similarly brief.
+
+---
+
+## 8. 2026-06-11 appsec re-review (`/security:appsec-review`)
+
+Full-tree OWASP-2025 + CIS-v8.1.2 re-review on branch `audit/iteration-1-closure`.
+Report: `docs/APPSEC_REVIEW_2026-06-11_src.md`. Regression checks on the 2026-04-27
+controls (TLS-verify-on, file-exporter O_NOFOLLOW, redact wiring, Prometheus label
+escaping, CSPRNG IDs, header-parser hardening, manifest gate) all **PASS**.
+
+| ID | Sev | Title | Disposition | Evidence |
+|----|-----|-------|-------------|----------|
+| AS-1 | High | SSRF endpoint guard not enforced on factory / `initFromConfig` / direct-construction paths (only `Config.resolve()` validated) | **Closed** `d68ab9c` + `ab6b426` | `validateEndpoint`/`validateHost` now `pub` and called inside `OtlpHttpExporter.init` + `OtlpGrpcExporter.init`; spec-default localhost grandfathered for zero-config. Tests: `test/security.zig` AS-1 suite (11 cases incl. metadata IP, fe80::, loopback opt-in, `initFromConfig`). |
+| AS-2 | Low | Prometheus `# HELP` description emitted unescaped (exposition-format injection) | **Closed** `65a0430` | `escapeHelp` (`\`→`\\`, `\n`→`\n`) applied at the HELP render site; test in `test/security.zig`. |
+| AS-3 | Low | `tls` dep tag/hash label mismatch (`?ref=v0.1.9` vs `hash=tls-0.1.8-…`) | **Tracked (upstream)** | Verified: the pinned content self-declares `version = "0.1.8"` (the v0.1.9 git tag points at a commit whose own `build.zig.zon` still says 0.1.8). otel's pin is **byte-correct** (content hash matches) — no fetch-integrity bypass. Fix is upstream (`devnw/zig/tls`: bump internal version to 0.1.9 and re-tag) + a CI lint asserting `?ref` tag == `hash` version label across pinned deps. Low risk; deferred to upstream. |
+| AS-4 | Low (info) | Trace/Span IDs drawn from a xoshiro stream seeded by a 64-bit CSPRNG (not per-ID CSPRNG) | **Accepted** | Baseline "CSPRNG, not hardcoded seed" requirement satisfied; W3C IDs are not an authorization boundary in this SDK and the generator is pluggable. Documented posture; no change. |
+| AS-5 | Info | Plain `http://` OTLP endpoints permitted | **Accepted (by design)** | Matches OTel spec default `http://localhost:4318`; TLS verified when `https://` used; gRPC refuses silent downgrade. Optional future hardening: warn/refuse non-loopback `http://` when a secret-bearing header is set. |
+
+**Net:** the single material security finding (AS-1, High) is **closed on every construction path**; lows are closed (AS-2) or tracked/accepted with rationale. No memory-safety / injection-to-RCE / auth-bypass found.

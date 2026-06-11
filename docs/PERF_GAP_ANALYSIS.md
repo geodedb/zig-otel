@@ -335,3 +335,26 @@ All confidence::confirmed except PR-12 (site verification needed during fix).
 - **P1-11** assumes `grpc-zig`'s `GrpcClient` is reusable across calls — needs a 30-min read of upstream source.
 - **P1-13** layout effect needs Linux `perf stat -e L1-dcache-load-misses,LLC-load-misses` access on the bench host.
 - **P1-7** Option 2 (drop sort) needs a survey of JSON consumers to confirm no one relies on key order.
+
+---
+
+## 2026-06-11 perf re-review (`/codepros:audit` perf-reviewer)
+
+New/regressed perf findings on the post-2026-04-27 feature wave (gzip compression,
+periodic metric reader, observable instruments, OTLP log export). Branch
+`audit/iteration-1-closure`. Items coupled to already-tracked baseline work (PR-4
+persistent client, P0-7 histogram scan) are noted as such.
+
+| ID | PerfSev | Title | Disposition | Evidence / commit |
+|----|:------:|-------|-------------|-------------------|
+| PN-NEW-1 | P1 | 64 KiB gzip deflate window + Allocating buffer allocated **per export** (`compression.zig:30-51`) | **Tracked** | Lift window/compressor onto the exporter struct; co-locate with the **PR-4** persistent-client refactor (`#47`). |
+| PN-NEW-2 | P1 | `MeterProvider.collect()` deep-clones each point's `AttributeSet` (new arena + hashmap + dupes per point) (`metrics.zig:999-1011`) | **Tracked** | Flatten snapshot attrs to `[]Entry` (encoder only iterates `entries.items`); pairs with PN-NEW-8. |
+| PN-NEW-3 | P2 | `Writer.toOwnedSlice` allocates a 2nd full-size buffer + memcpy per encode (`generated/otlp.zig:90-119`) | **Tracked** | In-place compaction deferred (not provably byte-identical in this pass); pre-size taken instead (PN-NEW-4). |
+| PN-NEW-4 | P3 | Proto `Writer.buf` never pre-sized; byte-at-a-time varint appends (`generated/otlp.zig:139-146`) | **Closed** `b457a39` | `ensureTotalCapacity(items.len * 256)` at encode entry in span/metric/log encoders. Byte-identical output (parity + a pinned-bytes test in `test/otlp.zig`). |
+| PN-NEW-5 | P1 | OTLP logs default to `SimpleLogProcessor` → full encode+gzip+connect **per log record** (`sdk/logs.zig:42-46`) | **Tracked** | Needs a `BatchLogRecordProcessor` (mirror BSP; the span P0-10 default-to-BSP analogue) + `OTEL_BLRP_*` (#98). Until then: document that OTLP logs must not use `SimpleLogProcessor` in production. |
+| PN-NEW-6 | P3 | `gunzipBody` sizes output to compressed length; peek-1 trickle loop (`compression.zig:56-81`) | **Tracked (test-only)** | Not on a production decode path today; flagged so it isn't promoted as-is. |
+| PN-NEW-7 | P2 | `redact.isSensitive` runs 512-byte normalize + 6 substring scans per string attr (`redact.zig:26-49`) | **Closed** `13d799e` | O(1) first-letter screen (sensitive tokens all begin with `{a,c,p,s,t}`; normalization only lowercases/strips separators, never adds a letter) → provably skips benign keys without changing classification. Characterization table in `test/security.zig`. |
+| PN-NEW-8 | P2 | `collect()` holds the per-instrument lock across the entire deep-clone (over-broad critical section) (`metrics.zig:970-1079`) | **Tracked** | Copy scalars under lock, clone attrs off-lock; one change with PN-NEW-2. |
+| PN-NEW-9 | P3 | Per-element packed `fixed64`/`double` writes; whole-body gzip (no streaming) (`generated/otlp.zig:226-244`) | **Tracked** | Stage packed values + single `appendSlice`; low priority. |
+
+**Closed this pass:** PN-NEW-4 (pre-size) + PN-NEW-7 (redact fast-reject) — both behavior/byte-preserving. The remaining items are larger refactors coupled to PR-4 / a new BatchLogRecordProcessor and are tracked for a dedicated perf cycle (none has a `benchmarks/` probe yet — extends `BENCH-BASELINES-MISSING` #166 to these surfaces).

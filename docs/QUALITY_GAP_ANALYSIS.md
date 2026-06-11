@@ -265,3 +265,31 @@ cheapest finding in the entire scan (4-line patch) — ideal first PR.
   reviewer notes: "every config field except the last one read points
   at corrupt memory once a second env-var read happens. The fact that
   tests don't catch it is itself the bug."
+
+---
+
+## 2026-06-11 deep re-review (`/codepros:audit` quality-reviewer)
+
+New/regressed quality findings on the post-2026-04-27 feature wave (exporter
+factory, periodic metric reader, observable instruments, OTLP log export, gzip,
+B3/Jaeger). Branch `audit/iteration-1-closure`. Empirically re-confirmed that
+inline `test {}` blocks under `src/` are NOT executed by `zig build test`
+(injected `try expect(false)` left the suite green) — so they cannot count as
+coverage.
+
+| ID | Sev | Title | Disposition | Evidence / commit |
+|----|-----|-------|-------------|-------------------|
+| QN-NEW-1 | High | OTLP log trace↔span `correlate()` never invoked on the primary `emit` path (production-dead) | **Closed** `23fb311` | Added canonical ambient `Context.current()/attach()/restore()` (`src/api/context.zig`); `onEmit`/`simpleEmit` now correlate; bridges unified on `LogRecord.applyTrace`. Test in `test/logs.zig`. |
+| QN-NEW-2 | High | Three byte-identical `std.Io.Mutex` wrappers (`InstrumentMutex`, `ReaderMutex` un-migrated) | **Closed** `36f8932` | Both now alias `internal/sync.zig` `Mutex`; duplicates deleted. |
+| QN-NEW-3 | High | Scope-grouping + `writeKeyValue` duplicated between log and span encoders | **Closed** `02a1d6f` | `ScopeKey3`/`ScopeKey3Context`/`writeKeyValue` made `pub` in `encode_proto.zig`, reused by `encode_logs.zig`. Byte-identical wire output (parity tests green). |
+| QN-NEW-4 | Medium | Observable double→`sum_int` `@intFromFloat` with no finite/range guard (latent panic) | **Closed** `e023f47` | Guarded non-finite + out-of-range in `.sum_int` (and hardened `.sum_uint` for `+Inf`). Tests in `test/observable_instruments.zig`. |
+| QN-NEW-5 | Medium | `PeriodicMetricReader.forceFlush` reports success on failed export (swallowed errors) | **Closed** `4deec59` | Captures `last_export_error`/`failed_exports`; surfaced on inline + threaded paths. Tests in `test/periodic_metric_reader.zig`. |
+| QN-NEW-6 | Medium | `frame(compressed)`/`frameGzip` are production-dead over gRPC; `compression=gzip` over gRPC emits collector-rejectable frames | **Tracked** | Coupled to `GAP-OTLP-COMPRESSION` (#27): real fix needs grpc-zig request-metadata API to set `grpc-encoding: gzip`. Upstream-blocked. |
+| QN-NEW-7 | Medium | Inline `src/` tests masquerade as coverage | **Partially closed** | Closed for `periodic_metric_reader.zig` (`b2e74df`) + `encode_logs.zig` (`6c77863`). **Remaining/tracked:** `exporter_factory.zig` (14 inline tests, covered by wired `test/exporter_factory.zig`) + `compression.zig` (2). Follow-up cleanup. |
+| QN-NEW-8 | Medium | `LogRecord.body` bypasses the redactor | **Closed (doc)** `885a733` | Intentional + OTel-aligned (bodies are free text; auto-pattern-redaction would destroy telemetry). Documented the carve-out in `writeBody` + README; opt-in body redaction tracked as a product decision. |
+| QN-NEW-9 | Medium | `Composite.extract` leaks a `Baggage` on the merge-error (`BaggageFull`/OOM) path | **Closed** `de6454b` | `defer part.deinit()`; deterministic leak repro in `test/propagator.zig`. |
+| QN-NEW-10 | Low | Percent-codec + hex helpers duplicated across propagators | **Closed** `bbfebe6` | Extracted `src/propagation/percent.zig`; codec-neutral error mapped per call site to preserve behavior. |
+| QN-NEW-11 | Low | Trace/span-ID length validation inconsistent across propagators (b3 exact-len vs jaeger 1–32 zero-pad) | **Tracked** | Behavior divergence, not a defect; centralization deferred (ties to QN-NEW-10). |
+| QN-NEW-12 | Low | Jaeger firehose doc comment names the wrong bit | **Closed** `7ac205d` | Corrected to "bit 3 = firehose (0x08)". |
+| QN-NEW-13 | Low | New numeric env vars silently default on malformed input; no cross-field validation | **Tracked** | Spec-compliant ("must not crash"); breadcrumb + clamp/validate deferred (ties to baseline OTEL-Q-004). |
+| QN-NEW-14 | Low | Unused `MapCarrier` re-export in jaeger | **Closed** `7ac205d` | Deleted (confirmed unreferenced; `b3.zig` already omits it). |

@@ -182,3 +182,25 @@
 ## Per-Gap Detail
 
 For full evidence, spec citations, recommended fixes, and acceptance criteria, see the issue body on GitLab. Phase 3 source notes live in `docs/audit/gap-detector/REGISTRY.md`. Phase 4 sync mutations are recorded in `docs/audit/gap-detector/SYNC_PLAN.md`.
+
+---
+
+## 2026-06-11 audit iteration 1 — new gaps (`/codepros:audit` gap-scanner)
+
+Branch `audit/iteration-1-closure`. Build clean (`zig build` exit 0); suite
+green. The ~15 still-open baseline feature gaps (per-signal env vars #60/#63/#64/#66,
+declarative-config depth #59, semconv coverage #50, vendor schemas #48/#49,
+integration suite #79, BLRP #98, mTLS #97, etc.) remain open and tracked — they
+are deliberate scope for the hermetic initial delivery, unchanged this pass.
+
+| Gap-ID | Title | Classification | Disposition |
+|--------|-------|----------------|-------------|
+| GAP-NEW-1 | SSRF guard absent from exporter `init` / factory / `initFromConfig` paths | Partial (security regression) | **Closed** — see AS-1, commits `d68ab9c`+`ab6b426`; `docs/SECURITY_GAP_ANALYSIS.md` §8. |
+| GAP-NEW-2 | Prometheus `# HELP` description emitted unescaped | Not Implemented | **Closed** — see AS-2, commit `65a0430`. |
+| GAP-NEW-3 | `build.zig.zon` TLS dep `?ref=v0.1.9` vs `hash=tls-0.1.8` label mismatch | Partial (supply-chain hygiene) | **Tracked (upstream)** — pin is byte-correct; the v0.1.9 tag points at content self-declaring `version = "0.1.8"`. Fix upstream (`devnw/zig/tls` re-tag) + CI lint. |
+| GAP-NEW-4 | gRPC loopback round-trip test permanently `SkipZigTest` — no e2e gRPC CI coverage | Not Implemented (test gap) | **Tracked** — blocked on grpc-zig HTTP/2 SETTINGS/window-update handshake (`test/grpc_loopback.zig:31-32`); distinct from #32 (trailers). |
+
+**Closure candidate:** `GAP-BENCH-LOOPBACK-UNDOCUMENTED` (#112) — `docs/DEPENDENCIES.md:37` + `docs/SPEC_COMPLIANCE.md:155-159` now both document the loopback server; recommend closing #112.
+
+> Tracker sync note: this iteration ran with issue creation skipped; the above
+> are recorded in the flatfile mirror pending the next `gap-sync` to GitLab.

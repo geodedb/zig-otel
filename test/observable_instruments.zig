@@ -276,6 +276,95 @@ test "observable counter: cumulative semantics across cycles (last-write-wins)" 
     }
 }
 
+// ---- QN-NEW-4: guard non-finite / out-of-range double → sum_int ----
+//
+// An `observable_up_down_counter` is backed by `sum_int` (i64). A
+// callback that observes a non-finite (NaN/Inf) or out-of-`i64`-range
+// double via `observeDouble` must NOT trigger illegal `@intFromFloat`
+// behavior (panic in Debug/ReleaseSafe, garbage in ReleaseFast). The
+// bad observation is skipped and the point keeps its prior value.
+
+const BadDoubleCtx = struct {
+    value: f64,
+};
+
+fn badDoubleCb(user_ctx: ?*anyopaque, observer: api_metrics.Observer) anyerror!void {
+    const ctx: *const BadDoubleCtx = @ptrCast(@alignCast(user_ctx.?));
+    observer.observeDouble(ctx.value, &.{});
+}
+
+test "observable up-down counter: NaN double observation is skipped (QN-NEW-4)" {
+    if (@import("build_options").otel_disabled) return error.SkipZigTest;
+    var resource = try sdk_resource.defaultResource(std.testing.allocator);
+    defer resource.deinit();
+    var mp = try sdk_metrics.MeterProvider.init(std.testing.allocator, .{ .resource = &resource });
+    defer mp.deinit();
+
+    const m = mp.meter(.{ .name = "obs.test" });
+    var cb_ctx = BadDoubleCtx{ .value = std.math.nan(f64) };
+    var oudc = try m.createObservableUpDownCounter(
+        .{ .name = "balance.nan", .kind = .observable_up_down_counter },
+        badDoubleCb,
+        @ptrCast(&cb_ctx),
+    );
+    _ = &oudc;
+
+    // Must not panic; the bad observation is skipped so the point keeps
+    // its initial value of 0 (sum_int starts at 0).
+    const snap = try sdk_metrics.collect(&mp, std.testing.allocator);
+    defer sdk_metrics.freeSnapshot(std.testing.allocator, snap);
+    try std.testing.expectEqual(@as(usize, 1), snap.len);
+    try std.testing.expectEqual(@as(usize, 1), snap[0].points.len);
+    try std.testing.expectEqual(@as(i64, 0), snap[0].points[0].value.number.int);
+}
+
+test "observable up-down counter: out-of-range double observation is skipped (QN-NEW-4)" {
+    if (@import("build_options").otel_disabled) return error.SkipZigTest;
+    var resource = try sdk_resource.defaultResource(std.testing.allocator);
+    defer resource.deinit();
+    var mp = try sdk_metrics.MeterProvider.init(std.testing.allocator, .{ .resource = &resource });
+    defer mp.deinit();
+
+    const m = mp.meter(.{ .name = "obs.test" });
+    // 1e30 is far outside i64 range (~9.2e18). @intFromFloat on this is
+    // illegal behavior; the observation must be rejected.
+    var cb_ctx = BadDoubleCtx{ .value = 1e30 };
+    var oudc = try m.createObservableUpDownCounter(
+        .{ .name = "balance.huge", .kind = .observable_up_down_counter },
+        badDoubleCb,
+        @ptrCast(&cb_ctx),
+    );
+    _ = &oudc;
+
+    const snap = try sdk_metrics.collect(&mp, std.testing.allocator);
+    defer sdk_metrics.freeSnapshot(std.testing.allocator, snap);
+    try std.testing.expectEqual(@as(usize, 1), snap.len);
+    try std.testing.expectEqual(@as(usize, 1), snap[0].points.len);
+    try std.testing.expectEqual(@as(i64, 0), snap[0].points[0].value.number.int);
+}
+
+test "observable up-down counter: in-range double observation still recorded (QN-NEW-4)" {
+    if (@import("build_options").otel_disabled) return error.SkipZigTest;
+    var resource = try sdk_resource.defaultResource(std.testing.allocator);
+    defer resource.deinit();
+    var mp = try sdk_metrics.MeterProvider.init(std.testing.allocator, .{ .resource = &resource });
+    defer mp.deinit();
+
+    const m = mp.meter(.{ .name = "obs.test" });
+    // A finite, in-range double must still be recorded (truncated to i64).
+    var cb_ctx = BadDoubleCtx{ .value = 42.9 };
+    var oudc = try m.createObservableUpDownCounter(
+        .{ .name = "balance.ok", .kind = .observable_up_down_counter },
+        badDoubleCb,
+        @ptrCast(&cb_ctx),
+    );
+    _ = &oudc;
+
+    const snap = try sdk_metrics.collect(&mp, std.testing.allocator);
+    defer sdk_metrics.freeSnapshot(std.testing.allocator, snap);
+    try std.testing.expectEqual(@as(i64, 42), snap[0].points[0].value.number.int);
+}
+
 // ---- Sync + async on the same provider don't collide ----
 
 fn fixedFiveCb(_: ?*anyopaque, observer: api_metrics.Observer) anyerror!void {

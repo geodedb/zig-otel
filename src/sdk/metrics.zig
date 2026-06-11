@@ -839,9 +839,20 @@ fn observerObserveDouble(ctx: ?*anyopaque, value: f64, attributes: []const attrs
     const pt = &oc.inst.points.items[idx];
     switch (pt.value) {
         .gauge_double => |*v| v.* = value,
-        .sum_int => |*v| v.* = @intFromFloat(value),
+        .sum_int => |*v| {
+            // Reject non-finite (NaN/±Inf) and out-of-`i64`-range doubles
+            // before `@intFromFloat`, which is illegal behavior (panic in
+            // Debug/ReleaseSafe, garbage in ReleaseFast) on such inputs.
+            if (!std.math.isFinite(value)) return;
+            if (value < @as(f64, @floatFromInt(std.math.minInt(i64))) or
+                value > @as(f64, @floatFromInt(std.math.maxInt(i64)))) return;
+            v.* = @intFromFloat(value);
+        },
         .sum_uint => |*v| {
-            if (value < 0 or std.math.isNan(value)) return;
+            // Mirror the sum_int guard: reject negatives, non-finite, and
+            // out-of-`u64`-range doubles before `@intFromFloat`.
+            if (value < 0 or !std.math.isFinite(value)) return;
+            if (value > @as(f64, @floatFromInt(std.math.maxInt(u64)))) return;
             v.* = @intFromFloat(value);
         },
         else => {},

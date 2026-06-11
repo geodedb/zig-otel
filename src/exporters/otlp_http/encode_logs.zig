@@ -254,11 +254,17 @@ fn writeLogRecord(w: *otlp.Writer, l: exp.LogData) !void {
 }
 
 /// Encode `LogRecord.body` as an `AnyValue` submessage (field 5).
-/// Mirrors `writeKeyValue`'s value-encoding cases. The redactor is
-/// not invoked here — `Body` does not carry a key, so the redactor's
-/// key-driven heuristics have nothing to match against. Sensitive
-/// payload data SHOULD already be filtered by the producer; the
-/// attribute-side redactor still applies.
+/// Mirrors `writeKeyValue`'s value-encoding cases.
+///
+/// QN-NEW-8: log bodies are NOT auto-redacted. The redactor
+/// (`redact.maskString`) is key-driven — it masks attribute VALUES whose
+/// KEY matches a sensitivity heuristic. A `Body` carries no key, so there
+/// is nothing for the heuristic to match. This carve-out is intentional
+/// and matches OTel norms: log bodies are free-form text and
+/// pattern-redacting them would destroy legitimate telemetry. Callers are
+/// responsible for scrubbing secrets out of log bodies BEFORE emitting.
+/// (The attribute-side redactor in `writeKeyValue` still applies to
+/// attribute values on the same record.)
 fn writeBody(w: *otlp.Writer, body: logs_api.Body) !void {
     const v_start = try w.beginSubMessage(otlp.fn_lr_body);
     switch (body) {

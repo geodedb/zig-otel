@@ -46,7 +46,10 @@ events, propagation, resources, semantic conventions, and OTLP export).
 - Generated semantic-convention constants (resource, HTTP, network, process,
   host, OS, service, exception, log, runtime, event, profile).
 - Secret redaction (`password`, `secret`, `token`, `api.key`,
-  `authorization`, `credential`) with separator-aware matching.
+  `authorization`, `credential`) with separator-aware matching. Redaction
+  applies to attribute **values** (matched by key heuristic). Log record
+  **bodies** are free-form and are NOT automatically redacted — scrub
+  secrets from log bodies before emitting.
 - `std.log` bridge, HTTP client/server helpers, runtime/process metric
   helper.
 - Profiles signal: NOT IMPLEMENTED — upstream proto is `/v1development/`

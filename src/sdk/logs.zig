@@ -41,10 +41,13 @@ pub const SimpleLogProcessor = struct {
 
 fn simpleEmit(ctx: ?*anyopaque, record: logs_api.LogRecord) void {
     const self: *SimpleLogProcessor = @ptrCast(@alignCast(ctx.?));
-    // QN-NEW-1: stamp the active span's trace/span IDs onto the record.
-    // `correlate` is a no-op when there is no active span, so already
-    // correlated records (e.g. from the std.log/event bridges) keep their
-    // IDs only when no ambient span overrides them.
+    // QN-NEW-1 / QN2-3: stamp the active span's trace/span IDs onto the
+    // record. When driven via `LoggerProvider.onEmit` this is a redundant
+    // no-op (onEmit already correlated, and `correlate` is fill-if-empty so
+    // it never re-stamps). It is kept INTENTIONALLY for the standalone path:
+    // a `SimpleLogProcessor` wired directly to an exporter (without a
+    // LoggerProvider) still correlates here. `correlate` is a no-op without
+    // an active span, so already-correlated records keep their IDs.
     var rec = record;
     correlate(ctx_mod.current(), &rec);
     var data = [1]exp.LogData{.{ .record = rec, .instrumentation_scope = rec.scope, .resource = self.resource_ref }};

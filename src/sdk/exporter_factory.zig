@@ -497,9 +497,8 @@ test "spanExporterFor otlp_grpc builds with valid endpoint and forces grpc proto
     // the spec default `http://localhost:4318`.
     var bundle = (try spanExporterFor(std.testing.allocator, .otlp_grpc, .{
         .protocol = .http_protobuf,
-        // AS-1: the default endpoint host (localhost) is loopback and the
-        // gRPC exporter validates the parsed host at construction; opt in.
-        .allow_loopback = true,
+        // AS-1: default endpoint (localhost) is grandfathered past the
+        // loopback opt-in, so zero-config gRPC construction still works.
     })).?;
     defer bundle.deinit();
 }

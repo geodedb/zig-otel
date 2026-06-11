@@ -95,12 +95,24 @@ pub const max_otlp_timeout_ms: u64 = 600_000;
 ///     `http://localhost:4318` is grandfathered: callers don't have to
 ///     opt-in for the OTel-spec default, only for *user-supplied*
 ///     loopback endpoints.
+/// Spec-default OTLP endpoints that are grandfathered past the loopback
+/// opt-in. A caller who never sets an endpoint (or who uses the OTLP/gRPC
+/// standard `localhost:4317`) must not be forced to opt into loopback for
+/// the zero-config local-collector case. Link-local / instance-metadata
+/// hosts are still rejected — grandfathering only waives the loopback
+/// opt-in, never the SSRF blocklist.
+pub fn isSpecDefaultEndpoint(endpoint: []const u8) bool {
+    return std.mem.eql(u8, endpoint, "http://localhost:4318") or
+        std.mem.eql(u8, endpoint, "http://localhost:4317") or
+        std.mem.eql(u8, endpoint, "localhost:4317");
+}
+
 pub fn validateEndpoint(endpoint: []const u8, allow_loopback: bool) !void {
     if (endpoint.len == 0) return error.InvalidEndpoint;
 
     // Grandfather the default — many callers never set an endpoint at all
     // and the spec defines this as the localhost fallback.
-    if (std.mem.eql(u8, endpoint, "http://localhost:4318")) return;
+    if (isSpecDefaultEndpoint(endpoint)) return;
 
     // Scheme must be http:// or https://, case-insensitive.
     var rest: []const u8 = endpoint;

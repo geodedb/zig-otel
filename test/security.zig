@@ -115,6 +115,23 @@ test "AS-1: gRPC exporter init accepts loopback with allow_loopback opt-in" {
     defer ex.deinit();
 }
 
+test "AS-1: gRPC exporter init grandfathers spec-default localhost without opt-in" {
+    // Zero-config gRPC: the spec-default localhost collector must construct
+    // without forcing the caller to opt into loopback (parity with HTTP).
+    inline for (.{ "http://localhost:4318", "http://localhost:4317", "localhost:4317" }) |ep| {
+        var ex = try otel.exporters.otlp_grpc.OtlpGrpcExporter.init(std.testing.allocator, .{
+            .endpoint = ep,
+            .protocol = .grpc,
+        });
+        ex.deinit();
+    }
+}
+
+test "AS-1: spec-default grandfather still rejects link-local metadata host" {
+    // Grandfathering waives only the loopback opt-in — never the SSRF blocklist.
+    try std.testing.expect(!otel.sdk.config.isSpecDefaultEndpoint("http://169.254.169.254"));
+}
+
 test "AS-1: initFromConfig refuses metadata endpoint without going through resolve()" {
     if (@import("build_options").otel_disabled) return error.SkipZigTest;
     var cfg: otel.sdk.config.Config = .{

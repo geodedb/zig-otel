@@ -61,7 +61,11 @@ pub const OtlpGrpcExporter = struct {
         // same link-local / loopback / instance-metadata blocklist the HTTP
         // path uses, closing the cloud-metadata SSRF (169.254.169.254) on
         // the factory / initFromConfig / direct-construction paths.
-        try config_mod.validateHost(parsed.host, config.allow_loopback);
+        // Spec-default endpoints (e.g. the zero-config localhost collector)
+        // are grandfathered past the loopback opt-in just like the HTTP path;
+        // link-local / instance-metadata hosts are still rejected.
+        const grandfathered = config_mod.isSpecDefaultEndpoint(config.endpoint);
+        try config_mod.validateHost(parsed.host, config.allow_loopback or grandfathered);
         return .{
             .allocator = allocator,
             .config = config,

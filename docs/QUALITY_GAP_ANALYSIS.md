@@ -313,5 +313,6 @@ coverage.
 | QN3-2 | Low (test) | u64 (`sum_uint`) `>=` boundary lacked a dedicated test | **Closed** `d5f4c2d` | Added an `observable_counter` test asserting exactly 2⁶⁴ is skipped and an in-range double records. |
 | QN3-3 | Info | `parseIntAuto` accepted Zig integer syntax (`+`, `_`) that `inet_aton` rejects | **Closed** `d5f4c2d` | Rejects leading sign / `_` separators so the canonicalizer mirrors the resolver. |
 | QN3-4 | Info | `mappedEmbeddedIpv4` non-blocked fall-through was subtle | **Closed (doc)** `d5f4c2d` | Clarifying comment added. |
+| QN3-5 | Info | The QN3-4 comment paired a dotted example (`::ffff:1.2.3.4`) with a hex-group-only justification | **Closed (doc)** `2273484` | Corrected: hex-group form falls through to DNS; dotted form is accepted by the IPv6 block after its range-check. Behavior unchanged (verified against `std.Io.net.parseIp6`). |
 
 The iteration-4 appsec re-review returned **CLEAN** (NEW-AS-1 has no residual bypass — verified against real `getaddrinfo`/`std.Uri`/`std.Io.net`; QN2-1/QN2-2 sound).

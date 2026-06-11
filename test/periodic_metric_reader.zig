@@ -360,3 +360,30 @@ test "PeriodicMetricReader: in-memory exporter receives metrics" {
     try std.testing.expectEqualStrings("events", rec.metrics.items[0].name);
     try std.testing.expectEqual(@as(?i64, 7), rec.metrics.items[0].int_value);
 }
+
+// ---- Test 7: idempotent shutdown (ported from dead inline src test, QN-NEW-7) ----
+//
+// `shutdown()` on a never-started reader, called twice, must be a no-op
+// the second time (no panic / double-free). Previously asserted only by a
+// dead inline `test {}` in src/sdk/periodic_metric_reader.zig that the
+// build never executed; ported here so it actually runs.
+
+test "PeriodicMetricReader: idempotent shutdown" {
+    if (@import("build_options").otel_disabled) return error.SkipZigTest;
+    var resource = try sdk_resource.defaultResource(std.testing.allocator);
+    defer resource.deinit();
+    var mp = try sdk_metrics.MeterProvider.init(std.testing.allocator, .{ .resource = &resource });
+    defer mp.deinit();
+
+    var rec = in_memory.Recorder.init(std.testing.allocator);
+    defer rec.deinit();
+
+    var reader = try periodic_reader.PeriodicMetricReader.init(
+        std.testing.allocator,
+        &mp,
+        rec.metricExporter(),
+        .{ .export_interval_ms = 1_000_000, .export_timeout_ms = 1_000 },
+    );
+    reader.shutdown();
+    reader.shutdown(); // double-shutdown is a no-op.
+}

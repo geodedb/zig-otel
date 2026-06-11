@@ -382,27 +382,7 @@ fn nanosNow() u64 {
 }
 
 // ----------------------------------------------------------------------
-// Inline tests — start/shutdown lifecycle, force-flush before start, and
-// the prompt-shutdown invariant. End-to-end coverage with observable
-// instruments lives under `test/periodic_metric_reader.zig`.
+// Lifecycle, force-flush, prompt-shutdown, idempotent-shutdown, and
+// export-failure coverage all live under `test/periodic_metric_reader.zig`
+// (inline `test {}` blocks here are never executed by the build).
 // ----------------------------------------------------------------------
-
-test "PeriodicMetricReader: idempotent shutdown" {
-    if (@import("build_options").otel_disabled) return error.SkipZigTest;
-    var resource = try @import("resource.zig").defaultResource(std.testing.allocator);
-    defer resource.deinit();
-    var mp = try sdk_metrics.MeterProvider.init(std.testing.allocator, .{ .resource = &resource });
-    defer mp.deinit();
-
-    var rec = @import("../exporters/in_memory.zig").Recorder.init(std.testing.allocator);
-    defer rec.deinit();
-
-    var reader = try PeriodicMetricReader.init(
-        std.testing.allocator,
-        &mp,
-        rec.metricExporter(),
-        .{ .export_interval_ms = 1_000_000, .export_timeout_ms = 1_000 },
-    );
-    reader.shutdown();
-    reader.shutdown(); // double-shutdown is a no-op.
-}

@@ -19,6 +19,43 @@ test "case-insensitive sensitive token detection" {
     try std.testing.expect(!otel.internal.redact.isSensitive("user.name"));
 }
 
+// -------------------------------------------------------------------------
+// PN-NEW-7: characterization contract for redact.isSensitive. Pins the
+// exact set of keys classified sensitive vs benign so the O(1) fast-reject
+// screen added on the hot path cannot change which keys get redacted. This
+// table must pass both BEFORE and AFTER the perf change (it characterizes
+// the existing behaviour — it is not asserting a new contract).
+// -------------------------------------------------------------------------
+
+test "PN-NEW-7: isSensitive classification is preserved (table-driven)" {
+    const sensitive = [_][]const u8{
+        // canonical tokens
+        "password",      "api_key",
+        "apikey",        "secret",
+        "token",         "authorization",
+        "credential",
+        // mixed-case forms
+        "Password",      "API-KEY",
+        // embedded / separated forms
+        "db_password",   "x-secret-header",
+    };
+    inline for (sensitive) |key| {
+        try std.testing.expect(otel.internal.redact.isSensitive(key));
+    }
+
+    const benign = [_][]const u8{
+        "user",  "host", "region", "count",
+        "name",  "id",   "count_total",
+        "path",
+    };
+    inline for (benign) |key| {
+        try std.testing.expect(!otel.internal.redact.isSensitive(key));
+    }
+
+    // Empty key is never sensitive.
+    try std.testing.expect(!otel.internal.redact.isSensitive(""));
+}
+
 test "OTLP exporter rejects HTTP scheme outside http(s)" {
     try std.testing.expectError(error.InvalidEndpoint, otel.exporters.otlp_http.OtlpHttpExporter.init(std.testing.allocator, .{ .endpoint = "ftp://x" }));
 }

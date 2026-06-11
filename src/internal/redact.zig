@@ -25,6 +25,31 @@ const sensitive_tokens = [_][]const u8{
 /// match the same way.
 pub fn isSensitive(key: []const u8) bool {
     if (key.len == 0) return false;
+
+    // O(1)-per-byte fast-reject screen for the common (non-sensitive) hot
+    // path: this runs once per string attribute key on every encode. Every
+    // normalised sensitive token below begins with a letter in the set
+    // {a, c, p, s, t} (apikey/authorization=a, credential=c, password=p,
+    // secret=s, token=t). For a token to appear as a substring of the
+    // normalised haystack, that token's first letter MUST appear somewhere
+    // in the key — and normalisation only lowercases / strips separators,
+    // so it never introduces a letter that was absent from the raw key.
+    // Therefore, if the (lowercased) key contains none of these letters it
+    // cannot match any token and we skip the 512-byte scratch copy + six
+    // substring scans entirely. This is provably classification-preserving:
+    // it can only ever SKIP work for keys that are guaranteed non-sensitive.
+    var maybe_sensitive = false;
+    for (key) |c| {
+        switch (std.ascii.toLower(c)) {
+            'a', 'c', 'p', 's', 't' => {
+                maybe_sensitive = true;
+                break;
+            },
+            else => {},
+        }
+    }
+    if (!maybe_sensitive) return false;
+
     // Normalise into a scratch buffer: lowercase, strip separators.
     var scratch: [512]u8 = undefined;
     var len: usize = 0;

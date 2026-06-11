@@ -124,27 +124,136 @@ pub fn validateEndpoint(endpoint: []const u8, allow_loopback: bool) !void {
         return error.InvalidEndpoint;
     }
 
-    // Host begins after scheme; ends at first '/', ':' (port), or end.
-    // Bracketed IPv6 hosts are special-cased so the colon inside the
-    // address isn't treated as a port separator.
+    // Authority = everything up to the first '/' (path), '?' (query) or '#'.
     if (rest.len == 0) return error.InvalidEndpoint;
-    var host: []const u8 = undefined;
-    if (rest[0] == '[') {
-        const close = std.mem.indexOfScalar(u8, rest, ']') orelse return error.InvalidEndpoint;
-        host = rest[1..close];
-    } else {
-        // Find the first '/' or ':'.
-        var end_idx: usize = rest.len;
-        for (rest, 0..) |c, i| {
-            if (c == '/' or c == ':') {
-                end_idx = i;
-                break;
-            }
+    var authority = rest;
+    for (rest, 0..) |c, i| {
+        if (c == '/' or c == '?' or c == '#') {
+            authority = rest[0..i];
+            break;
         }
-        host = rest[0..end_idx];
+    }
+
+    // Strip userinfo. The authority is `[userinfo@]host[:port]`; userinfo
+    // may itself contain ':' (user:pass), so it MUST be removed before the
+    // host/port split — otherwise `http://user:pass@169.254.169.254/` would
+    // mis-parse the host as `user` and slip past the SSRF guard while the
+    // real connection (per std.Uri) targets the post-`@` host. Split on the
+    // LAST '@' so an '@' inside userinfo doesn't confuse the host.
+    if (std.mem.lastIndexOfScalar(u8, authority, '@')) |at| {
+        authority = authority[at + 1 ..];
+    }
+    if (authority.len == 0) return error.InvalidEndpoint;
+
+    // Host vs port. Bracketed IPv6 hosts are special-cased so the colon
+    // inside the address isn't treated as a port separator.
+    var host: []const u8 = undefined;
+    if (authority[0] == '[') {
+        const close = std.mem.indexOfScalar(u8, authority, ']') orelse return error.InvalidEndpoint;
+        host = authority[1..close];
+    } else {
+        const colon = std.mem.indexOfScalar(u8, authority, ':');
+        host = if (colon) |c| authority[0..c] else authority;
     }
 
     return validateHost(host, allow_loopback);
+}
+
+/// Canonicalize an IPv4 literal in any of the `inet_aton(3)` forms the OS
+/// resolver accepts — dotted-quad, 1/2/3-part dotted, and bare decimal /
+/// hex (`0x`) / octal (`0`) integers — into its 4 address bytes. Returns
+/// `null` if `host` is not an integer IPv4 literal (e.g. a DNS name).
+/// This is what makes the SSRF guard robust against `http://2852039166/`
+/// (decimal 169.254.169.254) and `http://0xA9FEA9FE/`.
+fn canonicalizeIpv4(host: []const u8) ?[4]u8 {
+    if (host.len == 0) return null;
+    var parts: [4]u32 = undefined;
+    var n: usize = 0;
+    var it = std.mem.splitScalar(u8, host, '.');
+    while (it.next()) |part| {
+        if (n >= 4) return null; // > 4 parts is not a valid literal
+        const v = parseIntAuto(part) orelse return null;
+        parts[n] = v;
+        n += 1;
+    }
+    if (n == 0) return null;
+    var addr: u32 = undefined;
+    switch (n) {
+        // a            -> 32-bit value
+        1 => addr = parts[0],
+        // a.b          -> a(8) . b(24)
+        2 => {
+            if (parts[0] > 0xff or parts[1] > 0xff_ffff) return null;
+            addr = (parts[0] << 24) | parts[1];
+        },
+        // a.b.c        -> a(8) . b(8) . c(16)
+        3 => {
+            if (parts[0] > 0xff or parts[1] > 0xff or parts[2] > 0xffff) return null;
+            addr = (parts[0] << 24) | (parts[1] << 16) | parts[2];
+        },
+        // a.b.c.d
+        4 => {
+            if (parts[0] > 0xff or parts[1] > 0xff or parts[2] > 0xff or parts[3] > 0xff) return null;
+            addr = (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3];
+        },
+        else => return null,
+    }
+    return .{
+        @truncate(addr >> 24),
+        @truncate(addr >> 16),
+        @truncate(addr >> 8),
+        @truncate(addr),
+    };
+}
+
+/// Parse one IPv4 segment in decimal / hex (`0x`) / octal (`0`) form, as
+/// `inet_aton` does. Returns null on any malformed input (so a DNS label
+/// like `evil` yields null and the host is treated as a name).
+fn parseIntAuto(s: []const u8) ?u32 {
+    if (s.len == 0) return null;
+    if (s.len >= 2 and (s[1] == 'x' or s[1] == 'X') and s[0] == '0') {
+        return std.fmt.parseInt(u32, s[2..], 16) catch null;
+    }
+    if (s.len >= 2 and s[0] == '0') {
+        return std.fmt.parseInt(u32, s[1..], 8) catch null;
+    }
+    return std.fmt.parseInt(u32, s, 10) catch null;
+}
+
+/// True if `v4` is in a blocked range: link-local 169.254.0.0/16 (the cloud
+/// instance-metadata target) always; loopback 127.0.0.0/8 unless opted in.
+fn ipv4Blocked(v4: [4]u8, allow_loopback: bool) bool {
+    if (v4[0] == 169 and v4[1] == 254) return true; // 169.254.0.0/16
+    if (!allow_loopback and v4[0] == 127) return true; // 127.0.0.0/8
+    return false;
+}
+
+/// Extract the embedded IPv4 from an IPv4-mapped/compatible IPv6 literal
+/// written with a `::ffff:` (or bare `::`) prefix, where the embedded
+/// address may be dotted (`::ffff:169.254.169.254`) OR two hex groups
+/// (`::ffff:a9fe:a9fe`). Zig's own `parseIp6` rejects the hex-group form,
+/// but `getaddrinfo` (used by some transports, e.g. grpc-zig) accepts it —
+/// so we canonicalize it ourselves to keep the SSRF guard transport-agnostic.
+/// Returns null when `host_lc` is not such a literal.
+fn mappedEmbeddedIpv4(host_lc: []const u8) ?[4]u8 {
+    var tail: []const u8 = undefined;
+    if (std.mem.startsWith(u8, host_lc, "::ffff:")) {
+        tail = host_lc["::ffff:".len..];
+    } else if (std.mem.startsWith(u8, host_lc, "::") and host_lc.len > 2) {
+        tail = host_lc[2..];
+    } else return null;
+    if (tail.len == 0) return null;
+
+    // Dotted embedded form.
+    if (std.mem.indexOfScalar(u8, tail, '.') != null) return canonicalizeIpv4(tail);
+
+    // Two 16-bit hex groups: `HHHH:HHHH`.
+    if (std.mem.indexOfScalar(u8, tail, ':')) |colon| {
+        const hi = std.fmt.parseInt(u16, tail[0..colon], 16) catch return null;
+        const lo = std.fmt.parseInt(u16, tail[colon + 1 ..], 16) catch return null;
+        return .{ @truncate(hi >> 8), @truncate(hi), @truncate(lo >> 8), @truncate(lo) };
+    }
+    return null;
 }
 
 /// Validate a bare host (no scheme, no port, no brackets) against the
@@ -159,37 +268,59 @@ pub fn validateEndpoint(endpoint: []const u8, allow_loopback: bool) !void {
 /// factory / `initFromConfig` / direct-construction paths previously
 /// bypassed the guard, letting an attacker-controlled endpoint reach the
 /// cloud instance-metadata service (169.254.169.254).
-pub fn validateHost(host: []const u8, allow_loopback: bool) !void {
+pub fn validateHost(host_in: []const u8, allow_loopback: bool) !void {
+    if (host_in.len == 0) return error.InvalidEndpoint;
+
+    // Defense-in-depth: strip any userinfo the caller failed to remove, so
+    // we always validate the host the OS resolver will actually dial.
+    var host = host_in;
+    if (std.mem.lastIndexOfScalar(u8, host, '@')) |at| host = host[at + 1 ..];
     if (host.len == 0) return error.InvalidEndpoint;
 
-    // Normalise host for substring matching: lowercase ASCII.
+    // Normalise host: lowercase ASCII into a bounded buffer.
     var host_buf: [256]u8 = undefined;
     if (host.len > host_buf.len) return error.InvalidEndpoint;
     for (host, 0..) |c, i| host_buf[i] = std.ascii.toLower(c);
     const host_lc = host_buf[0..host.len];
 
-    // Link-local IPv4 (169.254/16) — the AWS metadata target lives here.
-    if (std.mem.startsWith(u8, host_lc, "169.254.")) return error.InvalidEndpoint;
-
-    // Link-local IPv6 (fe80::/10).
-    if (std.mem.startsWith(u8, host_lc, "fe80:") or
-        std.mem.startsWith(u8, host_lc, "fe80::") or
-        std.mem.startsWith(u8, host_lc, "fe9") or
-        std.mem.startsWith(u8, host_lc, "fea") or
-        std.mem.startsWith(u8, host_lc, "feb"))
-    {
-        return error.InvalidEndpoint;
+    // --- IPv4 literals (incl. decimal/hex/octal/short-form via inet_aton) ---
+    // Canonicalize to bytes BEFORE range-checking so `2852039166`,
+    // `0xA9FEA9FE`, `0251.0376.0251.0376`, and `169.254.169.254` all map to
+    // the same address and are blocked uniformly (CWE-918 canonicalization).
+    if (canonicalizeIpv4(host_lc)) |v4| {
+        if (ipv4Blocked(v4, allow_loopback)) return error.InvalidEndpoint;
+        return; // a well-formed, non-blocked IPv4 literal — accept
     }
 
-    // IPv4-mapped IPv6 link-local: `::ffff:169.254.x.x` (any case).
-    if (std.mem.indexOf(u8, host_lc, "::ffff:169.254.") != null) return error.InvalidEndpoint;
-
-    // Loopback (127/8, ::1, localhost) — opt-in only.
-    if (!allow_loopback) {
-        if (std.mem.eql(u8, host_lc, "localhost")) return error.InvalidEndpoint;
-        if (std.mem.eql(u8, host_lc, "::1")) return error.InvalidEndpoint;
-        if (std.mem.startsWith(u8, host_lc, "127.")) return error.InvalidEndpoint;
+    // --- IPv4-mapped/compatible IPv6, incl. the hex-group form Zig's own
+    // parser rejects but getaddrinfo accepts (transport-agnostic guard). ---
+    if (mappedEmbeddedIpv4(host_lc)) |v4| {
+        if (ipv4Blocked(v4, allow_loopback)) return error.InvalidEndpoint;
     }
+
+    // --- IPv6 literals (parse, then range-check on the address bytes) ---
+    if (std.Io.net.IpAddress.parseIp6(host_lc, 0)) |addr6| {
+        const b: [16]u8 = addr6.ip6.bytes;
+        // IPv4-mapped (::ffff:a.b.c.d) and IPv4-compatible (::a.b.c.d):
+        // check the embedded IPv4 against the v4 blocklist so the hex form
+        // `::ffff:a9fe:a9fe` is caught, not just the dotted `::ffff:169.254.`.
+        const mapped = std.mem.eql(u8, b[0..10], &[_]u8{0} ** 10) and b[10] == 0xff and b[11] == 0xff;
+        const compat = std.mem.eql(u8, b[0..12], &[_]u8{0} ** 12) and !(b[12] == 0 and b[13] == 0 and b[14] == 0 and (b[15] == 0 or b[15] == 1));
+        if (mapped or compat) {
+            if (ipv4Blocked(.{ b[12], b[13], b[14], b[15] }, allow_loopback)) return error.InvalidEndpoint;
+        }
+        // Link-local fe80::/10 (first 10 bits = 1111111010).
+        if (b[0] == 0xfe and (b[1] & 0xc0) == 0x80) return error.InvalidEndpoint;
+        // Loopback ::1.
+        if (!allow_loopback and std.mem.eql(u8, &b, &([_]u8{0} ** 15 ++ [_]u8{1}))) return error.InvalidEndpoint;
+        return;
+    } else |_| {}
+
+    // --- DNS name fallback (not an IP literal) ---
+    // `localhost` (and any name) reaches here. Block the loopback name unless
+    // opted in; other names are accepted (DNS-rebinding is out of scope of a
+    // static endpoint guard).
+    if (!allow_loopback and std.mem.eql(u8, host_lc, "localhost")) return error.InvalidEndpoint;
 }
 
 pub const TraceProviderConfig = struct {

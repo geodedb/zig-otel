@@ -169,6 +169,54 @@ test "AS-1: spec-default grandfather still rejects link-local metadata host" {
     try std.testing.expect(!otel.sdk.config.isSpecDefaultEndpoint("http://169.254.169.254"));
 }
 
+// -------------------------------------------------------------------------
+// NEW-AS-1 (iteration-2): the SSRF guard must canonicalize the host, not
+// match string prefixes. Alternate encodings of 169.254.169.254 (userinfo,
+// decimal/hex/octal IPv4, IPv4-mapped IPv6) all reach the cloud metadata
+// service and must be rejected. validateEndpoint must also strip userinfo
+// (incl. `user:pass@`) before the host/port split.
+// -------------------------------------------------------------------------
+
+test "NEW-AS-1: validateEndpoint rejects metadata IP behind userinfo" {
+    const cfg = otel.sdk.config;
+    // Plain userinfo, and user:pass userinfo (the ':' must not be read as a port).
+    try std.testing.expectError(error.InvalidEndpoint, cfg.validateEndpoint("http://evil.com@169.254.169.254/latest/meta-data/", false));
+    try std.testing.expectError(error.InvalidEndpoint, cfg.validateEndpoint("http://user:pass@169.254.169.254/", false));
+}
+
+test "NEW-AS-1: validateEndpoint canonicalizes decimal/hex/octal IPv4 metadata encodings" {
+    const cfg = otel.sdk.config;
+    // 169.254.169.254 in alternate inet_aton forms.
+    try std.testing.expectError(error.InvalidEndpoint, cfg.validateEndpoint("http://2852039166/", false)); // decimal
+    try std.testing.expectError(error.InvalidEndpoint, cfg.validateEndpoint("http://0xA9FEA9FE/", false)); // hex
+    try std.testing.expectError(error.InvalidEndpoint, cfg.validateEndpoint("http://0251.0376.0251.0376/", false)); // octal dotted
+}
+
+test "NEW-AS-1: validateEndpoint rejects IPv4-mapped IPv6 metadata (hex form)" {
+    const cfg = otel.sdk.config;
+    // ::ffff:a9fe:a9fe == ::ffff:169.254.169.254
+    try std.testing.expectError(error.InvalidEndpoint, cfg.validateEndpoint("http://[::ffff:a9fe:a9fe]:4318/", false));
+    try std.testing.expectError(error.InvalidEndpoint, cfg.validateEndpoint("http://[::ffff:169.254.169.254]/", false));
+}
+
+test "NEW-AS-1: gRPC exporter rejects metadata IP behind userinfo and as decimal" {
+    try std.testing.expectError(
+        error.InvalidEndpoint,
+        otel.exporters.otlp_grpc.OtlpGrpcExporter.init(std.testing.allocator, .{ .endpoint = "evil.com@169.254.169.254:4317", .protocol = .grpc }),
+    );
+    try std.testing.expectError(
+        error.InvalidEndpoint,
+        otel.exporters.otlp_grpc.OtlpGrpcExporter.init(std.testing.allocator, .{ .endpoint = "2852039166:4317", .protocol = .grpc }),
+    );
+}
+
+test "NEW-AS-1: canonicalization does not over-block legitimate public hosts" {
+    const cfg = otel.sdk.config;
+    // A normal public collector and a non-metadata public IP must still pass.
+    try cfg.validateEndpoint("https://collector.example.com:4318", false);
+    try cfg.validateEndpoint("http://93.184.216.34:4318", false); // example.com's IP, not blocked
+}
+
 test "AS-1: initFromConfig refuses metadata endpoint without going through resolve()" {
     if (@import("build_options").otel_disabled) return error.SkipZigTest;
     var cfg: otel.sdk.config.Config = .{

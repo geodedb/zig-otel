@@ -304,3 +304,14 @@ coverage.
 | QN2-4 | Low | Threaded `forceFlush` could attribute a concurrent periodic-cycle export failure to the flush (false-positive attribution; ordering itself correct) | **Tracked** | Benign; optional flush-specific error slot deferred. |
 | QN2-5 | Low (test) | No test asserted correlate clobber-safety | **Closed** `aefcb31` | Added a test proving a pre-set valid trace identity is never overwritten by a differing ambient span. |
 | QN2-6 | Info | `ensureTotalCapacity(items.len * 256)` unchecked `usize` multiply (overflow only at ~7.2e16 items — physically impossible) | **Accepted** | Capacity-only; no action. |
+
+### Iteration-3 re-review of the canonicalization/`makeCurrent` fixes
+
+| ID | Sev | Title | Disposition | Evidence / commit |
+|----|-----|-------|-------------|-------------------|
+| QN3-1 | Low | All-numeric single-label hostnames (`"123"`) are now classified as IPv4 literals by `canonicalizeIpv4` | **Accepted** | Benign: `0.0.0.N` is not in a blocked range so it cannot over-block, and the outcome is "accept" either way; tightening (require 4 parts) would re-open the decimal/hex bypass. No change. |
+| QN3-2 | Low (test) | u64 (`sum_uint`) `>=` boundary lacked a dedicated test | **Closed** `d5f4c2d` | Added an `observable_counter` test asserting exactly 2⁶⁴ is skipped and an in-range double records. |
+| QN3-3 | Info | `parseIntAuto` accepted Zig integer syntax (`+`, `_`) that `inet_aton` rejects | **Closed** `d5f4c2d` | Rejects leading sign / `_` separators so the canonicalizer mirrors the resolver. |
+| QN3-4 | Info | `mappedEmbeddedIpv4` non-blocked fall-through was subtle | **Closed (doc)** `d5f4c2d` | Clarifying comment added. |
+
+The iteration-4 appsec re-review returned **CLEAN** (NEW-AS-1 has no residual bypass — verified against real `getaddrinfo`/`std.Uri`/`std.Io.net`; QN2-1/QN2-2 sound).

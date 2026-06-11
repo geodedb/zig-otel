@@ -300,9 +300,11 @@ pub fn validateHost(host_in: []const u8, allow_loopback: bool) !void {
     // parser rejects but getaddrinfo accepts (transport-agnostic guard). ---
     if (mappedEmbeddedIpv4(host_lc)) |v4| {
         if (ipv4Blocked(v4, allow_loopback)) return error.InvalidEndpoint;
-        // A non-blocked mapped form (e.g. ::ffff:1.2.3.4) intentionally falls
-        // through: parseIp6 rejects the hex-group form, so it reaches the DNS
-        // fallback and is accepted (correct — not a blocked address) (QN3-4).
+        // A non-blocked mapped form in hex-group notation (e.g. ::ffff:0102:0304)
+        // intentionally falls through: parseIp6 rejects the hex-group form, so it
+        // reaches the DNS fallback and is accepted (correct — not a blocked
+        // address). The dotted form (::ffff:1.2.3.4) is instead accepted by the
+        // IPv6 block below, after its mapped/compat range-check. (QN3-4)
     }
 
     // --- IPv6 literals (parse, then range-check on the address bytes) ---

@@ -93,6 +93,43 @@ fn storageOf(b: Baggage) *const Baggage {
     return &pinned.?;
 }
 
+/// Ambient (thread-local) current Context.
+///
+/// Zig has no implicit context, so the canonical path is to pass Context
+/// explicitly. This thread-local provides the OTel `Context.current()`
+/// affordance for code paths that cannot thread a Context through their
+/// signature — most importantly the logs emit path (`Logger.emit` takes
+/// only a `LogRecord`), so the SDK reads `current()` to correlate emitted
+/// records with the active span. Defaults to an empty Context (no active
+/// span), so reading it before any `attach` is a safe no-op.
+threadlocal var current_ctx: Context = .{};
+
+/// A restore token returned by `attach`. Hold it and pass it to `restore`
+/// to pop back to the previously-active Context (LIFO scope discipline).
+pub const Token = struct {
+    previous: Context,
+};
+
+/// Returns the ambient current Context for this thread.
+pub fn current() Context {
+    return current_ctx;
+}
+
+/// Make `ctx` the ambient current Context for this thread, returning a
+/// `Token` that restores the prior Context. Pair every `attach` with a
+/// `restore(token)` (typically `defer`) to keep scopes balanced.
+pub fn attach(ctx: Context) Token {
+    const tok: Token = .{ .previous = current_ctx };
+    current_ctx = ctx;
+    return tok;
+}
+
+/// Restore the ambient current Context to what it was before the matching
+/// `attach`.
+pub fn restore(token: Token) void {
+    current_ctx = token.previous;
+}
+
 test "empty context has no span or baggage" {
     const c = Context.empty();
     try std.testing.expect(c.activeSpanContext() == null);

@@ -63,11 +63,13 @@ pub fn bridgeLogFn(
         .timestamp_unix_nano = posixNow(),
         .scope = .{ .name = @tagName(scope) },
     };
+    // Correlate from the bridge's pinned context via the shared
+    // fill-if-empty stamp (QN-NEW-3). The SDK emit path also correlates
+    // from the ambient context; applying here first preserves the
+    // bridge-pinned identity when it differs from the ambient one.
     if (current_context) |c| {
         if (c.activeSpanContext()) |sc| {
-            record.trace_id = sc.trace_id;
-            record.span_id = sc.span_id;
-            record.flags = sc.flags;
+            record.applyTrace(sc.trace_id, sc.span_id, sc.flags);
         }
     }
     logger.emit(record);

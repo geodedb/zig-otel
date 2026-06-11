@@ -61,10 +61,11 @@ pub const EventBuilder = struct {
             .attributes = &self.attributes,
             .event_name = self.name,
         };
+        // Correlate from the builder's explicit SpanContext via the shared
+        // fill-if-empty stamp (QN-NEW-3). Applying here pins the event to
+        // the caller-supplied span even when an ambient context differs.
         if (self.span_context) |sc| {
-            record.trace_id = sc.trace_id;
-            record.span_id = sc.span_id;
-            record.flags = sc.flags;
+            record.applyTrace(sc.trace_id, sc.span_id, sc.flags);
         }
         logger.emit(record);
     }

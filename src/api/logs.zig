@@ -71,6 +71,20 @@ pub const LogRecord = struct {
     scope: InstrumentationScope = .{ .name = "" },
     /// Set internally by the bridge to mark exception/event-shaped logs.
     event_name: []const u8 = "",
+
+    /// Stamp this record's trace correlation fields from a span's identity.
+    ///
+    /// Fill-if-empty: a record that already carries a valid `trace_id` is
+    /// left untouched, so this is idempotent and never clobbers an
+    /// already-correlated record. Single source of truth for the stamp
+    /// shared by the SDK emit path and the std.log/event bridges
+    /// (QN-NEW-1, QN-NEW-3).
+    pub fn applyTrace(self: *LogRecord, trace_id: id.TraceId, span_id: id.SpanId, flags: id.TraceFlags) void {
+        if (self.trace_id.isValid()) return;
+        self.trace_id = trace_id;
+        self.span_id = span_id;
+        self.flags = flags;
+    }
 };
 
 pub const Logger = struct {

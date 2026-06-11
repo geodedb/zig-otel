@@ -41,7 +41,13 @@ pub const SimpleLogProcessor = struct {
 
 fn simpleEmit(ctx: ?*anyopaque, record: logs_api.LogRecord) void {
     const self: *SimpleLogProcessor = @ptrCast(@alignCast(ctx.?));
-    var data = [1]exp.LogData{.{ .record = record, .instrumentation_scope = record.scope, .resource = self.resource_ref }};
+    // QN-NEW-1: stamp the active span's trace/span IDs onto the record.
+    // `correlate` is a no-op when there is no active span, so already
+    // correlated records (e.g. from the std.log/event bridges) keep their
+    // IDs only when no ambient span overrides them.
+    var rec = record;
+    correlate(ctx_mod.current(), &rec);
+    var data = [1]exp.LogData{.{ .record = rec, .instrumentation_scope = rec.scope, .resource = self.resource_ref }};
     _ = self.exporter.exportLogs(&data) catch {};
 }
 
@@ -164,15 +170,27 @@ pub const LoggerProvider = struct {
 
 fn onEmit(ctx: ?*anyopaque, record: logs_api.LogRecord) void {
     const self: *LoggerProvider = @ptrCast(@alignCast(ctx.?));
-    for (self.processors) |p| p.onEmit(record);
+    // QN-NEW-1: correlate on the primary emit path before fan-out so every
+    // processor (not only SimpleLogProcessor) sees the active span's IDs.
+    // `correlate` is fill-if-empty + no-op without an active span, so this
+    // neither clobbers bridge-stamped IDs nor invents IDs out of thin air.
+    var rec = record;
+    correlate(ctx_mod.current(), &rec);
+    for (self.processors) |p| p.onEmit(rec);
 }
 
 /// Apply trace correlation — copies the active span's IDs into the record.
+///
+/// Fill-if-empty: a record that already carries a valid trace_id (e.g. one
+/// the std.log/event bridge stamped from an explicit SpanContext, or that a
+/// caller set by hand) is left untouched. Only records with an invalid
+/// trace_id pick up the active span's IDs. This keeps the call idempotent
+/// and lets the primary emit path (`onEmit`/`simpleEmit`) correlate without
+/// clobbering an already-correlated record. No active span => no-op, so
+/// uncorrelated records stay invalid (QN-NEW-1).
 pub fn correlate(parent: ctx_mod.Context, record: *logs_api.LogRecord) void {
     if (parent.activeSpanContext()) |sc| {
-        record.trace_id = sc.trace_id;
-        record.span_id = sc.span_id;
-        record.flags = sc.flags;
+        record.applyTrace(sc.trace_id, sc.span_id, sc.flags);
     }
 }
 

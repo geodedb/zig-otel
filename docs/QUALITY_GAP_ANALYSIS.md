@@ -293,3 +293,14 @@ coverage.
 | QN-NEW-12 | Low | Jaeger firehose doc comment names the wrong bit | **Closed** `7ac205d` | Corrected to "bit 3 = firehose (0x08)". |
 | QN-NEW-13 | Low | New numeric env vars silently default on malformed input; no cross-field validation | **Tracked** | Spec-compliant ("must not crash"); breadcrumb + clamp/validate deferred (ties to baseline OTEL-Q-004). |
 | QN-NEW-14 | Low | Unused `MapCarrier` re-export in jaeger | **Closed** `7ac205d` | Deleted (confirmed unreferenced; `b3.zig` already omits it). |
+
+### Iteration-2 re-review of the fixes (findings introduced by the closure pass)
+
+| ID | Sev | Title | Disposition | Evidence / commit |
+|----|-----|-------|-------------|-------------------|
+| QN2-1 | High | The C1 ambient `Context` was never populated by span start, so `tracer.startSpan()` → `logger.emit()` still produced uncorrelated logs (QN-NEW-1 only partially closed) | **Closed** `aefcb31` | Added `Span.makeCurrent()` (explicit OTel-style activation; start does not auto-activate) returning a restore `Token`; README documents the idiomatic pattern; end-to-end test in `test/logs.zig` proves correlation via the public `makeCurrent()` path (not a manual attach). |
+| QN2-2 | High | Observable double→int guard off-by-one: `@floatFromInt(maxInt(i64))` rounds up to 2⁶³, so a strict `>` let exactly 2⁶³ through into `@intFromFloat` → the very panic the guard prevents (runtime-confirmed) | **Closed** `86dc7e7` | Switched both i64/u64 arms to `>=` against the rounded bound; boundary tests at 2⁶³/2⁶⁴ + largest-in-range f64 in `test/observable_instruments.zig`. |
+| QN2-3 | Low | Redundant re-correlate in `SimpleLogProcessor.simpleEmit` (no-op when driven via `onEmit`) | **Closed (doc)** `a632956` | Kept intentionally for the standalone-processor path; comment clarified. |
+| QN2-4 | Low | Threaded `forceFlush` could attribute a concurrent periodic-cycle export failure to the flush (false-positive attribution; ordering itself correct) | **Tracked** | Benign; optional flush-specific error slot deferred. |
+| QN2-5 | Low (test) | No test asserted correlate clobber-safety | **Closed** `aefcb31` | Added a test proving a pre-set valid trace identity is never overwritten by a differing ambient span. |
+| QN2-6 | Info | `ensureTotalCapacity(items.len * 256)` unchecked `usize` multiply (overflow only at ~7.2e16 items — physically impossible) | **Accepted** | Capacity-only; no action. |

@@ -291,3 +291,13 @@ escaping, CSPRNG IDs, header-parser hardening, manifest gate) all **PASS**.
 | AS-5 | Info | Plain `http://` OTLP endpoints permitted | **Accepted (by design)** | Matches OTel spec default `http://localhost:4318`; TLS verified when `https://` used; gRPC refuses silent downgrade. Optional future hardening: warn/refuse non-loopback `http://` when a secret-bearing header is set. |
 
 **Net:** the single material security finding (AS-1, High) is **closed on every construction path**; lows are closed (AS-2) or tracked/accepted with rationale. No memory-safety / injection-to-RCE / auth-bypass found.
+
+### 8.1 Iteration-2 re-review (verify closures + audit the fixes)
+
+The iteration-2 appsec re-review confirmed AS-1/AS-2 genuinely closed and not regressed, and that the closure-introduced mechanisms (redact O(1) fast-reject, ambient `Context`, percent-codec, baggage-leak fix) are sound. It surfaced one NEW finding from hardening the guard at the trust boundary:
+
+| ID | Sev | Title | Disposition | Evidence |
+|----|-----|-------|-------------|----------|
+| NEW-AS-1 | Medium | SSRF guard matched the metadata host by literal string prefix only — bypassable via userinfo (`evil.com@169.254.169.254`, incl. `user:pass@`), decimal/hex/octal IPv4 (`2852039166`, `0xA9FEA9FE`), and IPv4-mapped IPv6 (incl. the hex-group form `getaddrinfo` accepts but Zig's parser rejects) | **Closed** `212c450` | `validateEndpoint` now strips userinfo before the host/port split; `validateHost` canonicalizes the host to address bytes (inet_aton-style IPv4 + `std.Io.net` IPv6 + a transport-agnostic mapped-IPv4 extractor) and range-checks `169.254.0.0/16` (always) and `127.0.0.0/8` (loopback opt-in). 6 bypass-vector tests + over-block-negative tests in `test/security.zig`. |
+
+The redact fast-reject was independently re-verified **sound** (every normalized sensitive token begins with a letter in the screen set `{a,c,p,s,t}`; normalization never inserts a letter, so a key lacking all screen letters can't contain a token — no secret-un-redaction path).

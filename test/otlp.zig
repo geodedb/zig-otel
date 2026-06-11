@@ -169,6 +169,70 @@ test "OTLP HTTP JSON envelope wraps DevNW-encoded body identically" {
     try std.testing.expect(std.mem.startsWith(u8, prefix, "{\"resourceSpans\":["));
 }
 
+// -------------------------------------------------------------------------
+// PN-NEW-3/4: pre-sizing the proto encoder buffer must not change a single
+// wire byte. This characterizes a 3-span batch's protobuf encoding so the
+// `ensureTotalCapacity` pre-size (capacity-only) is proven byte-identical:
+//   1. the exact encoded length is pinned, and
+//   2. the leading ResourceSpans envelope bytes are pinned, and
+//   3. two independent encodes of the same input are byte-for-byte equal.
+// Combined with the existing wire-parity suite, any contents drift fails.
+// -------------------------------------------------------------------------
+
+fn makeProtoSpan(
+    resource: *otel.sdk.resource.Resource,
+    attr_set: *otel.internal.attributes.AttributeSet,
+    trace_lo: u8,
+    span_lo: u8,
+) otel.sdk.exporter.SpanData {
+    return .{
+        .name = "demo-span",
+        .span_context = .{
+            .trace_id = .{ .bytes = .{ trace_lo, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 } },
+            .span_id = .{ .bytes = .{ span_lo, 6, 5, 4, 3, 2, 1, 0 } },
+        },
+        .start_unix_nano = 1_000,
+        .end_unix_nano = 2_000,
+        .attributes = attr_set,
+        .events = &.{},
+        .links = &.{},
+        .instrumentation_scope = .{ .name = "scope" },
+        .resource = resource,
+    };
+}
+
+test "PN-NEW-3/4: 3-span batch encodes to byte-identical proto" {
+    const a = std.testing.allocator;
+    var resource = otel.sdk.resource.Resource.init(a);
+    defer resource.deinit();
+    var attr_set = otel.internal.attributes.AttributeSet.init(a);
+    defer attr_set.deinit();
+    try attr_set.putString("http.method", "GET");
+
+    const spans = [_]otel.sdk.exporter.SpanData{
+        makeProtoSpan(&resource, &attr_set, 1, 11),
+        makeProtoSpan(&resource, &attr_set, 2, 12),
+        makeProtoSpan(&resource, &attr_set, 3, 13),
+    };
+
+    const out1 = try otel.exporters.otlp_http.encodeSpansProto(a, &spans);
+    defer a.free(out1);
+    const out2 = try otel.exporters.otlp_http.encodeSpansProto(a, &spans);
+    defer a.free(out2);
+
+    // Determinism: two encodes of the same input are identical.
+    try std.testing.expectEqualSlices(u8, out1, out2);
+
+    // Pinned wire shape. The pre-size change is capacity-only, so this exact
+    // byte count must not move.
+    try std.testing.expectEqual(@as(usize, 272), out1.len);
+    // ResourceSpans is field 1, length-delimited → tag 0x0a, then a 2-byte
+    // length varint for the 269-byte payload (269 = 0x8d 0x02).
+    try std.testing.expectEqual(@as(u8, 0x0a), out1[0]);
+    try std.testing.expectEqual(@as(u8, 0x8d), out1[1]);
+    try std.testing.expectEqual(@as(u8, 0x02), out1[2]);
+}
+
 test "profiles gating returns UnsupportedTransport" {
     const p: otel.api.profiles.Profiler = .{ .scope = .{ .name = "x" } };
     const profile: otel.api.profiles.Profile = .{

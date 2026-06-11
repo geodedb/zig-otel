@@ -124,6 +124,9 @@ pub fn encodeLogsProto(allocator: std.mem.Allocator, items: []const exp.LogData)
     var w = otlp.Writer.init(allocator);
     defer w.deinit();
     if (items.len == 0) return try w.toOwnedSlice();
+    // PN-NEW-3/4: pre-size from the log-record count to cut realloc churn
+    // on the per-byte append path. Capacity-only — wire bytes unchanged.
+    try w.buf.ensureTotalCapacity(allocator, items.len * 256);
 
     var bucket_arena = std.heap.ArenaAllocator.init(allocator);
     defer bucket_arena.deinit();

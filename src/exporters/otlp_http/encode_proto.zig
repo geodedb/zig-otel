@@ -134,6 +134,9 @@ pub fn encodeMetricsProto(allocator: std.mem.Allocator, items: []const exp.Metri
     var w = otlp.Writer.init(allocator);
     defer w.deinit();
     if (items.len == 0) return try w.toOwnedSlice();
+    // PN-NEW-3/4: pre-size from the metric count to cut realloc churn on
+    // the per-byte append path. Capacity-only — wire bytes unchanged.
+    try w.buf.ensureTotalCapacity(allocator, items.len * 256);
 
     // Bucket bookkeeping is short-lived; route it through an internal
     // arena so direct callers (tests, custom exporters) don't have to
@@ -424,6 +427,12 @@ pub fn encodeSpansProto(allocator: std.mem.Allocator, items: []const exp.SpanDat
     // ResourceSpans message with one ScopeSpans per InstrumentationScope.
     // For simplicity we emit one ResourceSpans per call.
     if (items.len == 0) return try w.toOwnedSlice();
+    // PN-NEW-3/4: pre-size the encode buffer from the span count so the
+    // per-byte tag/varint/length appends don't churn through doubling
+    // reallocs. Capacity-only — the wire bytes are unchanged. ~256 B/span
+    // is a modest seed (a small span with a couple of attributes); the
+    // buffer still grows on demand for larger payloads.
+    try w.buf.ensureTotalCapacity(allocator, items.len * 256);
     const resource = items[0].resource;
 
     // Bucket bookkeeping is short-lived; route it through an internal

@@ -413,6 +413,47 @@ test "observable up-down counter: largest in-range f64 still recorded (QN2-2 bou
     try std.testing.expectEqual(@as(i64, 9223372036854774784), snap[0].points[0].value.number.int);
 }
 
+test "observable counter (sum_uint): exactly 2^64 is skipped, in-range records (QN3-2)" {
+    if (@import("build_options").otel_disabled) return error.SkipZigTest;
+    var resource = try sdk_resource.defaultResource(std.testing.allocator);
+    defer resource.deinit();
+    var mp = try sdk_metrics.MeterProvider.init(std.testing.allocator, .{ .resource = &resource });
+    defer mp.deinit();
+
+    const m = mp.meter(.{ .name = "obs.test" });
+    // observable_counter is backed by .sum_uint. @floatFromInt(maxInt(u64))
+    // rounds up to 2^64, so the `>=` guard must SKIP exactly 2^64 (would
+    // overflow @intFromFloat under a strict `>`); the point stays 0.
+    var skip_ctx = BadDoubleCtx{ .value = 18446744073709551616.0 }; // 2^64
+    var oc = try m.createObservableCounter(
+        .{ .name = "events.huge", .kind = .observable_counter },
+        badDoubleCb,
+        @ptrCast(&skip_ctx),
+    );
+    _ = &oc;
+
+    const snap = try sdk_metrics.collect(&mp, std.testing.allocator);
+    defer sdk_metrics.freeSnapshot(std.testing.allocator, snap);
+    try std.testing.expectEqual(@as(i64, 0), snap[0].points[0].value.number.int);
+
+    // A finite, in-range double still records (truncated toward zero).
+    var ok_ctx = BadDoubleCtx{ .value = 1000.9 };
+    var oc2 = try m.createObservableCounter(
+        .{ .name = "events.ok", .kind = .observable_counter },
+        badDoubleCb,
+        @ptrCast(&ok_ctx),
+    );
+    _ = &oc2;
+    const snap2 = try sdk_metrics.collect(&mp, std.testing.allocator);
+    defer sdk_metrics.freeSnapshot(std.testing.allocator, snap2);
+    // Two instruments now; find the events.ok point.
+    var found: ?i64 = null;
+    for (snap2) |md| {
+        if (std.mem.eql(u8, md.name, "events.ok")) found = md.points[0].value.number.int;
+    }
+    try std.testing.expectEqual(@as(i64, 1000), found orelse return error.TestFailed);
+}
+
 // ---- Sync + async on the same provider don't collide ----
 
 fn fixedFiveCb(_: ?*anyopaque, observer: api_metrics.Observer) anyerror!void {

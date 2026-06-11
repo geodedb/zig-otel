@@ -211,6 +211,10 @@ fn canonicalizeIpv4(host: []const u8) ?[4]u8 {
 /// like `evil` yields null and the host is treated as a name).
 fn parseIntAuto(s: []const u8) ?u32 {
     if (s.len == 0) return null;
+    // `std.fmt.parseInt` accepts Zig integer syntax (leading sign, `_` digit
+    // separators) that `inet_aton` does not. Reject those so the guard's
+    // canonicalization mirrors the resolver exactly (QN3-3).
+    for (s) |c| if (c == '_' or c == '+' or c == '-') return null;
     if (s.len >= 2 and (s[1] == 'x' or s[1] == 'X') and s[0] == '0') {
         return std.fmt.parseInt(u32, s[2..], 16) catch null;
     }
@@ -296,6 +300,9 @@ pub fn validateHost(host_in: []const u8, allow_loopback: bool) !void {
     // parser rejects but getaddrinfo accepts (transport-agnostic guard). ---
     if (mappedEmbeddedIpv4(host_lc)) |v4| {
         if (ipv4Blocked(v4, allow_loopback)) return error.InvalidEndpoint;
+        // A non-blocked mapped form (e.g. ::ffff:1.2.3.4) intentionally falls
+        // through: parseIp6 rejects the hex-group form, so it reaches the DNS
+        // fallback and is accepted (correct — not a blocked address) (QN3-4).
     }
 
     // --- IPv6 literals (parse, then range-check on the address bytes) ---

@@ -13,7 +13,7 @@
 //     - parent  : up to 16 hex chars; OTel SpanContext doesn't track a
 //                 parent-span-id so we emit `0` and accept-and-discard.
 //     - flags   : hex-encoded byte; bit 0 = sampled, bit 1 = debug,
-//                 bit 2 = firehose. The OpenTelemetry SpanContext only
+//                 bit 3 = firehose (0x08). The OpenTelemetry SpanContext only
 //                 carries `flags.sampled`; debug collapses to sampled
 //                 on extract; firehose is dropped (no field to store
 //                 it, no use-site downstream).
@@ -35,7 +35,6 @@ pub const Carrier = propagator_mod.Carrier;
 pub const Fields = propagator_mod.Fields;
 pub const ExtractResult = propagator_mod.ExtractResult;
 pub const TextMapPropagator = propagator_mod.TextMapPropagator;
-pub const MapCarrier = propagator_mod.MapCarrier;
 
 pub const uber_trace_id_header: []const u8 = "uber-trace-id";
 pub const uberctx_prefix: []const u8 = "uberctx-";

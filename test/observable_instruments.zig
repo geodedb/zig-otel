@@ -365,6 +365,54 @@ test "observable up-down counter: in-range double observation still recorded (QN
     try std.testing.expectEqual(@as(i64, 42), snap[0].points[0].value.number.int);
 }
 
+test "observable up-down counter: exactly 2^63 is skipped, not panicked (QN2-2 boundary)" {
+    if (@import("build_options").otel_disabled) return error.SkipZigTest;
+    var resource = try sdk_resource.defaultResource(std.testing.allocator);
+    defer resource.deinit();
+    var mp = try sdk_metrics.MeterProvider.init(std.testing.allocator, .{ .resource = &resource });
+    defer mp.deinit();
+
+    const m = mp.meter(.{ .name = "obs.test" });
+    // 2^63 == 9223372036854775808.0. maxInt(i64) is 2^63-1 but rounds UP to
+    // 2^63 in f64, so a strict `>` upper bound let this exact value through
+    // into @intFromFloat → out-of-i64-range panic. The guard uses `>=`, so
+    // it must be SKIPPED (point stays 0), not panic.
+    var cb_ctx = BadDoubleCtx{ .value = 9223372036854775808.0 };
+    var oudc = try m.createObservableUpDownCounter(
+        .{ .name = "balance.pow63", .kind = .observable_up_down_counter },
+        badDoubleCb,
+        @ptrCast(&cb_ctx),
+    );
+    _ = &oudc;
+
+    const snap = try sdk_metrics.collect(&mp, std.testing.allocator);
+    defer sdk_metrics.freeSnapshot(std.testing.allocator, snap);
+    try std.testing.expectEqual(@as(i64, 0), snap[0].points[0].value.number.int);
+}
+
+test "observable up-down counter: largest in-range f64 still recorded (QN2-2 boundary)" {
+    if (@import("build_options").otel_disabled) return error.SkipZigTest;
+    var resource = try sdk_resource.defaultResource(std.testing.allocator);
+    defer resource.deinit();
+    var mp = try sdk_metrics.MeterProvider.init(std.testing.allocator, .{ .resource = &resource });
+    defer mp.deinit();
+
+    const m = mp.meter(.{ .name = "obs.test" });
+    // 9223372036854774784.0 == 2^63 - 1024, the largest f64 strictly below
+    // 2^63 and within i64 range. The `>=` guard must still accept it.
+    var cb_ctx = BadDoubleCtx{ .value = 9223372036854774784.0 };
+    var oudc = try m.createObservableUpDownCounter(
+        .{ .name = "balance.maxf64", .kind = .observable_up_down_counter },
+        badDoubleCb,
+        @ptrCast(&cb_ctx),
+    );
+    _ = &oudc;
+
+    const snap = try sdk_metrics.collect(&mp, std.testing.allocator);
+    defer sdk_metrics.freeSnapshot(std.testing.allocator, snap);
+    try std.testing.expectEqual(@as(i64, 9223372036854774784), snap[0].points[0].value.number.int);
+}
+
 // ---- Sync + async on the same provider don't collide ----
 
 fn fixedFiveCb(_: ?*anyopaque, observer: api_metrics.Observer) anyerror!void {

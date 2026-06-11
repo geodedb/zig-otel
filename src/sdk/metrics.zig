@@ -829,16 +829,21 @@ fn observerObserveDouble(ctx: ?*anyopaque, value: f64, attributes: []const attrs
             // Reject non-finite (NaN/±Inf) and out-of-`i64`-range doubles
             // before `@intFromFloat`, which is illegal behavior (panic in
             // Debug/ReleaseSafe, garbage in ReleaseFast) on such inputs.
+            // NB: `@floatFromInt(maxInt(i64))` rounds UP to 2^63 in f64, so
+            // the upper bound must be `>=` — a value of exactly 2^63 is out
+            // of i64 range and would still panic under a strict `>`.
             if (!std.math.isFinite(value)) return;
             if (value < @as(f64, @floatFromInt(std.math.minInt(i64))) or
-                value > @as(f64, @floatFromInt(std.math.maxInt(i64)))) return;
+                value >= @as(f64, @floatFromInt(std.math.maxInt(i64)))) return;
             v.* = @intFromFloat(value);
         },
         .sum_uint => |*v| {
             // Mirror the sum_int guard: reject negatives, non-finite, and
-            // out-of-`u64`-range doubles before `@intFromFloat`.
+            // out-of-`u64`-range doubles before `@intFromFloat`. Same f64
+            // rounding caveat as above — `@floatFromInt(maxInt(u64))` rounds
+            // up to 2^64, so the bound is `>=` (exactly 2^64 is out of range).
             if (value < 0 or !std.math.isFinite(value)) return;
-            if (value > @as(f64, @floatFromInt(std.math.maxInt(u64)))) return;
+            if (value >= @as(f64, @floatFromInt(std.math.maxInt(u64)))) return;
             v.* = @intFromFloat(value);
         },
         else => {},

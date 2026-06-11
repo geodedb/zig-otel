@@ -49,7 +49,11 @@ const ScopeKey2 = struct {
     version: []const u8,
 };
 
-const ScopeKey3 = struct {
+/// Shared `(name, version, schema_url)` scope hash key. Re-used by the
+/// logs encoder (`encode_logs.zig`) so the Wyhash seed and `eql` policy
+/// live in exactly one place (QN-NEW-3); span and log scope grouping must
+/// not drift.
+pub const ScopeKey3 = struct {
     name: []const u8,
     version: []const u8,
     schema_url: []const u8,
@@ -69,7 +73,9 @@ const ScopeKey2Context = struct {
     }
 };
 
-const ScopeKey3Context = struct {
+/// HashMap context for `ScopeKey3`. `pub` so the logs encoder shares it
+/// (QN-NEW-3).
+pub const ScopeKey3Context = struct {
     pub fn hash(_: @This(), k: ScopeKey3) u64 {
         var h = std.hash.Wyhash.init(0);
         h.update(k.name);
@@ -479,7 +485,13 @@ pub fn encodeSpansProto(allocator: std.mem.Allocator, items: []const exp.SpanDat
     return try w.toOwnedSlice();
 }
 
-fn writeKeyValue(w: *otlp.Writer, field_number: u32, kv: attrs_mod.Entry) !void {
+/// Encode one OTLP `KeyValue` (key + AnyValue) at `field_number`.
+///
+/// `pub` so the logs encoder (`encode_logs.zig`) shares the single
+/// definition (QN-NEW-3) — the redaction policy and the `else => {}`
+/// silent-drop must not diverge between the span and log paths. Span,
+/// log, and resource attributes all flow through this writer.
+pub fn writeKeyValue(w: *otlp.Writer, field_number: u32, kv: attrs_mod.Entry) !void {
     const start = try w.beginSubMessage(field_number);
     try w.writeString(otlp.fn_kv_key, kv.key);
     const v_start = try w.beginSubMessage(otlp.fn_kv_value);

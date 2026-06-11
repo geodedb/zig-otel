@@ -374,6 +374,102 @@ test "encodeLogsProto groups multi-scope batches into one ScopeLogs per scope" {
     try std.testing.expectEqual(@as(usize, 5), blocks[2].records.items.len);
 }
 
+test "encodeLogsProto encodes a 2-scope batch with attributes via shared writeKeyValue" {
+    // QN-NEW-3 guard: after sharing ScopeKey3 + writeKeyValue between the
+    // span and log encoders, a 2-scope log batch with attributes must still
+    // encode byte-correctly. Decodes the log-record attribute (field 6) to
+    // prove the shared key/value writer survived the refactor.
+    const a = std.testing.allocator;
+    var resource = try otel.sdk.resource.defaultResource(a);
+    defer resource.deinit();
+
+    var attrs_a = otel.internal.attributes.AttributeSet.init(a);
+    defer attrs_a.deinit();
+    try attrs_a.putString("tenant", "acme");
+
+    const scope_a: otel.api.trace.InstrumentationScope = .{ .name = "logger-a", .version = "1.0" };
+    const scope_b: otel.api.trace.InstrumentationScope = .{ .name = "logger-b", .version = "2.0" };
+
+    const items = [_]otel.sdk.exporter.LogData{
+        mkLogData(.{
+            .timestamp_unix_nano = 10,
+            .observed_unix_nano = 11,
+            .severity = .info,
+            .body = .{ .string = "a" },
+            .attributes = &attrs_a,
+        }, scope_a, &resource),
+        mkLogData(.{
+            .timestamp_unix_nano = 20,
+            .observed_unix_nano = 21,
+            .severity = .warn,
+            .body = .{ .string = "b" },
+        }, scope_b, &resource),
+    };
+
+    const out = try otel.exporters.otlp_http.encodeLogsProto(a, &items);
+    defer a.free(out);
+
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const blocks = try decodeScopeBlocks(arena.allocator(), out);
+
+    try std.testing.expectEqual(@as(usize, 2), blocks.len);
+    try std.testing.expectEqualStrings("logger-a", blocks[0].name);
+    try std.testing.expectEqualStrings("logger-b", blocks[1].name);
+    try std.testing.expectEqual(@as(usize, 1), blocks[0].records.items.len);
+    try std.testing.expectEqual(@as(usize, 1), blocks[1].records.items.len);
+
+    // Re-decode the first record to extract its attribute key/value.
+    var found_key: []const u8 = "";
+    var found_val: []const u8 = "";
+    {
+        // Walk the raw payload again, descending to the first log record's
+        // attributes (field 6 -> KeyValue{ key=1, value=2 -> string=1 }).
+        var top: Reader = .{ .buf = out };
+        outer: while (!top.eof()) {
+            const tag = try top.readTag();
+            if (tag.field == 1 and tag.wire == 2) {
+                var rl: Reader = .{ .buf = try top.readBytes() };
+                while (!rl.eof()) {
+                    const rt = try rl.readTag();
+                    if (rt.field == 2 and rt.wire == 2) {
+                        var sl: Reader = .{ .buf = try rl.readBytes() };
+                        while (!sl.eof()) {
+                            const st = try sl.readTag();
+                            if (st.field == 2 and st.wire == 2) { // log_records
+                                var lr: Reader = .{ .buf = try sl.readBytes() };
+                                while (!lr.eof()) {
+                                    const lt = try lr.readTag();
+                                    if (lt.field == 6 and lt.wire == 2) { // attribute KeyValue
+                                        var kv: Reader = .{ .buf = try lr.readBytes() };
+                                        while (!kv.eof()) {
+                                            const kt = try kv.readTag();
+                                            if (kt.field == 1 and kt.wire == 2) {
+                                                found_key = try kv.readBytes();
+                                            } else if (kt.field == 2 and kt.wire == 2) {
+                                                var av: Reader = .{ .buf = try kv.readBytes() };
+                                                while (!av.eof()) {
+                                                    const at = try av.readTag();
+                                                    if (at.field == 1 and at.wire == 2) {
+                                                        found_val = try av.readBytes();
+                                                    } else try av.skip(at.wire);
+                                                }
+                                            } else try kv.skip(kt.wire);
+                                        }
+                                        break :outer;
+                                    } else try lr.skip(lt.wire);
+                                }
+                            } else try sl.skip(st.wire);
+                        }
+                    } else try rl.skip(rt.wire);
+                }
+            } else try top.skip(tag.wire);
+        }
+    }
+    try std.testing.expectEqualStrings("tenant", found_key);
+    try std.testing.expectEqualStrings("acme", found_val);
+}
+
 test "encodeLogsProto skips invalid trace_id and span_id" {
     const a = std.testing.allocator;
     var resource = try otel.sdk.resource.defaultResource(a);

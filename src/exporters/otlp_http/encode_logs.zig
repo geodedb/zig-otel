@@ -43,10 +43,10 @@
 //   - One ResourceLogs per export call (caller drives batching at the
 //     `LogExporter` boundary; a single call carries one Resource).
 //   - One ScopeLogs per `(scope.name, scope.version, scope.schema_url)`
-//     bucket present in the batch — same hash-keyed `groupByScope`
-//     primitive the spans encoder uses (PR-5 / #138). Stage C's
-//     `ScopeKey3Context` is reused via the local copy below to keep the
-//     encoder stand-alone (private to the file, same as the span helper).
+//     bucket present in the batch — same hash-keyed bucketing the spans
+//     encoder uses (PR-5 / #138). The `ScopeKey3`/`ScopeKey3Context` hash
+//     key is now imported from `encode_proto.zig` (QN-NEW-3) so the span
+//     and log paths share one definition and cannot drift.
 //   - `time_unix_nano` and `observed_time_unix_nano` always go through
 //     `writeFixed64Field`, which writes zero verbatim because the proto
 //     declares the fields as `fixed64` (not `uint64`). That's a deliberate
@@ -73,38 +73,14 @@ const exp = @import("../../sdk/export.zig");
 const otlp = @import("../../generated/otlp.zig");
 const trace_api = @import("../../api/trace.zig");
 const logs_api = @import("../../api/logs.zig");
-const attrs_mod = @import("../../internal/attributes.zig");
-const redact = @import("../../internal/redact.zig");
-
-// ---------------------------------------------------------------- Scope hash key
-//
-// Local copy of the (name, version, schema_url) hash key used by the spans
-// encoder. Sharing across modules would tangle the visibility of a
-// < 30-LOC helper that also exists in the JSON encoder; keep the
-// duplication narrow. Closes GAP-PERF-PR-5 (#138)-style O(R) bucketing
-// for the logs path (parity with spans/metrics).
-const ScopeKey3 = struct {
-    name: []const u8,
-    version: []const u8,
-    schema_url: []const u8,
-};
-
-const ScopeKey3Context = struct {
-    pub fn hash(_: @This(), k: ScopeKey3) u64 {
-        var h = std.hash.Wyhash.init(0);
-        h.update(k.name);
-        h.update(&[_]u8{0});
-        h.update(k.version);
-        h.update(&[_]u8{0});
-        h.update(k.schema_url);
-        return h.final();
-    }
-    pub fn eql(_: @This(), a: ScopeKey3, b: ScopeKey3) bool {
-        return std.mem.eql(u8, a.name, b.name) and
-            std.mem.eql(u8, a.version, b.version) and
-            std.mem.eql(u8, a.schema_url, b.schema_url);
-    }
-};
+// QN-NEW-3: the scope hash key (`ScopeKey3`/`ScopeKey3Context`) and the
+// `writeKeyValue` encoder are shared with the span/metric encoder instead
+// of duplicated here, so the Wyhash seed, `eql` policy, redaction call,
+// and `else => {}` silent-drop live in exactly one place and cannot drift.
+const encode_proto = @import("encode_proto.zig");
+const ScopeKey3 = encode_proto.ScopeKey3;
+const ScopeKey3Context = encode_proto.ScopeKey3Context;
+const writeKeyValue = encode_proto.writeKeyValue;
 
 // ---------------------------------------------------------------- Log grouping
 //
@@ -275,24 +251,6 @@ fn writeBody(w: *otlp.Writer, body: logs_api.Body) !void {
         .none => {},
     }
     try w.commitSubMessage(v_start);
-}
-
-fn writeKeyValue(w: *otlp.Writer, field_number: u32, kv: attrs_mod.Entry) !void {
-    const start = try w.beginSubMessage(field_number);
-    try w.writeString(otlp.fn_kv_key, kv.key);
-    const v_start = try w.beginSubMessage(otlp.fn_kv_value);
-    switch (kv.value) {
-        // GAP-SEC-H-6 / GAP-SEC-L-4: redact sensitive string values
-        // before they hit the wire. Span / log / resource attributes
-        // all flow through the same redactor.
-        .string => |s| try w.writeString(otlp.fn_av_string, redact.maskString(kv.key, s)),
-        .bool => |b| try w.writeBool(otlp.fn_av_bool, b),
-        .int => |i| try w.writeSint64(otlp.fn_av_int, i),
-        .double => |d| try w.writeDouble(otlp.fn_av_double, d),
-        else => {},
-    }
-    try w.commitSubMessage(v_start);
-    try w.commitSubMessage(start);
 }
 
 test "encodeLogsProto handles empty input" {

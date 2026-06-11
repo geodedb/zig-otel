@@ -139,6 +139,14 @@ pub const Composite = struct {
 
         for (self.members) |p| {
             var part = try p.extract(allocator, arena, carrier);
+            // QN-NEW-9: free whatever `part` still owns when this iteration
+            // ends, on EVERY path — including the merge-into-existing branch
+            // where `merged.put` can fail (error.BaggageFull / OOM) and
+            // would otherwise early-return past an explicit `part.deinit()`.
+            // The first-member branch transfers `part.baggage` ownership into
+            // `merged_baggage` and nulls it, so this defer then only frees an
+            // already-empty `ExtractResult` (no double-free).
+            defer part.deinit();
             // Adopt the first span context that surfaces.
             if (out.span_context == null and part.span_context != null) {
                 out.span_context = part.span_context;
@@ -152,10 +160,7 @@ pub const Composite = struct {
                     for (pb.iter()) |entry| {
                         try merged.put(entry.key, entry.value, entry.metadata);
                     }
-                    part.deinit();
                 }
-            } else {
-                part.deinit();
             }
         }
         out.baggage = merged_baggage;

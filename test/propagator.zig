@@ -73,6 +73,74 @@ test "Composite extract tolerates malformed members without poisoning siblings" 
     try std.testing.expectEqualStrings("v", result.baggage.?.get("k").?);
 }
 
+// QN-NEW-9 — Composite.extract must free the in-flight `part` baggage on
+// the merge-error path. When a later member's baggage entry overflows the
+// accumulator (`merged.put` → error.BaggageFull), the early `try` return
+// must not leak the member's freshly-allocated `Baggage` (arena + entries).
+//
+// Trigger is deterministic: member 1 yields a Baggage already at the
+// `max_entries` cap; member 2 yields a Baggage with a *new* key, so the
+// first `merged.put` during the merge of member 2 returns BaggageFull.
+// Running under `std.testing.allocator` turns any leak of member 2's
+// `part` into a test failure.
+const FullBaggageProp = struct {
+    const baggage_api = otel.api.baggage;
+
+    fn extractFill(_: ?*anyopaque, allocator: std.mem.Allocator, _: std.mem.Allocator, _: propagator.Carrier) anyerror!propagator.ExtractResult {
+        var bag = baggage_api.Baggage.init(allocator);
+        errdefer bag.deinit();
+        var key_buf: [16]u8 = undefined;
+        var i: usize = 0;
+        while (i < baggage_api.max_entries) : (i += 1) {
+            const key = try std.fmt.bufPrint(key_buf[0..], "k{d}", .{i});
+            try bag.put(key, "v", null);
+        }
+        return .{ .baggage = bag };
+    }
+
+    fn extractOneNew(_: ?*anyopaque, allocator: std.mem.Allocator, _: std.mem.Allocator, _: propagator.Carrier) anyerror!propagator.ExtractResult {
+        var bag = baggage_api.Baggage.init(allocator);
+        errdefer bag.deinit();
+        // A key not present in the first member's 180 entries.
+        try bag.put("overflow-key", "v", null);
+        return .{ .baggage = bag };
+    }
+
+    const filler: propagator.TextMapPropagator = .{
+        .inject_fn = noopInject,
+        .extract_fn = extractFill,
+    };
+    const one_new: propagator.TextMapPropagator = .{
+        .inject_fn = noopInject,
+        .extract_fn = extractOneNew,
+    };
+
+    fn noopInject(_: ?*anyopaque, _: std.mem.Allocator, _: propagator.Carrier, _: propagator.Fields) anyerror!void {}
+};
+
+test "Composite extract frees baggage on merge-error (BaggageFull) path (QN-NEW-9)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var map: std.StringHashMap([]const u8) = .init(std.testing.allocator);
+    defer map.deinit();
+    var mc: propagator.MapCarrier = .{ .map = &map };
+
+    const members = [_]propagator.TextMapPropagator{ FullBaggageProp.filler, FullBaggageProp.one_new };
+    const composite = propagator.Composite.init(&members);
+
+    // The merge of member 2's `overflow-key` into the already-full
+    // accumulator surfaces error.BaggageFull. Either propagation of the
+    // error or a truncated-but-valid result is acceptable per existing
+    // semantics; what is NOT acceptable is leaking member 2's `part`,
+    // which std.testing.allocator would flag as a failure.
+    if (composite.extract(std.testing.allocator, arena.allocator(), mc.carrier())) |*result_const| {
+        var result = result_const.*;
+        result.deinit();
+    } else |err| {
+        try std.testing.expectEqual(error.BaggageFull, err);
+    }
+}
+
 test "propagatorBundleFromConfig default composite has tracecontext + baggage" {
     var cfg: config.Config = .{};
     var bundle = try config.propagatorBundleFromConfig(std.testing.allocator, &cfg, null);

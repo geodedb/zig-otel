@@ -186,6 +186,15 @@ pub const PeriodicMetricReader = struct {
     state: ReaderState = .idle,
     thread: ?std.Thread = null,
 
+    /// QN-NEW-5: export-failure surfacing. `collectAndExport` records the
+    /// last export error here and bumps `failed_exports` instead of
+    /// silently swallowing it. `forceFlush` reads these back so a caller
+    /// learns the collector rejected the export. Both are guarded by `mu`
+    /// on the threaded path; the inline path also returns the error
+    /// directly. `last_export_error` is `?anyerror`, latest-wins.
+    last_export_error: ?anyerror = null,
+    failed_exports: u64 = 0,
+
     pub fn init(
         allocator: std.mem.Allocator,
         provider: *sdk_metrics.MeterProvider,
@@ -233,6 +242,12 @@ pub const PeriodicMetricReader = struct {
             return;
         }
         const target_seq = self.flush_completed_seq + 1;
+        // QN-NEW-5: snapshot the failure count under `mu` so we can tell
+        // whether THIS flush cycle's export failed once the worker bumps
+        // the completion seq. The worker records any export error
+        // (recordExportError) before advancing flush_completed_seq, so the
+        // ordering is safe: seq advance implies the error field is set.
+        const failed_before = self.failed_exports;
         self.flush_pending = true;
         self.cond.signal();
 
@@ -252,7 +267,14 @@ pub const PeriodicMetricReader = struct {
             self.cond.timedWait(&self.mu, remaining) catch {};
             elapsed_ns = nanosNow() - start_ns;
         }
+        // Cycle completed. If the worker's export failed during it, surface
+        // the captured error rather than reporting success.
+        const export_err: ?anyerror = if (self.failed_exports > failed_before)
+            self.last_export_error
+        else
+            null;
         self.mu.unlock();
+        if (export_err) |err| return err;
     }
 
     /// Stop the timer thread and shut the exporter down. After this
@@ -334,10 +356,33 @@ pub const PeriodicMetricReader = struct {
         defer sdk_metrics.freeSnapshot(self.allocator, snap);
         if (snap.len == 0) return;
 
-        _ = self.exporter.exportMetrics(snap) catch {};
+        // QN-NEW-5: capture export failures instead of swallowing them so
+        // `forceFlush` can surface the underlying rejection (the collector
+        // refused the data) rather than only ever reporting timeouts.
+        if (self.exporter.exportMetrics(snap)) |_| {
+            // exported (the in-memory recorder / OTLP path returned a
+            // result); fall through to the flush below.
+        } else |err| {
+            self.recordExportError(err);
+            return err;
+        }
         // `forceFlush` propagates the export_timeout_ms budget to the
         // exporter so HTTP/gRPC clients can short-circuit hung calls.
-        self.exporter.forceFlush(self.export_timeout_ms) catch {};
+        self.exporter.forceFlush(self.export_timeout_ms) catch |err| {
+            self.recordExportError(err);
+            return err;
+        };
+    }
+
+    /// Record an export failure under `mu` so the threaded path's
+    /// `forceFlush` (which reads these fields after the seq advances) sees
+    /// a consistent view. Latest error wins; `failed_exports` is a running
+    /// count.
+    fn recordExportError(self: *PeriodicMetricReader, err: anyerror) void {
+        self.mu.lock();
+        self.last_export_error = err;
+        self.failed_exports += 1;
+        self.mu.unlock();
     }
 };
 

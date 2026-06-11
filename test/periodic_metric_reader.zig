@@ -65,6 +65,94 @@ const CountingExporter = struct {
     fn forceFlushFn(_: ?*anyopaque, _: u64) anyerror!void {}
 };
 
+// ---- Failing exporter helper (QN-NEW-5) ----
+//
+// exportMetrics always returns an error so the reader's export-failure
+// surfacing can be exercised deterministically via the inline path.
+
+const FailingExporter = struct {
+    calls: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
+
+    pub fn metricExporter(self: *FailingExporter) exp.MetricExporter {
+        return .{
+            .ctx = self,
+            .exportFn = expFn,
+            .shutdownFn = shutdownFn,
+            .forceFlushFn = forceFlushFn,
+        };
+    }
+
+    fn expFn(ctx: ?*anyopaque, _: []const exp.MetricData) anyerror!exp.SpanExportResult {
+        const self: *FailingExporter = @ptrCast(@alignCast(ctx.?));
+        _ = self.calls.fetchAdd(1, .acq_rel);
+        return error.ExportRejected;
+    }
+
+    fn shutdownFn(_: ?*anyopaque) void {}
+    fn forceFlushFn(_: ?*anyopaque, _: u64) anyerror!void {}
+};
+
+// ---- Test 0: forceFlush surfaces export failure (QN-NEW-5) ----
+
+test "PeriodicMetricReader: forceFlush surfaces export failure (inline)" {
+    if (@import("build_options").otel_disabled) return error.SkipZigTest;
+    var resource = try sdk_resource.defaultResource(std.testing.allocator);
+    defer resource.deinit();
+    var mp = try sdk_metrics.MeterProvider.init(std.testing.allocator, .{ .resource = &resource });
+    defer mp.deinit();
+
+    const m = mp.meter(.{ .name = "periodic.test" });
+    const c = try m.counter(.{ .name = "events", .kind = .counter });
+    c.add(1, &.{}); // ensure collect emits a snapshot so export is attempted
+
+    var fe = FailingExporter{};
+    var reader = try periodic_reader.PeriodicMetricReader.init(
+        std.testing.allocator,
+        &mp,
+        fe.metricExporter(),
+        .{ .export_interval_ms = 60_000, .export_timeout_ms = 1_000 },
+    );
+    defer reader.deinit();
+
+    // Deterministic inline path (no start()): the export failure must be
+    // surfaced rather than silently swallowed.
+    try std.testing.expectError(error.ExportRejected, reader.forceFlush(1_000));
+
+    // The exporter was actually invoked, and the failure was recorded.
+    try std.testing.expect(fe.calls.load(.acquire) >= 1);
+    try std.testing.expect(reader.failed_exports >= 1);
+    try std.testing.expectEqual(@as(?anyerror, error.ExportRejected), reader.last_export_error);
+}
+
+test "PeriodicMetricReader: forceFlush surfaces export failure (threaded)" {
+    if (@import("build_options").otel_disabled) return error.SkipZigTest;
+    var resource = try sdk_resource.defaultResource(std.testing.allocator);
+    defer resource.deinit();
+    var mp = try sdk_metrics.MeterProvider.init(std.testing.allocator, .{ .resource = &resource });
+    defer mp.deinit();
+
+    const m = mp.meter(.{ .name = "periodic.test" });
+    const c = try m.counter(.{ .name = "events", .kind = .counter });
+    c.add(1, &.{});
+
+    var fe = FailingExporter{};
+    var reader = try periodic_reader.PeriodicMetricReader.init(
+        std.testing.allocator,
+        &mp,
+        fe.metricExporter(),
+        // Long interval so only forceFlush drives a cycle; the worker
+        // thread runs the failing export and bumps the completion seq.
+        .{ .export_interval_ms = 60_000, .export_timeout_ms = 1_000 },
+    );
+    defer reader.deinit();
+
+    try reader.start();
+    // The started-thread path must surface the worker's export failure,
+    // not silently report success.
+    try std.testing.expectError(error.ExportRejected, reader.forceFlush(2_000));
+    try std.testing.expect(reader.failed_exports >= 1);
+}
+
 // ---- Test 1: interval-driven export ----
 
 test "PeriodicMetricReader: interval drives multiple exports" {

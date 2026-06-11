@@ -42,6 +42,47 @@ test "baggage propagator round-trip" {
     try std.testing.expectEqualStrings("value with spaces", decoded.get("k2").?);
 }
 
+// QN-NEW-10 — shared percent-codec round-trip. Pins the extracted
+// `src/propagation/percent.zig` so the W3C-baggage and Jaeger propagators
+// keep encoding/decoding identically.
+test "percent codec round-trips reserved, %, =, and non-ASCII bytes" {
+    const percent = otel.propagation.percent;
+    const original = "a b%c=d;é"; // space, %, =, ; and a non-ASCII byte.
+
+    var encoded: std.ArrayList(u8) = .empty;
+    defer encoded.deinit(std.testing.allocator);
+    try percent.percentEncode(std.testing.allocator, &encoded, original);
+
+    // Encoding must escape every reserved byte (no raw space/%/=/; survive).
+    for (encoded.items) |c| {
+        try std.testing.expect(c == '%' or percent.isUnreserved(c));
+    }
+
+    var decoded: std.ArrayList(u8) = .empty;
+    defer decoded.deinit(std.testing.allocator);
+    try percent.percentDecode(std.testing.allocator, &decoded, encoded.items);
+    try std.testing.expectEqualStrings(original, decoded.items);
+}
+
+test "percent decode of a known-encoded string matches expected bytes" {
+    const percent = otel.propagation.percent;
+    var decoded: std.ArrayList(u8) = .empty;
+    defer decoded.deinit(std.testing.allocator);
+    // "%20" -> space, "%25" -> '%', "%3D" -> '='.
+    try percent.percentDecode(std.testing.allocator, &decoded, "x%20y%25z%3Dw");
+    try std.testing.expectEqualStrings("x y%z=w", decoded.items);
+}
+
+test "percent decode rejects a truncated escape" {
+    const percent = otel.propagation.percent;
+    var decoded: std.ArrayList(u8) = .empty;
+    defer decoded.deinit(std.testing.allocator);
+    try std.testing.expectError(
+        error.InvalidPercentEncoding,
+        percent.percentDecode(std.testing.allocator, &decoded, "abc%2"),
+    );
+}
+
 // PR-6 / #139 — Baggage.put dupe-before-dedup regression.
 //
 // Pre-fix, `put` performed `arena.dupe(key)` + `arena.dupe(value)` (and

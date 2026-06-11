@@ -8,6 +8,7 @@
 const std = @import("std");
 const baggage_api = @import("../api/baggage.zig");
 const tc = @import("trace_context.zig");
+const percent = @import("percent.zig");
 
 pub const baggage_header: []const u8 = "baggage";
 
@@ -23,7 +24,7 @@ pub fn inject(arena: std.mem.Allocator, carrier: tc.Carrier, baggage: *const bag
         first = false;
         try buf.appendSlice(arena, entry.key);
         try buf.append(arena, '=');
-        try percentEncode(arena, &buf, entry.value);
+        try percent.percentEncode(arena, &buf, entry.value);
         if (entry.metadata) |m| {
             try buf.append(arena, ';');
             try buf.appendSlice(arena, m);
@@ -54,61 +55,13 @@ pub fn extract(allocator: std.mem.Allocator, carrier: tc.Carrier) !?baggage_api.
 
         var scratch: std.ArrayList(u8) = .empty;
         defer scratch.deinit(allocator);
-        try percentDecode(allocator, &scratch, value_encoded);
+        // Map the codec-neutral error back onto this module's error so the
+        // observable contract (and propagator.zig's catch) is unchanged.
+        percent.percentDecode(allocator, &scratch, value_encoded) catch return error.InvalidBaggageValue;
         try bag.put(key, scratch.items, meta);
     }
 
     return bag;
-}
-
-fn percentEncode(allocator: std.mem.Allocator, out: *std.ArrayList(u8), value: []const u8) !void {
-    for (value) |c| {
-        if (isUnreserved(c)) {
-            try out.append(allocator, c);
-        } else {
-            try out.append(allocator, '%');
-            try out.append(allocator, hexUpper(c >> 4));
-            try out.append(allocator, hexUpper(c & 0x0f));
-        }
-    }
-}
-
-fn percentDecode(allocator: std.mem.Allocator, out: *std.ArrayList(u8), value: []const u8) !void {
-    var i: usize = 0;
-    while (i < value.len) {
-        const c = value[i];
-        if (c == '%') {
-            if (i + 2 >= value.len) return error.InvalidBaggageValue;
-            const hi = nibble(value[i + 1]) catch return error.InvalidBaggageValue;
-            const lo = nibble(value[i + 2]) catch return error.InvalidBaggageValue;
-            try out.append(allocator, (hi << 4) | lo);
-            i += 3;
-        } else {
-            try out.append(allocator, c);
-            i += 1;
-        }
-    }
-}
-
-fn isUnreserved(c: u8) bool {
-    return switch (c) {
-        'a'...'z', 'A'...'Z', '0'...'9', '-', '.', '_', '~' => true,
-        else => false,
-    };
-}
-
-fn nibble(c: u8) !u8 {
-    return switch (c) {
-        '0'...'9' => c - '0',
-        'a'...'f' => c - 'a' + 10,
-        'A'...'F' => c - 'A' + 10,
-        else => error.InvalidHex,
-    };
-}
-
-fn hexUpper(n: u8) u8 {
-    const alphabet = "0123456789ABCDEF";
-    return alphabet[n & 0x0f];
 }
 
 test "inject and extract round-trip" {

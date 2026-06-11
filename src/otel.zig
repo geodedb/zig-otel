@@ -62,6 +62,9 @@ pub const propagation = struct {
     /// Jaeger propagator: `uber-trace-id` for SpanContext + per-entry
     /// `uberctx-<key>` headers for baggage. GAP-PROPAGATOR-JAEGER (#24).
     pub const jaeger = @import("propagation/jaeger.zig");
+    /// Shared RFC 3986 percent-codec used by the W3C-baggage and Jaeger
+    /// `uberctx-*` propagators. QN-NEW-10.
+    pub const percent = @import("propagation/percent.zig");
 };
 
 pub const sdk = struct {

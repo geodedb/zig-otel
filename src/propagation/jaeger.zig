@@ -29,6 +29,7 @@ const ctx_mod = @import("../api/context.zig");
 const id = @import("../internal/id.zig");
 const baggage_api = @import("../api/baggage.zig");
 const propagator_mod = @import("propagator.zig");
+const percent = @import("percent.zig");
 
 pub const Carrier = propagator_mod.Carrier;
 pub const Fields = propagator_mod.Fields;
@@ -84,7 +85,7 @@ fn injectUberctx(arena: std.mem.Allocator, carrier: Carrier, b: *const baggage_a
         const header_name = try std.fmt.allocPrint(arena, "{s}{s}", .{ uberctx_prefix, entry.key });
         var encoded: std.ArrayList(u8) = .empty;
         defer encoded.deinit(arena);
-        try percentEncode(arena, &encoded, entry.value);
+        try percent.percentEncode(arena, &encoded, entry.value);
         const owned_value = try arena.dupe(u8, encoded.items);
         try carrier.set(header_name, owned_value);
     }
@@ -187,7 +188,9 @@ fn uberctxVisitor(visitor_ctx: ?*anyopaque, key: []const u8, value: []const u8) 
 
     var decoded: std.ArrayList(u8) = .empty;
     defer decoded.deinit(accum.allocator);
-    percentDecode(accum.allocator, &decoded, value) catch return;
+    // Any decode failure (codec-neutral error) silently skips this entry —
+    // bad baggage mustn't poison sibling propagators.
+    percent.percentDecode(accum.allocator, &decoded, value) catch return;
     // Skip silently on validation failures — bad baggage entries
     // mustn't poison sibling propagators.
     accum.bag.put(baggage_key, decoded.items, null) catch return;
@@ -263,43 +266,6 @@ fn nibble(c: u8) !u8 {
     };
 }
 
-fn percentEncode(allocator: std.mem.Allocator, out: *std.ArrayList(u8), value: []const u8) !void {
-    for (value) |c| {
-        if (isUnreserved(c)) {
-            try out.append(allocator, c);
-        } else {
-            try out.append(allocator, '%');
-            try out.append(allocator, hexUpper(c >> 4));
-            try out.append(allocator, hexUpper(c & 0x0f));
-        }
-    }
-}
-
-fn percentDecode(allocator: std.mem.Allocator, out: *std.ArrayList(u8), value: []const u8) !void {
-    var i: usize = 0;
-    while (i < value.len) {
-        const c = value[i];
-        if (c == '%') {
-            if (i + 2 >= value.len) return error.InvalidJaegerHeader;
-            const hi = nibble(value[i + 1]) catch return error.InvalidJaegerHeader;
-            const lo = nibble(value[i + 2]) catch return error.InvalidJaegerHeader;
-            try out.append(allocator, (hi << 4) | lo);
-            i += 3;
-        } else {
-            try out.append(allocator, c);
-            i += 1;
-        }
-    }
-}
-
-fn isUnreserved(c: u8) bool {
-    return switch (c) {
-        'a'...'z', 'A'...'Z', '0'...'9', '-', '.', '_', '~' => true,
-        else => false,
-    };
-}
-
-fn hexUpper(n: u8) u8 {
-    const alphabet = "0123456789ABCDEF";
-    return alphabet[n & 0x0f];
-}
+// percentEncode / percentDecode / isUnreserved / hexUpper now live in the
+// shared `percent.zig` (QN-NEW-10). `nibble` is retained above because
+// `parseFlag` still uses it for the hex-encoded flags byte.

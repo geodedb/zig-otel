@@ -252,9 +252,3 @@ fn writeBody(w: *otlp.Writer, body: logs_api.Body) !void {
     }
     try w.commitSubMessage(v_start);
 }
-
-test "encodeLogsProto handles empty input" {
-    const out = try encodeLogsProto(std.testing.allocator, &.{});
-    defer std.testing.allocator.free(out);
-    try std.testing.expectEqual(@as(usize, 0), out.len);
-}

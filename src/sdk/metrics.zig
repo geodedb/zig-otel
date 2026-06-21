@@ -475,6 +475,8 @@ fn attrFingerprint(entries: []const attrs_mod.Entry) u64 {
     };
     std.sort.pdq(u8, idx_buf[0..n], Less{ .e = entries }, Less.lt);
 
+    // fips-exempt: non-security — attribute-set hashmap key hashing for metric
+    // aggregation; not a secret.
     var hasher = std.hash.Wyhash.init(0xC0FFEE);
     for (idx_buf[0..n]) |i| {
         const e = entries[i];
@@ -486,6 +488,7 @@ fn attrFingerprint(entries: []const attrs_mod.Entry) u64 {
     return hasher.final();
 }
 
+// fips-exempt: non-security — attribute-value contribution to the metric-key hash.
 fn hashValue(h: *std.hash.Wyhash, v: attrs_mod.Value) void {
     switch (v) {
         .string => |s| {

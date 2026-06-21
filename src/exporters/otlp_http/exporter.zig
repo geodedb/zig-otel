@@ -46,6 +46,7 @@ pub const OtlpHttpExporter = struct {
     /// custom transport (the test suite does) do not need to set this —
     /// the function pointer is dispatched directly.
     io: ?std.Io = null,
+    // fips-exempt: non-security — exporter-local ID/jitter PRNG; not a secret.
     prng: std.Random.DefaultPrng,
     closed: bool = false,
     /// GAP-SEC-M-6: the response-body buffer is now read-only via the
@@ -88,6 +89,7 @@ pub const OtlpHttpExporter = struct {
             .transport = .stdlib_io,
             // GAP-SEC-L-5: seed jitter PRNG from CSPRNG so two
             // exporter instances don't share a backoff schedule.
+            // fips-exempt: non-security — exporter PRNG (see field above).
             .prng = std.Random.DefaultPrng.init(id_mod.csprngU64()),
         };
     }

@@ -61,6 +61,7 @@ pub const ScopeKey3 = struct {
 
 const ScopeKey2Context = struct {
     pub fn hash(_: @This(), k: ScopeKey2) u64 {
+        // fips-exempt: non-security — OTLP instrumentation-scope hashmap key; not a secret.
         var h = std.hash.Wyhash.init(0);
         h.update(k.name);
         h.update(&[_]u8{0});
@@ -77,6 +78,7 @@ const ScopeKey2Context = struct {
 /// (QN-NEW-3).
 pub const ScopeKey3Context = struct {
     pub fn hash(_: @This(), k: ScopeKey3) u64 {
+        // fips-exempt: non-security — OTLP instrumentation-scope hashmap key; not a secret.
         var h = std.hash.Wyhash.init(0);
         h.update(k.name);
         h.update(&[_]u8{0});

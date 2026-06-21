@@ -655,6 +655,7 @@ pub const RetryPolicy = struct {
 
 /// Returns the next backoff delay in nanoseconds, applying full jitter.
 /// `attempt` starts at 0.
+// fips-exempt: non-security — full-jitter retry backoff randomness; not a secret.
 pub fn nextBackoff(policy: RetryPolicy, attempt: u32, prng: *std.Random.DefaultPrng) u64 {
     var delay_ms = policy.initial_backoff_ms;
     var i: u32 = 0;
@@ -681,6 +682,7 @@ pub const RetryState = struct {
     /// should continue the retry loop, `false` when the budget is
     /// exhausted (in which case the caller should return
     /// `error.RetryExhausted`). Does not sleep on the exhaustion path.
+    // fips-exempt: non-security — retry-backoff jitter (see nextBackoff).
     pub fn shouldRetry(self: *RetryState, prng: *std.Random.DefaultPrng) bool {
         self.attempt += 1;
         const backoff_ns = nextBackoff(self.policy, self.attempt, prng);
@@ -692,6 +694,7 @@ pub const RetryState = struct {
 };
 
 test "retry backoff scales with attempt" {
+    // fips-exempt: non-security — deterministic test PRNG.
     var prng = std.Random.DefaultPrng.init(1);
     const p = RetryPolicy{};
     const a = nextBackoff(p, 0, &prng);
@@ -700,6 +703,7 @@ test "retry backoff scales with attempt" {
 }
 
 test "retry state honors max_attempts" {
+    // fips-exempt: non-security — deterministic test PRNG.
     var prng = std.Random.DefaultPrng.init(1);
     var st: RetryState = .{
         .max_attempts = 2,

@@ -34,6 +34,7 @@ pub const OtlpGrpcExporter = struct {
     /// `error.UnsupportedTransport`. Mirrors the Phase 6
     /// `OtlpHttpExporter.io` pattern so processor wiring is symmetric.
     io: ?std.Io = null,
+    // fips-exempt: non-security — exporter-local ID/jitter PRNG; not a secret.
     prng: std.Random.DefaultPrng,
     closed: bool = false,
     /// PR-9 (#143): parsed endpoint cached at `init`. The endpoint is
@@ -71,6 +72,7 @@ pub const OtlpGrpcExporter = struct {
             .config = config,
             // GAP-SEC-L-5: seed jitter PRNG from CSPRNG so two
             // exporter instances don't share a backoff schedule.
+            // fips-exempt: non-security — exporter PRNG (see field above).
             .prng = std.Random.DefaultPrng.init(id_mod.csprngU64()),
             .parsed_endpoint = parsed,
         };

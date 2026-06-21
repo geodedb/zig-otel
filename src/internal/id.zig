@@ -126,9 +126,12 @@ pub const IdGenerator = struct {
 /// Backed by `std.Random.DefaultPrng` for cheap, non-crypto IDs. Callers who
 /// need crypto-quality randomness should plug in their own generator.
 pub const Random = struct {
+    // fips-exempt: non-security — trace/span ID generation; W3C correlation IDs,
+    // not secrets or keys (see doc-comment above).
     prng: std.Random.DefaultPrng,
 
     pub fn init(seed: u64) Random {
+        // fips-exempt: non-security — trace/span ID PRNG (see field above).
         return .{ .prng = std.Random.DefaultPrng.init(seed) };
     }
 
@@ -137,6 +140,8 @@ pub const Random = struct {
     /// stream. Use this in production; `init(seed)` remains for tests
     /// that need a deterministic sequence.
     pub fn initFromCsprng() Random {
+        // fips-exempt: non-security — trace/span ID PRNG seeded from OS CSPRNG for
+        // cross-provider uniqueness (GAP-SEC-H-5); IDs are correlators, not secrets.
         return .{ .prng = std.Random.DefaultPrng.init(csprngU64()) };
     }
 
@@ -300,4 +305,9 @@ test "sequence generator yields preset IDs" {
     try std.testing.expectEqualSlices(u8, &.{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 }, t.bytes[0..]);
     const s = g.nextSpanId();
     try std.testing.expectEqualSlices(u8, &.{ 16, 17, 18, 19, 20, 21, 22, 23 }, s.bytes[0..]);
+}
+
+test "fips-exempt annotation present on trace/span-id PRNG site" {
+    const src = @embedFile("id.zig");
+    try std.testing.expect(std.mem.indexOf(u8, src, "fips-exempt: non-security — trace/span ID generation") != null);
 }

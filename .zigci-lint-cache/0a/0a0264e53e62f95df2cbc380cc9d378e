@@ -1,0 +1,31 @@
+85:39:2:ZL001.no_undefined:use of 'undefined' may hide uninitialized memory bugs
+203:40:2:ZL001.no_undefined:use of 'undefined' may hide uninitialized memory bugs
+54:41:3:ZL003.no_empty_catch:empty catch block suppresses errors
+90:27:2:ZL204.no_dupe_import:duplicate import of 'resource.zig' (first at line 11)
+217:24:2:ZL204.no_dupe_import:duplicate import of 'resource.zig' (first at line 11)
+33:101:2:ZL300.max_line_length:line exceeds 100 characters (124)
+38:101:2:ZL300.max_line_length:line exceeds 100 characters (115)
+53:101:2:ZL300.max_line_length:line exceeds 100 characters (117)
+145:101:2:ZL300.max_line_length:line exceeds 100 characters (104)
+225:101:2:ZL300.max_line_length:line exceeds 100 characters (118)
+53:9:1:ZL009.var_should_be_const:variable 'data' is never reassigned; consider using 'const'
+153:13:1:ZL009.var_should_be_const:variable 'self' is never reassigned; consider using 'const'
+180:9:1:ZL009.var_should_be_const:variable 'rec' is never reassigned; consider using 'const'
+225:9:1:ZL009.var_should_be_const:variable 'lp' is never reassigned; consider using 'const'
+16:1:1:ZL011.missing_doc_comment:public declaration 'LogsConfig' is missing documentation
+28:1:1:ZL011.missing_doc_comment:public declaration 'SimpleLogProcessor' is missing documentation
+33:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+37:5:1:ZL011.missing_doc_comment:public declaration 'processor' is missing documentation
+67:1:1:ZL011.missing_doc_comment:public declaration 'LoggerProvider' is missing documentation
+83:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+118:5:1:ZL011.missing_doc_comment:public declaration 'deinit' is missing documentation
+159:5:1:ZL011.missing_doc_comment:public declaration 'forceFlush' is missing documentation
+163:5:1:ZL011.missing_doc_comment:public declaration 'logger' is missing documentation
+8:26:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+9:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+10:25:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+102:40:1:ZL603.missing_defer_cleanup:resource '.alloc(' may not be properly cleaned up; consider using defer
+109:40:1:ZL603.missing_defer_cleanup:resource '.alloc(' may not be properly cleaned up; consider using defer
+113:44:1:ZL603.missing_defer_cleanup:resource '.alloc(' may not be properly cleaned up; consider using defer
+89:40:1:ZL603.missing_defer_cleanup:resource '.create(' may not be properly cleaned up; consider using defer
+106:37:1:ZL603.missing_defer_cleanup:resource '.create(' may not be properly cleaned up; consider using defer

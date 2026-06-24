@@ -1,0 +1,16 @@
+116:86:3:ZL003.no_empty_catch:empty catch block suppresses errors
+256:54:3:ZL003.no_empty_catch:empty catch block suppresses errors
+289:33:3:ZL003.no_empty_catch:empty catch block suppresses errors
+314:60:3:ZL003.no_empty_catch:empty catch block suppresses errors
+323:37:3:ZL003.no_empty_catch:empty catch block suppresses errors
+98:101:2:ZL300.max_line_length:line exceeds 100 characters (104)
+125:58:2:ZL303.max_nesting:nesting depth exceeds 4 (6)
+63:5:1:ZL011.missing_doc_comment:public declaration 'timedWait' is missing documentation
+70:5:1:ZL011.missing_doc_comment:public declaration 'signal' is missing documentation
+84:5:1:ZL011.missing_doc_comment:public declaration 'broadcast' is missing documentation
+154:1:1:ZL011.missing_doc_comment:public declaration 'PeriodicMetricReader' is missing documentation
+187:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+293:5:1:ZL011.missing_doc_comment:public declaration 'deinit' is missing documentation
+33:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+34:31:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+217:27:1:ZL603.missing_defer_cleanup:resource 'std.Thread.spawn(' may not be properly cleaned up; consider using defer

@@ -1,0 +1,183 @@
+277:65:2:ZL002.no_unreachable:use of 'unreachable' may hide bugs
+101:101:2:ZL300.max_line_length:line exceeds 100 characters (115)
+119:101:2:ZL300.max_line_length:line exceeds 100 characters (105)
+95:13:1:ZL009.var_should_be_const:variable 'write_pos' is never reassigned; consider using 'const'
+107:17:1:ZL009.var_should_be_const:variable 'i' is never reassigned; consider using 'const'
+149:13:1:ZL009.var_should_be_const:variable 'bytes' is never reassigned; consider using 'const'
+155:13:1:ZL009.var_should_be_const:variable 'bytes' is never reassigned; consider using 'const'
+297:13:1:ZL009.var_should_be_const:variable 'v' is never reassigned; consider using 'const'
+298:13:1:ZL009.var_should_be_const:variable 'n' is never reassigned; consider using 'const'
+635:13:1:ZL009.var_should_be_const:variable 'w' is never reassigned; consider using 'const'
+640:13:1:ZL009.var_should_be_const:variable 'i' is never reassigned; consider using 'const'
+18:15:1:ZL010.magic_number:magic number 5; consider using a named constant
+108:40:1:ZL010.magic_number:magic number 7; consider using a named constant
+109:59:1:ZL010.magic_number:magic number 0x7f; consider using a named constant
+115:25:1:ZL010.magic_number:magic number 10; consider using a named constant
+142:70:1:ZL010.magic_number:magic number 0x7f; consider using a named constant
+143:19:1:ZL010.magic_number:magic number 7; consider using a named constant
+266:64:1:ZL010.magic_number:magic number 10; consider using a named constant
+284:40:1:ZL010.magic_number:magic number 10; consider using a named constant
+299:36:1:ZL010.magic_number:magic number 7; consider using a named constant
+470:23:1:ZL010.magic_number:magic number 127; consider using a named constant
+472:23:1:ZL010.magic_number:magic number 300; consider using a named constant
+473:53:1:ZL010.magic_number:magic number 0x7f; consider using a named constant
+473:71:1:ZL010.magic_number:magic number 0xac; consider using a named constant
+504:47:1:ZL010.magic_number:magic number 0x0a; consider using a named constant
+512:46:1:ZL010.magic_number:magic number 200; consider using a named constant
+516:52:1:ZL010.magic_number:magic number 200; consider using a named constant
+517:41:1:ZL010.magic_number:magic number 0x0a; consider using a named constant
+518:41:1:ZL010.magic_number:magic number 0xc8; consider using a named constant
+548:13:1:ZL010.magic_number:magic number 0x0a; consider using a named constant
+548:19:1:ZL010.magic_number:magic number 0x0b; consider using a named constant
+548:25:1:ZL010.magic_number:magic number 0x12; consider using a named constant
+548:31:1:ZL010.magic_number:magic number 0x03; consider using a named constant
+548:52:1:ZL010.magic_number:magic number 0x1a; consider using a named constant
+548:58:1:ZL010.magic_number:magic number 0x04; consider using a named constant
+581:9:1:ZL010.magic_number:magic number 0x0a; consider using a named constant
+581:15:1:ZL010.magic_number:magic number 14; consider using a named constant
+582:9:1:ZL010.magic_number:magic number 0x12; consider using a named constant
+582:15:1:ZL010.magic_number:magic number 12; consider using a named constant
+583:9:1:ZL010.magic_number:magic number 0x1a; consider using a named constant
+583:15:1:ZL010.magic_number:magic number 10; consider using a named constant
+584:9:1:ZL010.magic_number:magic number 0x22; consider using a named constant
+585:9:1:ZL010.magic_number:magic number 0x2a; consider using a named constant
+585:15:1:ZL010.magic_number:magic number 6; consider using a named constant
+586:9:1:ZL010.magic_number:magic number 0x0a; consider using a named constant
+586:15:1:ZL010.magic_number:magic number 4; consider using a named constant
+599:46:1:ZL010.magic_number:magic number 5; consider using a named constant
+602:46:1:ZL010.magic_number:magic number 300; consider using a named constant
+607:52:1:ZL010.magic_number:magic number 5; consider using a named constant
+607:64:1:ZL010.magic_number:magic number 300; consider using a named constant
+608:41:1:ZL010.magic_number:magic number 0x0a; consider using a named constant
+609:41:1:ZL010.magic_number:magic number 5; consider using a named constant
+612:41:1:ZL010.magic_number:magic number 0x12; consider using a named constant
+613:41:1:ZL010.magic_number:magic number 0xac; consider using a named constant
+14:1:1:ZL011.missing_doc_comment:public declaration 'WireType' is missing documentation
+21:1:1:ZL011.missing_doc_comment:public declaration 'Writer' is missing documentation
+61:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+65:5:1:ZL011.missing_doc_comment:public declaration 'deinit' is missing documentation
+134:5:1:ZL011.missing_doc_comment:public declaration 'writeTag' is missing documentation
+139:5:1:ZL011.missing_doc_comment:public declaration 'writeVarint' is missing documentation
+148:5:1:ZL011.missing_doc_comment:public declaration 'writeFixed64' is missing documentation
+154:5:1:ZL011.missing_doc_comment:public declaration 'writeFixed32' is missing documentation
+160:5:1:ZL011.missing_doc_comment:public declaration 'writeBool' is missing documentation
+166:5:1:ZL011.missing_doc_comment:public declaration 'writeUint64' is missing documentation
+172:5:1:ZL011.missing_doc_comment:public declaration 'writeSint64' is missing documentation
+179:5:1:ZL011.missing_doc_comment:public declaration 'writeFixed64Field' is missing documentation
+193:5:1:ZL011.missing_doc_comment:public declaration 'writeDouble' is missing documentation
+200:5:1:ZL011.missing_doc_comment:public declaration 'writeString' is missing documentation
+207:5:1:ZL011.missing_doc_comment:public declaration 'writeBytes' is missing documentation
+270:5:1:ZL011.missing_doc_comment:public declaration 'commitSubMessage' is missing documentation
+306:1:1:ZL011.missing_doc_comment:public declaration 'fn_resource_spans' is missing documentation
+307:1:1:ZL011.missing_doc_comment:public declaration 'fn_scope_spans' is missing documentation
+308:1:1:ZL011.missing_doc_comment:public declaration 'fn_resource' is missing documentation
+309:1:1:ZL011.missing_doc_comment:public declaration 'fn_scope' is missing documentation
+310:1:1:ZL011.missing_doc_comment:public declaration 'fn_spans' is missing documentation
+311:1:1:ZL011.missing_doc_comment:public declaration 'fn_schema_url' is missing documentation
+313:1:1:ZL011.missing_doc_comment:public declaration 'fn_span_trace_id' is missing documentation
+314:1:1:ZL011.missing_doc_comment:public declaration 'fn_span_span_id' is missing documentation
+315:1:1:ZL011.missing_doc_comment:public declaration 'fn_span_trace_state' is missing documentation
+316:1:1:ZL011.missing_doc_comment:public declaration 'fn_span_parent_span_id' is missing documentation
+317:1:1:ZL011.missing_doc_comment:public declaration 'fn_span_name' is missing documentation
+318:1:1:ZL011.missing_doc_comment:public declaration 'fn_span_kind' is missing documentation
+319:1:1:ZL011.missing_doc_comment:public declaration 'fn_span_start_unix_nano' is missing documentation
+320:1:1:ZL011.missing_doc_comment:public declaration 'fn_span_end_unix_nano' is missing documentation
+321:1:1:ZL011.missing_doc_comment:public declaration 'fn_span_attributes' is missing documentation
+322:1:1:ZL011.missing_doc_comment:public declaration 'fn_span_dropped_attributes_count' is missing documentation
+323:1:1:ZL011.missing_doc_comment:public declaration 'fn_span_events' is missing documentation
+324:1:1:ZL011.missing_doc_comment:public declaration 'fn_span_dropped_events_count' is missing documentation
+325:1:1:ZL011.missing_doc_comment:public declaration 'fn_span_links' is missing documentation
+326:1:1:ZL011.missing_doc_comment:public declaration 'fn_span_dropped_links_count' is missing documentation
+327:1:1:ZL011.missing_doc_comment:public declaration 'fn_span_status' is missing documentation
+329:1:1:ZL011.missing_doc_comment:public declaration 'fn_kv_key' is missing documentation
+330:1:1:ZL011.missing_doc_comment:public declaration 'fn_kv_value' is missing documentation
+332:1:1:ZL011.missing_doc_comment:public declaration 'fn_av_string' is missing documentation
+333:1:1:ZL011.missing_doc_comment:public declaration 'fn_av_bool' is missing documentation
+334:1:1:ZL011.missing_doc_comment:public declaration 'fn_av_int' is missing documentation
+335:1:1:ZL011.missing_doc_comment:public declaration 'fn_av_double' is missing documentation
+336:1:1:ZL011.missing_doc_comment:public declaration 'fn_av_array' is missing documentation
+337:1:1:ZL011.missing_doc_comment:public declaration 'fn_av_kvlist' is missing documentation
+338:1:1:ZL011.missing_doc_comment:public declaration 'fn_av_bytes' is missing documentation
+340:1:1:ZL011.missing_doc_comment:public declaration 'fn_status_message' is missing documentation
+341:1:1:ZL011.missing_doc_comment:public declaration 'fn_status_code' is missing documentation
+343:1:1:ZL011.missing_doc_comment:public declaration 'fn_event_time_unix_nano' is missing documentation
+344:1:1:ZL011.missing_doc_comment:public declaration 'fn_event_name' is missing documentation
+345:1:1:ZL011.missing_doc_comment:public declaration 'fn_event_attributes' is missing documentation
+346:1:1:ZL011.missing_doc_comment:public declaration 'fn_event_dropped_attributes_count' is missing documentation
+348:1:1:ZL011.missing_doc_comment:public declaration 'fn_link_trace_id' is missing documentation
+349:1:1:ZL011.missing_doc_comment:public declaration 'fn_link_span_id' is missing documentation
+350:1:1:ZL011.missing_doc_comment:public declaration 'fn_link_trace_state' is missing documentation
+351:1:1:ZL011.missing_doc_comment:public declaration 'fn_link_attributes' is missing documentation
+352:1:1:ZL011.missing_doc_comment:public declaration 'fn_link_dropped_attributes_count' is missing documentation
+354:1:1:ZL011.missing_doc_comment:public declaration 'fn_resource_attributes' is missing documentation
+355:1:1:ZL011.missing_doc_comment:public declaration 'fn_resource_dropped_attributes_count' is missing documentation
+357:1:1:ZL011.missing_doc_comment:public declaration 'fn_scope_name' is missing documentation
+358:1:1:ZL011.missing_doc_comment:public declaration 'fn_scope_version' is missing documentation
+359:1:1:ZL011.missing_doc_comment:public declaration 'fn_scope_attributes' is missing documentation
+360:1:1:ZL011.missing_doc_comment:public declaration 'fn_scope_dropped_attributes_count' is missing documentation
+362:1:1:ZL011.missing_doc_comment:public declaration 'status_code_unset' is missing documentation
+363:1:1:ZL011.missing_doc_comment:public declaration 'status_code_ok' is missing documentation
+364:1:1:ZL011.missing_doc_comment:public declaration 'status_code_error' is missing documentation
+366:1:1:ZL011.missing_doc_comment:public declaration 'span_kind_unspecified' is missing documentation
+367:1:1:ZL011.missing_doc_comment:public declaration 'span_kind_internal' is missing documentation
+368:1:1:ZL011.missing_doc_comment:public declaration 'span_kind_server' is missing documentation
+369:1:1:ZL011.missing_doc_comment:public declaration 'span_kind_client' is missing documentation
+370:1:1:ZL011.missing_doc_comment:public declaration 'span_kind_producer' is missing documentation
+371:1:1:ZL011.missing_doc_comment:public declaration 'span_kind_consumer' is missing documentation
+380:1:1:ZL011.missing_doc_comment:public declaration 'fn_resource_metrics' is missing documentation
+381:1:1:ZL011.missing_doc_comment:public declaration 'fn_rm_resource' is missing documentation
+382:1:1:ZL011.missing_doc_comment:public declaration 'fn_rm_scope_metrics' is missing documentation
+383:1:1:ZL011.missing_doc_comment:public declaration 'fn_rm_schema_url' is missing documentation
+385:1:1:ZL011.missing_doc_comment:public declaration 'fn_sm_scope' is missing documentation
+386:1:1:ZL011.missing_doc_comment:public declaration 'fn_sm_metrics' is missing documentation
+387:1:1:ZL011.missing_doc_comment:public declaration 'fn_sm_schema_url' is missing documentation
+389:1:1:ZL011.missing_doc_comment:public declaration 'fn_metric_name' is missing documentation
+390:1:1:ZL011.missing_doc_comment:public declaration 'fn_metric_description' is missing documentation
+391:1:1:ZL011.missing_doc_comment:public declaration 'fn_metric_unit' is missing documentation
+393:1:1:ZL011.missing_doc_comment:public declaration 'fn_metric_gauge' is missing documentation
+394:1:1:ZL011.missing_doc_comment:public declaration 'fn_metric_sum' is missing documentation
+395:1:1:ZL011.missing_doc_comment:public declaration 'fn_metric_histogram' is missing documentation
+398:1:1:ZL011.missing_doc_comment:public declaration 'fn_sum_data_points' is missing documentation
+399:1:1:ZL011.missing_doc_comment:public declaration 'fn_sum_aggregation_temporality' is missing documentation
+400:1:1:ZL011.missing_doc_comment:public declaration 'fn_sum_is_monotonic' is missing documentation
+401:1:1:ZL011.missing_doc_comment:public declaration 'fn_gauge_data_points' is missing documentation
+402:1:1:ZL011.missing_doc_comment:public declaration 'fn_hist_data_points' is missing documentation
+403:1:1:ZL011.missing_doc_comment:public declaration 'fn_hist_aggregation_temporality' is missing documentation
+406:1:1:ZL011.missing_doc_comment:public declaration 'fn_ndp_start_time_unix_nano' is missing documentation
+407:1:1:ZL011.missing_doc_comment:public declaration 'fn_ndp_time_unix_nano' is missing documentation
+408:1:1:ZL011.missing_doc_comment:public declaration 'fn_ndp_as_double' is missing documentation
+409:1:1:ZL011.missing_doc_comment:public declaration 'fn_ndp_as_int' is missing documentation
+410:1:1:ZL011.missing_doc_comment:public declaration 'fn_ndp_attributes' is missing documentation
+411:1:1:ZL011.missing_doc_comment:public declaration 'fn_ndp_flags' is missing documentation
+414:1:1:ZL011.missing_doc_comment:public declaration 'fn_hdp_start_time_unix_nano' is missing documentation
+415:1:1:ZL011.missing_doc_comment:public declaration 'fn_hdp_time_unix_nano' is missing documentation
+416:1:1:ZL011.missing_doc_comment:public declaration 'fn_hdp_count' is missing documentation
+417:1:1:ZL011.missing_doc_comment:public declaration 'fn_hdp_sum' is missing documentation
+418:1:1:ZL011.missing_doc_comment:public declaration 'fn_hdp_bucket_counts' is missing documentation
+419:1:1:ZL011.missing_doc_comment:public declaration 'fn_hdp_explicit_bounds' is missing documentation
+420:1:1:ZL011.missing_doc_comment:public declaration 'fn_hdp_attributes' is missing documentation
+421:1:1:ZL011.missing_doc_comment:public declaration 'fn_hdp_flags' is missing documentation
+422:1:1:ZL011.missing_doc_comment:public declaration 'fn_hdp_min' is missing documentation
+423:1:1:ZL011.missing_doc_comment:public declaration 'fn_hdp_max' is missing documentation
+426:1:1:ZL011.missing_doc_comment:public declaration 'aggregation_temporality_unspecified' is missing documentation
+427:1:1:ZL011.missing_doc_comment:public declaration 'aggregation_temporality_delta' is missing documentation
+428:1:1:ZL011.missing_doc_comment:public declaration 'aggregation_temporality_cumulative' is missing documentation
+439:1:1:ZL011.missing_doc_comment:public declaration 'fn_resource_logs' is missing documentation
+440:1:1:ZL011.missing_doc_comment:public declaration 'fn_rl_resource' is missing documentation
+441:1:1:ZL011.missing_doc_comment:public declaration 'fn_rl_scope_logs' is missing documentation
+442:1:1:ZL011.missing_doc_comment:public declaration 'fn_rl_schema_url' is missing documentation
+444:1:1:ZL011.missing_doc_comment:public declaration 'fn_sl_scope' is missing documentation
+445:1:1:ZL011.missing_doc_comment:public declaration 'fn_sl_log_records' is missing documentation
+446:1:1:ZL011.missing_doc_comment:public declaration 'fn_sl_schema_url' is missing documentation
+452:1:1:ZL011.missing_doc_comment:public declaration 'fn_lr_time_unix_nano' is missing documentation
+453:1:1:ZL011.missing_doc_comment:public declaration 'fn_lr_severity_number' is missing documentation
+454:1:1:ZL011.missing_doc_comment:public declaration 'fn_lr_severity_text' is missing documentation
+455:1:1:ZL011.missing_doc_comment:public declaration 'fn_lr_body' is missing documentation
+456:1:1:ZL011.missing_doc_comment:public declaration 'fn_lr_attributes' is missing documentation
+457:1:1:ZL011.missing_doc_comment:public declaration 'fn_lr_dropped_attributes_count' is missing documentation
+458:1:1:ZL011.missing_doc_comment:public declaration 'fn_lr_flags' is missing documentation
+459:1:1:ZL011.missing_doc_comment:public declaration 'fn_lr_trace_id' is missing documentation
+460:1:1:ZL011.missing_doc_comment:public declaration 'fn_lr_span_id' is missing documentation
+461:1:1:ZL011.missing_doc_comment:public declaration 'fn_lr_observed_time_unix_nano' is missing documentation
+462:1:1:ZL011.missing_doc_comment:public declaration 'fn_lr_event_name' is missing documentation
+21:18:1:ZL605.large_struct_copy:struct 'Writer' has 60 fields; consider passing by pointer to avoid copies

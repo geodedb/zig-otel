@@ -1,0 +1,60 @@
+269:58:3:ZL003.no_empty_catch:empty catch block suppresses errors
+270:62:3:ZL003.no_empty_catch:empty catch block suppresses errors
+12:21:2:ZL204.no_dupe_import:duplicate import of 'context.zig' (first at line 11)
+13:17:2:ZL204.no_dupe_import:duplicate import of 'context.zig' (first at line 11)
+118:101:2:ZL300.max_line_length:line exceeds 100 characters (138)
+260:101:2:ZL300.max_line_length:line exceeds 100 characters (117)
+272:101:2:ZL300.max_line_length:line exceeds 100 characters (115)
+283:101:2:ZL300.max_line_length:line exceeds 100 characters (108)
+329:101:2:ZL300.max_line_length:line exceeds 100 characters (123)
+337:101:2:ZL300.max_line_length:line exceeds 100 characters (112)
+356:101:2:ZL300.max_line_length:line exceeds 100 characters (102)
+349:9:1:ZL009.var_should_be_const:variable 'dummy' is never reassigned; consider using 'const'
+351:42:1:ZL010.magic_number:magic number 3; consider using a named constant
+351:45:1:ZL010.magic_number:magic number 4; consider using a named constant
+351:48:1:ZL010.magic_number:magic number 5; consider using a named constant
+351:51:1:ZL010.magic_number:magic number 6; consider using a named constant
+351:54:1:ZL010.magic_number:magic number 7; consider using a named constant
+351:60:1:ZL010.magic_number:magic number 9; consider using a named constant
+351:63:1:ZL010.magic_number:magic number 10; consider using a named constant
+351:67:1:ZL010.magic_number:magic number 11; consider using a named constant
+351:71:1:ZL010.magic_number:magic number 12; consider using a named constant
+351:75:1:ZL010.magic_number:magic number 13; consider using a named constant
+351:79:1:ZL010.magic_number:magic number 14; consider using a named constant
+351:83:1:ZL010.magic_number:magic number 15; consider using a named constant
+352:35:1:ZL010.magic_number:magic number 17; consider using a named constant
+352:39:1:ZL010.magic_number:magic number 18; consider using a named constant
+352:43:1:ZL010.magic_number:magic number 19; consider using a named constant
+352:47:1:ZL010.magic_number:magic number 20; consider using a named constant
+352:51:1:ZL010.magic_number:magic number 21; consider using a named constant
+352:55:1:ZL010.magic_number:magic number 22; consider using a named constant
+352:59:1:ZL010.magic_number:magic number 23; consider using a named constant
+352:63:1:ZL010.magic_number:magic number 24; consider using a named constant
+16:1:1:ZL011.missing_doc_comment:public declaration 'SpanKind' is missing documentation
+24:5:1:ZL011.missing_doc_comment:public declaration 'toString' is missing documentation
+36:1:1:ZL011.missing_doc_comment:public declaration 'StatusCode' is missing documentation
+41:5:1:ZL011.missing_doc_comment:public declaration 'toString' is missing documentation
+50:1:1:ZL011.missing_doc_comment:public declaration 'Status' is missing documentation
+55:1:1:ZL011.missing_doc_comment:public declaration 'InstrumentationScope' is missing documentation
+61:1:1:ZL011.missing_doc_comment:public declaration 'Link' is missing documentation
+66:1:1:ZL011.missing_doc_comment:public declaration 'Event' is missing documentation
+72:1:1:ZL011.missing_doc_comment:public declaration 'SpanOptions' is missing documentation
+110:5:1:ZL011.missing_doc_comment:public declaration 'Recycler' is missing documentation
+118:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+135:5:1:ZL011.missing_doc_comment:public declaration 'deinit' is missing documentation
+198:1:1:ZL011.missing_doc_comment:public declaration 'Span' is missing documentation
+207:5:1:ZL011.missing_doc_comment:public declaration 'isRecording' is missing documentation
+212:5:1:ZL011.missing_doc_comment:public declaration 'end' is missing documentation
+225:5:1:ZL011.missing_doc_comment:public declaration 'setName' is missing documentation
+233:5:1:ZL011.missing_doc_comment:public declaration 'setStatus' is missing documentation
+246:5:1:ZL011.missing_doc_comment:public declaration 'setAttribute' is missing documentation
+252:5:1:ZL011.missing_doc_comment:public declaration 'setStringAttribute' is missing documentation
+256:5:1:ZL011.missing_doc_comment:public declaration 'setIntAttribute' is missing documentation
+260:5:1:ZL011.missing_doc_comment:public declaration 'recordException' is missing documentation
+317:5:1:ZL011.missing_doc_comment:public declaration 'fromHandle' is missing documentation
+321:5:1:ZL011.missing_doc_comment:public declaration 'noop' is missing documentation
+331:5:1:ZL011.missing_doc_comment:public declaration 'startSpan' is missing documentation
+9:20:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+10:23:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+221:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+267:31:1:ZL603.missing_defer_cleanup:resource '.create(' may not be properly cleaned up; consider using defer

@@ -1,0 +1,6 @@
+68:9:1:ZL009.var_should_be_const:variable 'count' is never reassigned; consider using 'const'
+69:9:1:ZL009.var_should_be_const:variable 'it' is never reassigned; consider using 'const'
+51:18:1:ZL010.magic_number:magic number 0x7F; consider using a named constant
+12:1:1:ZL011.missing_doc_comment:public declaration 'HeaderEntry' is missing documentation
+37:1:1:ZL011.missing_doc_comment:public declaration 'isValidHeaderName' is missing documentation
+43:1:1:ZL011.missing_doc_comment:public declaration 'isValidHeaderValue' is missing documentation

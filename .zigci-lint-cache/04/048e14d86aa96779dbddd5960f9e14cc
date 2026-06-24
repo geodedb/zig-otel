@@ -1,0 +1,69 @@
+122:55:3:ZL003.no_empty_catch:empty catch block suppresses errors
+278:71:3:ZL003.no_empty_catch:empty catch block suppresses errors
+314:54:3:ZL003.no_empty_catch:empty catch block suppresses errors
+374:46:3:ZL003.no_empty_catch:empty catch block suppresses errors
+539:33:3:ZL003.no_empty_catch:empty catch block suppresses errors
+94:101:2:ZL300.max_line_length:line exceeds 100 characters (122)
+99:101:2:ZL300.max_line_length:line exceeds 100 characters (120)
+231:101:2:ZL300.max_line_length:line exceeds 100 characters (159)
+326:101:2:ZL300.max_line_length:line exceeds 100 characters (117)
+690:101:2:ZL300.max_line_length:line exceeds 100 characters (109)
+263:59:2:ZL303.max_nesting:nesting depth exceeds 4 (6)
+661:9:1:ZL009.var_should_be_const:variable 'i' is never reassigned; consider using 'const'
+707:9:1:ZL009.var_should_be_const:variable 'prng' is never reassigned; consider using 'const'
+708:9:1:ZL009.var_should_be_const:variable 'st' is never reassigned; consider using 'const'
+142:29:1:ZL010.magic_number:magic number 2048; consider using a named constant
+144:30:1:ZL010.magic_number:magic number 5_000; consider using a named constant
+150:30:1:ZL010.magic_number:magic number 30_000; consider using a named constant
+314:39:1:ZL010.magic_number:magic number 5_000_000_000; consider using a named constant
+539:26:1:ZL010.magic_number:magic number 5_000; consider using a named constant
+651:27:1:ZL010.magic_number:magic number 5_000; consider using a named constant
+652:27:1:ZL010.magic_number:magic number 30_000; consider using a named constant
+653:17:1:ZL010.magic_number:magic number 0xC0FFEE; consider using a named constant
+678:25:1:ZL010.magic_number:magic number 5; consider using a named constant
+710:86:1:ZL010.magic_number:magic number 1_000_000; consider using a named constant
+28:1:1:ZL011.missing_doc_comment:public declaration 'SpanData' is missing documentation
+47:1:1:ZL011.missing_doc_comment:public declaration 'SpanExportResult' is missing documentation
+49:1:1:ZL011.missing_doc_comment:public declaration 'SpanExporter' is missing documentation
+55:5:1:ZL011.missing_doc_comment:public declaration 'exportSpans' is missing documentation
+59:5:1:ZL011.missing_doc_comment:public declaration 'shutdown' is missing documentation
+63:5:1:ZL011.missing_doc_comment:public declaration 'forceFlush' is missing documentation
+68:1:1:ZL011.missing_doc_comment:public declaration 'SpanProcessor' is missing documentation
+74:5:1:ZL011.missing_doc_comment:public declaration 'onEnd' is missing documentation
+78:5:1:ZL011.missing_doc_comment:public declaration 'forceFlush' is missing documentation
+82:5:1:ZL011.missing_doc_comment:public declaration 'shutdown' is missing documentation
+94:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+98:5:1:ZL011.missing_doc_comment:public declaration 'processor' is missing documentation
+188:1:1:ZL011.missing_doc_comment:public declaration 'BatchSpanProcessor' is missing documentation
+231:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+294:5:1:ZL011.missing_doc_comment:public declaration 'deinit' is missing documentation
+325:5:1:ZL011.missing_doc_comment:public declaration 'processor' is missing documentation
+545:1:1:ZL011.missing_doc_comment:public declaration 'NumberValue' is missing documentation
+550:1:1:ZL011.missing_doc_comment:public declaration 'HistogramPoint' is missing documentation
+559:1:1:ZL011.missing_doc_comment:public declaration 'DataPoint' is missing documentation
+569:1:1:ZL011.missing_doc_comment:public declaration 'MetricData' is missing documentation
+581:1:1:ZL011.missing_doc_comment:public declaration 'MetricExporter' is missing documentation
+587:5:1:ZL011.missing_doc_comment:public declaration 'exportMetrics' is missing documentation
+591:5:1:ZL011.missing_doc_comment:public declaration 'shutdown' is missing documentation
+595:5:1:ZL011.missing_doc_comment:public declaration 'forceFlush' is missing documentation
+602:1:1:ZL011.missing_doc_comment:public declaration 'LogData' is missing documentation
+608:1:1:ZL011.missing_doc_comment:public declaration 'LogExporter' is missing documentation
+614:5:1:ZL011.missing_doc_comment:public declaration 'exportLogs' is missing documentation
+618:5:1:ZL011.missing_doc_comment:public declaration 'shutdown' is missing documentation
+622:5:1:ZL011.missing_doc_comment:public declaration 'forceFlush' is missing documentation
+627:1:1:ZL011.missing_doc_comment:public declaration 'LogProcessor' is missing documentation
+633:5:1:ZL011.missing_doc_comment:public declaration 'onEmit' is missing documentation
+637:5:1:ZL011.missing_doc_comment:public declaration 'forceFlush' is missing documentation
+641:5:1:ZL011.missing_doc_comment:public declaration 'shutdown' is missing documentation
+648:1:1:ZL011.missing_doc_comment:public declaration 'RetryPolicy' is missing documentation
+659:1:1:ZL011.missing_doc_comment:public declaration 'nextBackoff' is missing documentation
+686:5:1:ZL011.missing_doc_comment:public declaration 'shouldRetry' is missing documentation
+11:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+12:29:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+13:26:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+14:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+16:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+24:31:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+30:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+31:29:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+263:41:1:ZL603.missing_defer_cleanup:resource 'std.Thread.spawn(' may not be properly cleaned up; consider using defer

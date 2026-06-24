@@ -1,0 +1,31 @@
+25:45:2:ZL001.no_undefined:use of 'undefined' may hide uninitialized memory bugs
+35:38:2:ZL001.no_undefined:use of 'undefined' may hide uninitialized memory bugs
+64:46:2:ZL001.no_undefined:use of 'undefined' may hide uninitialized memory bugs
+77:39:2:ZL001.no_undefined:use of 'undefined' may hide uninitialized memory bugs
+57:21:2:ZL204.no_dupe_import:duplicate import of 'builtin' (first at line 22)
+25:17:1:ZL009.var_should_be_const:variable 'ts' is never reassigned; consider using 'const'
+35:17:1:ZL009.var_should_be_const:variable 'ts' is never reassigned; consider using 'const'
+64:17:1:ZL009.var_should_be_const:variable 'rem' is never reassigned; consider using 'const'
+77:17:1:ZL009.var_should_be_const:variable 'rem' is never reassigned; consider using 'const'
+131:9:1:ZL009.var_should_be_const:variable 'f' is never reassigned; consider using 'const'
+138:9:1:ZL009.var_should_be_const:variable 's' is never reassigned; consider using 'const'
+131:24:1:ZL010.magic_number:magic number 42; consider using a named constant
+133:42:1:ZL010.magic_number:magic number 42; consider using a named constant
+134:42:1:ZL010.magic_number:magic number 42; consider using a named constant
+138:31:1:ZL010.magic_number:magic number 10; consider using a named constant
+141:42:1:ZL010.magic_number:magic number 110; consider using a named constant
+142:42:1:ZL010.magic_number:magic number 120; consider using a named constant
+9:1:1:ZL011.missing_doc_comment:public declaration 'Clock' is missing documentation
+13:5:1:ZL011.missing_doc_comment:public declaration 'now' is missing documentation
+50:1:1:ZL011.missing_doc_comment:public declaration 'default' is missing documentation
+91:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+95:5:1:ZL011.missing_doc_comment:public declaration 'clock' is missing documentation
+99:5:1:ZL011.missing_doc_comment:public declaration 'advance' is missing documentation
+114:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+118:5:1:ZL011.missing_doc_comment:public declaration 'clock' is missing documentation
+35:21:1:ZL502.platform_syscalls:low-level system call 'std.c.' may not be portable; prefer std library abstractions
+36:17:1:ZL502.platform_syscalls:low-level system call 'std.c.' may not be portable; prefer std library abstractions
+36:37:1:ZL502.platform_syscalls:low-level system call 'std.c.' may not be portable; prefer std library abstractions
+73:22:1:ZL502.platform_syscalls:low-level system call 'std.c.' may not be portable; prefer std library abstractions
+77:22:1:ZL502.platform_syscalls:low-level system call 'std.c.' may not be portable; prefer std library abstractions
+78:20:1:ZL502.platform_syscalls:low-level system call 'std.c.' may not be portable; prefer std library abstractions

@@ -1,0 +1,29 @@
+96:101:2:ZL300.max_line_length:line exceeds 100 characters (109)
+100:101:2:ZL300.max_line_length:line exceeds 100 characters (111)
+104:101:2:ZL300.max_line_length:line exceeds 100 characters (108)
+141:43:2:ZL303.max_nesting:nesting depth exceeds 4 (5)
+197:9:1:ZL009.var_should_be_const:variable 'rec' is never reassigned; consider using 'const'
+202:9:1:ZL009.var_should_be_const:variable 'attr_set' is never reassigned; consider using 'const'
+16:1:1:ZL011.missing_doc_comment:public declaration 'StoredScope' is missing documentation
+22:1:1:ZL011.missing_doc_comment:public declaration 'StoredSpan' is missing documentation
+33:5:1:ZL011.missing_doc_comment:public declaration 'deinit' is missing documentation
+46:1:1:ZL011.missing_doc_comment:public declaration 'KV' is missing documentation
+51:1:1:ZL011.missing_doc_comment:public declaration 'StoredMetric' is missing documentation
+56:5:1:ZL011.missing_doc_comment:public declaration 'deinit' is missing documentation
+61:1:1:ZL011.missing_doc_comment:public declaration 'StoredLog' is missing documentation
+67:5:1:ZL011.missing_doc_comment:public declaration 'deinit' is missing documentation
+72:1:1:ZL011.missing_doc_comment:public declaration 'Recorder' is missing documentation
+82:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+86:5:1:ZL011.missing_doc_comment:public declaration 'deinit' is missing documentation
+95:5:1:ZL011.missing_doc_comment:public declaration 'spanExporter' is missing documentation
+99:5:1:ZL011.missing_doc_comment:public declaration 'metricExporter' is missing documentation
+103:5:1:ZL011.missing_doc_comment:public declaration 'logExporter' is missing documentation
+8:21:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+9:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+10:29:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+11:26:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+12:24:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+13:25:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+14:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+200:32:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+178:30:1:ZL603.missing_defer_cleanup:resource '.alloc(' may not be properly cleaned up; consider using defer

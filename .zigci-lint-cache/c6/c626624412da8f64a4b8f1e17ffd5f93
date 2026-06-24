@@ -1,0 +1,8 @@
+97:9:1:ZL009.var_should_be_const:variable 'p' is never reassigned; consider using 'const'
+25:1:1:ZL011.missing_doc_comment:public declaration 'default_max' is missing documentation
+27:1:1:ZL011.missing_doc_comment:public declaration 'Pool' is missing documentation
+33:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+37:5:1:ZL011.missing_doc_comment:public declaration 'deinit' is missing documentation
+73:5:1:ZL011.missing_doc_comment:public declaration 'recycler' is missing documentation
+11:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+14:31:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

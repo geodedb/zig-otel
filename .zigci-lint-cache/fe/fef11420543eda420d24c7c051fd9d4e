@@ -1,0 +1,45 @@
+54:11:1:ZL203.const_snakecase:constant 'retryClassifyHttp' should use snake_case (or PascalCase for types)
+60:11:1:ZL203.const_snakecase:constant 'parseHeaderString' should use snake_case (or PascalCase for types)
+63:11:1:ZL203.const_snakecase:constant 'gzipBody' should use snake_case (or PascalCase for types)
+64:11:1:ZL203.const_snakecase:constant 'gunzipBody' should use snake_case (or PascalCase for types)
+67:11:1:ZL203.const_snakecase:constant 'encodeSpansProto' should use snake_case (or PascalCase for types)
+68:11:1:ZL203.const_snakecase:constant 'encodeSpansProtoDevnw' should use snake_case (or PascalCase for types)
+69:11:1:ZL203.const_snakecase:constant 'encodeMetricsProto' should use snake_case (or PascalCase for types)
+70:11:1:ZL203.const_snakecase:constant 'encodeSpansJson' should use snake_case (or PascalCase for types)
+71:11:1:ZL203.const_snakecase:constant 'encodeMetricsJson' should use snake_case (or PascalCase for types)
+74:11:1:ZL203.const_snakecase:constant 'encodeLogsProto' should use snake_case (or PascalCase for types)
+75:11:1:ZL203.const_snakecase:constant 'encodeLogsProtoDevnw' should use snake_case (or PascalCase for types)
+76:11:1:ZL203.const_snakecase:constant 'encodeLogsJson' should use snake_case (or PascalCase for types)
+77:11:1:ZL203.const_snakecase:constant 'groupLogsByScope' should use snake_case (or PascalCase for types)
+51:1:1:ZL011.missing_doc_comment:public declaration 'TransportResult' is missing documentation
+52:1:1:ZL011.missing_doc_comment:public declaration 'CustomFn' is missing documentation
+53:1:1:ZL011.missing_doc_comment:public declaration 'RetryClass' is missing documentation
+54:1:1:ZL011.missing_doc_comment:public declaration 'retryClassifyHttp' is missing documentation
+57:1:1:ZL011.missing_doc_comment:public declaration 'HeaderEntry' is missing documentation
+58:1:1:ZL011.missing_doc_comment:public declaration 'max_header_name_len' is missing documentation
+59:1:1:ZL011.missing_doc_comment:public declaration 'max_header_value_len' is missing documentation
+60:1:1:ZL011.missing_doc_comment:public declaration 'parseHeaderString' is missing documentation
+63:1:1:ZL011.missing_doc_comment:public declaration 'gzipBody' is missing documentation
+64:1:1:ZL011.missing_doc_comment:public declaration 'gunzipBody' is missing documentation
+67:1:1:ZL011.missing_doc_comment:public declaration 'encodeSpansProto' is missing documentation
+68:1:1:ZL011.missing_doc_comment:public declaration 'encodeSpansProtoDevnw' is missing documentation
+69:1:1:ZL011.missing_doc_comment:public declaration 'encodeMetricsProto' is missing documentation
+70:1:1:ZL011.missing_doc_comment:public declaration 'encodeSpansJson' is missing documentation
+71:1:1:ZL011.missing_doc_comment:public declaration 'encodeMetricsJson' is missing documentation
+74:1:1:ZL011.missing_doc_comment:public declaration 'encodeLogsProto' is missing documentation
+75:1:1:ZL011.missing_doc_comment:public declaration 'encodeLogsProtoDevnw' is missing documentation
+76:1:1:ZL011.missing_doc_comment:public declaration 'encodeLogsJson' is missing documentation
+77:1:1:ZL011.missing_doc_comment:public declaration 'groupLogsByScope' is missing documentation
+78:1:1:ZL011.missing_doc_comment:public declaration 'LogScopeBucket' is missing documentation
+9:13:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+29:30:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+30:31:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+31:29:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+32:33:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+33:34:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+34:40:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+35:33:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+36:33:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+98:37:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+99:37:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+100:37:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

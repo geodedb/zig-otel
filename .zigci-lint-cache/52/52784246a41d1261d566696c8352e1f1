@@ -1,0 +1,8 @@
+21:101:2:ZL300.max_line_length:line exceeds 100 characters (101)
+23:101:2:ZL300.max_line_length:line exceeds 100 characters (108)
+13:9:1:ZL009.var_should_be_const:variable 'stdout_buffer' is never reassigned; consider using 'const'
+14:9:1:ZL009.var_should_be_const:variable 'stdout_writer' is never reassigned; consider using 'const'
+10:1:1:ZL011.missing_doc_comment:public declaration 'main' is missing documentation
+20:85:2:ZL500.os_specific_code:Windows-specific code ':\' may cause portability issues; consider adding OS detection guards
+21:26:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+23:26:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

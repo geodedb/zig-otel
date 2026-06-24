@@ -1,0 +1,26 @@
+56:101:2:ZL300.max_line_length:line exceeds 100 characters (110)
+58:101:2:ZL300.max_line_length:line exceeds 100 characters (110)
+62:101:2:ZL300.max_line_length:line exceeds 100 characters (134)
+71:101:2:ZL300.max_line_length:line exceeds 100 characters (105)
+76:101:2:ZL300.max_line_length:line exceeds 100 characters (121)
+96:101:2:ZL300.max_line_length:line exceeds 100 characters (120)
+124:101:2:ZL300.max_line_length:line exceeds 100 characters (102)
+133:101:2:ZL300.max_line_length:line exceeds 100 characters (126)
+160:45:2:ZL303.max_nesting:nesting depth exceeds 4 (6)
+77:9:1:ZL009.var_should_be_const:variable 'out' is never reassigned; consider using 'const'
+97:9:1:ZL009.var_should_be_const:variable 'out' is never reassigned; consider using 'const'
+134:13:1:ZL009.var_should_be_const:variable 'out' is never reassigned; consider using 'const'
+141:17:1:ZL009.var_should_be_const:variable 'part' is never reassigned; consider using 'const'
+159:25:1:ZL009.var_should_be_const:variable 'merged' is never reassigned; consider using 'const'
+28:1:1:ZL011.missing_doc_comment:public declaration 'Carrier' is missing documentation
+29:1:1:ZL011.missing_doc_comment:public declaration 'MapCarrier' is missing documentation
+39:1:1:ZL011.missing_doc_comment:public declaration 'ExtractResult' is missing documentation
+43:5:1:ZL011.missing_doc_comment:public declaration 'deinit' is missing documentation
+58:5:1:ZL011.missing_doc_comment:public declaration 'inject' is missing documentation
+62:5:1:ZL011.missing_doc_comment:public declaration 'extract' is missing documentation
+86:1:1:ZL011.missing_doc_comment:public declaration 'trace_context' is missing documentation
+105:1:1:ZL011.missing_doc_comment:public declaration 'baggage' is missing documentation
+114:1:1:ZL011.missing_doc_comment:public declaration 'Composite' is missing documentation
+117:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+25:25:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+26:29:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

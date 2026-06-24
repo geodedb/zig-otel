@@ -1,0 +1,4 @@
+27:9:1:ZL009.var_should_be_const:variable 'arena' is never reassigned; consider using 'const'
+22:1:1:ZL011.missing_doc_comment:public declaration 'expSpans' is missing documentation
+12:21:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+18:31:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

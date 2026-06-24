@@ -1,0 +1,62 @@
+36:101:2:ZL300.max_line_length:line exceeds 100 characters (134)
+107:101:2:ZL300.max_line_length:line exceeds 100 characters (129)
+250:101:2:ZL300.max_line_length:line exceeds 100 characters (135)
+254:101:2:ZL300.max_line_length:line exceeds 100 characters (135)
+258:101:2:ZL300.max_line_length:line exceeds 100 characters (135)
+277:101:2:ZL300.max_line_length:line exceeds 100 characters (134)
+283:101:2:ZL300.max_line_length:line exceeds 100 characters (102)
+88:9:1:ZL009.var_should_be_const:variable 'it' is never reassigned; consider using 'const'
+100:9:1:ZL009.var_should_be_const:variable 'traceparent_buf' is never reassigned; consider using 'const'
+101:9:1:ZL009.var_should_be_const:variable 'tid_hex' is never reassigned; consider using 'const'
+103:9:1:ZL009.var_should_be_const:variable 'sid_hex' is never reassigned; consider using 'const'
+105:9:1:ZL009.var_should_be_const:variable 'flag_hex' is never reassigned; consider using 'const'
+125:9:1:ZL009.var_should_be_const:variable 'out' is never reassigned; consider using 'const'
+174:9:1:ZL009.var_should_be_const:variable 'member_count' is never reassigned; consider using 'const'
+175:9:1:ZL009.var_should_be_const:variable 'iter' is never reassigned; consider using 'const'
+265:9:1:ZL009.var_should_be_const:variable 'hex' is never reassigned; consider using 'const'
+275:9:1:ZL009.var_should_be_const:variable 'mc' is never reassigned; consider using 'const'
+291:9:1:ZL009.var_should_be_const:variable 'mc' is never reassigned; consider using 'const'
+303:9:1:ZL009.var_should_be_const:variable 'mc' is never reassigned; consider using 'const'
+309:9:1:ZL009.var_should_be_const:variable 'arena' is never reassigned; consider using 'const'
+315:9:1:ZL009.var_should_be_const:variable 'mc' is never reassigned; consider using 'const'
+137:21:1:ZL010.magic_number:magic number 55; consider using a named constant
+139:21:1:ZL010.magic_number:magic number 55; consider using a named constant
+148:20:1:ZL010.magic_number:magic number 0xff; consider using a named constant
+204:19:1:ZL010.magic_number:magic number 4; consider using a named constant
+210:32:1:ZL010.magic_number:magic number 10; consider using a named constant
+217:29:1:ZL010.magic_number:magic number 4; consider using a named constant
+217:34:1:ZL010.magic_number:magic number 0x0f; consider using a named constant
+218:27:1:ZL010.magic_number:magic number 0x0f; consider using a named constant
+240:30:1:ZL010.magic_number:magic number 0x7f; consider using a named constant
+277:36:1:ZL010.magic_number:magic number 0x4b; consider using a named constant
+277:42:1:ZL010.magic_number:magic number 0xf9; consider using a named constant
+277:48:1:ZL010.magic_number:magic number 0x2f; consider using a named constant
+277:54:1:ZL010.magic_number:magic number 0x35; consider using a named constant
+277:60:1:ZL010.magic_number:magic number 0x77; consider using a named constant
+277:66:1:ZL010.magic_number:magic number 0xb3; consider using a named constant
+277:72:1:ZL010.magic_number:magic number 0x4d; consider using a named constant
+277:78:1:ZL010.magic_number:magic number 0xa6; consider using a named constant
+277:84:1:ZL010.magic_number:magic number 0xa3; consider using a named constant
+277:90:1:ZL010.magic_number:magic number 0xce; consider using a named constant
+277:96:1:ZL010.magic_number:magic number 0x92; consider using a named constant
+277:102:1:ZL010.magic_number:magic number 0x9d; consider using a named constant
+277:108:1:ZL010.magic_number:magic number 0x0e; consider using a named constant
+277:114:1:ZL010.magic_number:magic number 0x0e; consider using a named constant
+277:120:1:ZL010.magic_number:magic number 0x47; consider using a named constant
+277:126:1:ZL010.magic_number:magic number 0x36; consider using a named constant
+278:41:1:ZL010.magic_number:magic number 0xf0; consider using a named constant
+278:47:1:ZL010.magic_number:magic number 0x67; consider using a named constant
+278:53:1:ZL010.magic_number:magic number 0xaa; consider using a named constant
+278:59:1:ZL010.magic_number:magic number 0x0b; consider using a named constant
+278:65:1:ZL010.magic_number:magic number 0xa9; consider using a named constant
+278:77:1:ZL010.magic_number:magic number 0xb7; consider using a named constant
+19:1:1:ZL011.missing_doc_comment:public declaration 'max_tracestate_len' is missing documentation
+20:1:1:ZL011.missing_doc_comment:public declaration 'max_tracestate_members' is missing documentation
+21:1:1:ZL011.missing_doc_comment:public declaration 'traceparent_header' is missing documentation
+22:1:1:ZL011.missing_doc_comment:public declaration 'tracestate_header' is missing documentation
+38:5:1:ZL011.missing_doc_comment:public declaration 'get' is missing documentation
+42:5:1:ZL011.missing_doc_comment:public declaration 'set' is missing documentation
+67:5:1:ZL011.missing_doc_comment:public declaration 'carrier' is missing documentation
+135:1:1:ZL011.missing_doc_comment:public declaration 'parseTraceparent' is missing documentation
+16:20:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+17:25:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

@@ -1,0 +1,99 @@
+222:22:2:ZL001.no_undefined:use of 'undefined' may hide uninitialized memory bugs
+231:21:2:ZL001.no_undefined:use of 'undefined' may hide uninitialized memory bugs
+271:101:2:ZL300.max_line_length:line exceeds 100 characters (137)
+305:101:2:ZL300.max_line_length:line exceeds 100 characters (116)
+312:101:2:ZL300.max_line_length:line exceeds 100 characters (119)
+29:13:1:ZL009.var_should_be_const:variable 'out' is never reassigned; consider using 'const'
+57:13:1:ZL009.var_should_be_const:variable 'out' is never reassigned; consider using 'const'
+103:9:1:ZL009.var_should_be_const:variable 'i' is never reassigned; consider using 'const'
+164:9:1:ZL009.var_should_be_const:variable 'buf' is never reassigned; consider using 'const'
+212:9:1:ZL009.var_should_be_const:variable 'i' is never reassigned; consider using 'const'
+299:9:1:ZL009.var_should_be_const:variable 'seq' is never reassigned; consider using 'const'
+88:41:1:ZL010.magic_number:magic number 4; consider using a named constant
+88:46:1:ZL010.magic_number:magic number 0x0f; consider using a named constant
+89:43:1:ZL010.magic_number:magic number 0x0f; consider using a named constant
+96:32:1:ZL010.magic_number:magic number 10; consider using a named constant
+107:25:1:ZL010.magic_number:magic number 4; consider using a named constant
+271:39:1:ZL010.magic_number:magic number 0x4b; consider using a named constant
+271:45:1:ZL010.magic_number:magic number 0xf9; consider using a named constant
+271:51:1:ZL010.magic_number:magic number 0x2f; consider using a named constant
+271:57:1:ZL010.magic_number:magic number 0x35; consider using a named constant
+271:63:1:ZL010.magic_number:magic number 0x77; consider using a named constant
+271:69:1:ZL010.magic_number:magic number 0xb3; consider using a named constant
+271:75:1:ZL010.magic_number:magic number 0x4d; consider using a named constant
+271:81:1:ZL010.magic_number:magic number 0xa6; consider using a named constant
+271:87:1:ZL010.magic_number:magic number 0xa3; consider using a named constant
+271:93:1:ZL010.magic_number:magic number 0xce; consider using a named constant
+271:99:1:ZL010.magic_number:magic number 0x92; consider using a named constant
+271:105:1:ZL010.magic_number:magic number 0x9d; consider using a named constant
+271:111:1:ZL010.magic_number:magic number 0x0e; consider using a named constant
+271:117:1:ZL010.magic_number:magic number 0x0e; consider using a named constant
+271:123:1:ZL010.magic_number:magic number 0x47; consider using a named constant
+271:129:1:ZL010.magic_number:magic number 0x36; consider using a named constant
+280:44:1:ZL010.magic_number:magic number 0xf0; consider using a named constant
+280:50:1:ZL010.magic_number:magic number 0x67; consider using a named constant
+280:56:1:ZL010.magic_number:magic number 0xaa; consider using a named constant
+280:62:1:ZL010.magic_number:magic number 0x0b; consider using a named constant
+280:68:1:ZL010.magic_number:magic number 0xa9; consider using a named constant
+280:80:1:ZL010.magic_number:magic number 0xb7; consider using a named constant
+300:42:1:ZL010.magic_number:magic number 3; consider using a named constant
+300:45:1:ZL010.magic_number:magic number 4; consider using a named constant
+300:48:1:ZL010.magic_number:magic number 5; consider using a named constant
+300:51:1:ZL010.magic_number:magic number 6; consider using a named constant
+300:54:1:ZL010.magic_number:magic number 7; consider using a named constant
+300:60:1:ZL010.magic_number:magic number 9; consider using a named constant
+300:63:1:ZL010.magic_number:magic number 10; consider using a named constant
+300:67:1:ZL010.magic_number:magic number 11; consider using a named constant
+300:71:1:ZL010.magic_number:magic number 12; consider using a named constant
+300:75:1:ZL010.magic_number:magic number 13; consider using a named constant
+300:79:1:ZL010.magic_number:magic number 14; consider using a named constant
+300:83:1:ZL010.magic_number:magic number 15; consider using a named constant
+301:36:1:ZL010.magic_number:magic number 17; consider using a named constant
+301:40:1:ZL010.magic_number:magic number 18; consider using a named constant
+301:44:1:ZL010.magic_number:magic number 19; consider using a named constant
+301:48:1:ZL010.magic_number:magic number 20; consider using a named constant
+301:52:1:ZL010.magic_number:magic number 21; consider using a named constant
+301:56:1:ZL010.magic_number:magic number 22; consider using a named constant
+301:60:1:ZL010.magic_number:magic number 23; consider using a named constant
+305:56:1:ZL010.magic_number:magic number 3; consider using a named constant
+305:59:1:ZL010.magic_number:magic number 4; consider using a named constant
+305:62:1:ZL010.magic_number:magic number 5; consider using a named constant
+305:65:1:ZL010.magic_number:magic number 6; consider using a named constant
+305:68:1:ZL010.magic_number:magic number 7; consider using a named constant
+305:74:1:ZL010.magic_number:magic number 9; consider using a named constant
+305:77:1:ZL010.magic_number:magic number 10; consider using a named constant
+305:81:1:ZL010.magic_number:magic number 11; consider using a named constant
+305:85:1:ZL010.magic_number:magic number 12; consider using a named constant
+305:89:1:ZL010.magic_number:magic number 13; consider using a named constant
+305:93:1:ZL010.magic_number:magic number 14; consider using a named constant
+305:97:1:ZL010.magic_number:magic number 15; consider using a named constant
+307:51:1:ZL010.magic_number:magic number 17; consider using a named constant
+307:55:1:ZL010.magic_number:magic number 18; consider using a named constant
+307:59:1:ZL010.magic_number:magic number 19; consider using a named constant
+307:63:1:ZL010.magic_number:magic number 20; consider using a named constant
+307:67:1:ZL010.magic_number:magic number 21; consider using a named constant
+307:71:1:ZL010.magic_number:magic number 22; consider using a named constant
+307:75:1:ZL010.magic_number:magic number 23; consider using a named constant
+10:1:1:ZL011.missing_doc_comment:public declaration 'trace_id_bytes' is missing documentation
+11:1:1:ZL011.missing_doc_comment:public declaration 'span_id_bytes' is missing documentation
+13:1:1:ZL011.missing_doc_comment:public declaration 'TraceId' is missing documentation
+16:5:1:ZL011.missing_doc_comment:public declaration 'invalid' is missing documentation
+18:5:1:ZL011.missing_doc_comment:public declaration 'isValid' is missing documentation
+28:5:1:ZL011.missing_doc_comment:public declaration 'toHex' is missing documentation
+34:5:1:ZL011.missing_doc_comment:public declaration 'parseHex' is missing documentation
+42:1:1:ZL011.missing_doc_comment:public declaration 'SpanId' is missing documentation
+45:5:1:ZL011.missing_doc_comment:public declaration 'invalid' is missing documentation
+47:5:1:ZL011.missing_doc_comment:public declaration 'isValid' is missing documentation
+52:5:1:ZL011.missing_doc_comment:public declaration 'writeHex' is missing documentation
+56:5:1:ZL011.missing_doc_comment:public declaration 'toHex' is missing documentation
+62:5:1:ZL011.missing_doc_comment:public declaration 'parseHex' is missing documentation
+70:1:1:ZL011.missing_doc_comment:public declaration 'TraceFlags' is missing documentation
+74:5:1:ZL011.missing_doc_comment:public declaration 'toByte' is missing documentation
+78:5:1:ZL011.missing_doc_comment:public declaration 'fromByte' is missing documentation
+117:5:1:ZL011.missing_doc_comment:public declaration 'nextTraceId' is missing documentation
+121:5:1:ZL011.missing_doc_comment:public declaration 'nextSpanId' is missing documentation
+133:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+148:5:1:ZL011.missing_doc_comment:public declaration 'generator' is missing documentation
+245:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+249:5:1:ZL011.missing_doc_comment:public declaration 'generator' is missing documentation
+188:17:1:ZL502.platform_syscalls:low-level system call 'std.c.' may not be portable; prefer std library abstractions

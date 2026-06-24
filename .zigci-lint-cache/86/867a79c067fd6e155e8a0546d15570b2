@@ -1,0 +1,47 @@
+156:101:2:ZL300.max_line_length:line exceeds 100 characters (106)
+160:101:2:ZL300.max_line_length:line exceeds 100 characters (117)
+176:101:2:ZL300.max_line_length:line exceeds 100 characters (117)
+211:101:2:ZL300.max_line_length:line exceeds 100 characters (116)
+216:101:2:ZL300.max_line_length:line exceeds 100 characters (106)
+112:25:2:ZL303.max_nesting:nesting depth exceeds 4 (5)
+26:9:1:ZL009.var_should_be_const:variable 'buf' is never reassigned; consider using 'const'
+59:9:1:ZL009.var_should_be_const:variable 'buf' is never reassigned; consider using 'const'
+85:9:1:ZL009.var_should_be_const:variable 'buf' is never reassigned; consider using 'const'
+222:9:1:ZL009.var_should_be_const:variable 'tmp' is never reassigned; consider using 'const'
+228:9:1:ZL009.var_should_be_const:variable 'tmp' is never reassigned; consider using 'const'
+234:9:1:ZL009.var_should_be_const:variable 'tmp' is never reassigned; consider using 'const'
+251:21:1:ZL009.var_should_be_const:variable 'tmp' is never reassigned; consider using 'const'
+270:9:1:ZL009.var_should_be_const:variable 'arena' is never reassigned; consider using 'const'
+272:9:1:ZL009.var_should_be_const:variable 'buf' is never reassigned; consider using 'const'
+249:13:1:ZL010.magic_number:magic number 0x0c; consider using a named constant
+250:20:1:ZL010.magic_number:magic number 0x07; consider using a named constant
+250:26:1:ZL010.magic_number:magic number 0x0b; consider using a named constant
+250:39:1:ZL010.magic_number:magic number 0x1f; consider using a named constant
+21:1:1:ZL011.missing_doc_comment:public declaration 'spanToJson' is missing documentation
+56:1:1:ZL011.missing_doc_comment:public declaration 'metricToJson' is missing documentation
+82:1:1:ZL011.missing_doc_comment:public declaration 'logToJson' is missing documentation
+108:1:1:ZL011.missing_doc_comment:public declaration 'writePoint' is missing documentation
+156:1:1:ZL011.missing_doc_comment:public declaration 'writeResource' is missing documentation
+160:1:1:ZL011.missing_doc_comment:public declaration 'writeAttributes' is missing documentation
+206:1:1:ZL011.missing_doc_comment:public declaration 'writeKey' is missing documentation
+211:1:1:ZL011.missing_doc_comment:public declaration 'writeKeyString' is missing documentation
+216:1:1:ZL011.missing_doc_comment:public declaration 'writeKeyU64' is missing documentation
+221:1:1:ZL011.missing_doc_comment:public declaration 'writeU64' is missing documentation
+227:1:1:ZL011.missing_doc_comment:public declaration 'writeI64' is missing documentation
+233:1:1:ZL011.missing_doc_comment:public declaration 'writeF64' is missing documentation
+239:1:1:ZL011.missing_doc_comment:public declaration 'writeJsonString' is missing documentation
+261:1:1:ZL011.missing_doc_comment:public declaration 'hexBuf32' is missing documentation
+265:1:1:ZL011.missing_doc_comment:public declaration 'hexBuf16' is missing documentation
+12:21:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+13:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+14:26:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+17:25:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+18:26:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+243:47:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+244:48:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+245:48:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+246:48:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+247:48:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+248:48:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+249:48:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+275:40:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

@@ -1,0 +1,22 @@
+111:101:2:ZL300.max_line_length:line exceeds 100 characters (122)
+188:101:2:ZL300.max_line_length:line exceeds 100 characters (101)
+306:101:2:ZL300.max_line_length:line exceeds 100 characters (122)
+334:101:2:ZL300.max_line_length:line exceeds 100 characters (117)
+82:13:1:ZL009.var_should_be_const:variable 'h' is never reassigned; consider using 'const'
+124:17:1:ZL009.var_should_be_const:variable 'b' is never reassigned; consider using 'const'
+306:9:1:ZL009.var_should_be_const:variable 'index_map' is never reassigned; consider using 'const'
+320:17:1:ZL009.var_should_be_const:variable 'b' is never reassigned; consider using 'const'
+427:9:1:ZL009.var_should_be_const:variable 'w' is never reassigned; consider using 'const'
+445:9:1:ZL009.var_should_be_const:variable 'bucket_arena' is never reassigned; consider using 'const'
+63:5:1:ZL011.missing_doc_comment:public declaration 'hash' is missing documentation
+71:5:1:ZL011.missing_doc_comment:public declaration 'eql' is missing documentation
+80:5:1:ZL011.missing_doc_comment:public declaration 'hash' is missing documentation
+90:5:1:ZL011.missing_doc_comment:public declaration 'eql' is missing documentation
+135:1:1:ZL011.missing_doc_comment:public declaration 'encodeMetricsProto' is missing documentation
+301:1:1:ZL011.missing_doc_comment:public declaration 'groupSpansByScope' is missing documentation
+426:1:1:ZL011.missing_doc_comment:public declaration 'encodeSpansProto' is missing documentation
+21:21:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+22:22:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+23:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+24:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+25:24:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

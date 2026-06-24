@@ -47,6 +47,7 @@ pub fn build(b: *std.Build) void {
     opts.addOption(bool, "grpc_test_server", grpc_test_server);
     opts.addOption(bool, "otel_disabled", otel_disabled);
     opts.addOption([]const u8, "version", "0.1.0");
+    opts.addOption([]const u8, "package_name", "otel");
     const build_options_module = opts.createModule();
 
     // ------------------------------------------------------------------

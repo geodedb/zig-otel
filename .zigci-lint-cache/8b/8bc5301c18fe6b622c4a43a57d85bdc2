@@ -1,0 +1,23 @@
+49:21:2:ZL101.banned_std_symbols:use of banned symbol 'std.posix.system'
+56:9:2:ZL101.banned_std_symbols:use of banned symbol 'std.posix.system'
+57:9:2:ZL101.banned_std_symbols:use of banned symbol 'std.posix.system'
+25:101:2:ZL300.max_line_length:line exceeds 100 characters (109)
+29:101:2:ZL300.max_line_length:line exceeds 100 characters (111)
+33:101:2:ZL300.max_line_length:line exceeds 100 characters (108)
+88:13:1:ZL009.var_should_be_const:variable 'arena' is never reassigned; consider using 'const'
+100:9:1:ZL009.var_should_be_const:variable 'attr_set' is never reassigned; consider using 'const'
+115:9:1:ZL009.var_should_be_const:variable 'aw' is never reassigned; consider using 'const'
+117:9:1:ZL009.var_should_be_const:variable 'sj' is never reassigned; consider using 'const'
+14:1:1:ZL011.missing_doc_comment:public declaration 'StdoutJson' is missing documentation
+20:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+24:5:1:ZL011.missing_doc_comment:public declaration 'spanExporter' is missing documentation
+28:5:1:ZL011.missing_doc_comment:public declaration 'metricExporter' is missing documentation
+32:5:1:ZL011.missing_doc_comment:public declaration 'logExporter' is missing documentation
+123:72:2:ZL500.os_specific_code:Windows-specific code ':\' may cause portability issues; consider adding OS detection guards
+8:21:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+9:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+10:26:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+11:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+12:28:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+98:32:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+123:63:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

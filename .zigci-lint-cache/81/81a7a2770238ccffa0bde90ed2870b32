@@ -1,0 +1,31 @@
+76:101:2:ZL300.max_line_length:line exceeds 100 characters (109)
+97:101:2:ZL300.max_line_length:line exceeds 100 characters (119)
+64:9:1:ZL009.var_should_be_const:variable 'tid_hex' is never reassigned; consider using 'const'
+66:9:1:ZL009.var_should_be_const:variable 'sid_hex' is never reassigned; consider using 'const'
+72:9:1:ZL009.var_should_be_const:variable 'buf' is never reassigned; consider using 'const'
+73:9:1:ZL009.var_should_be_const:variable 'flag_buf' is never reassigned; consider using 'const'
+85:13:1:ZL009.var_should_be_const:variable 'encoded' is never reassigned; consider using 'const'
+98:9:1:ZL009.var_should_be_const:variable 'out' is never reassigned; consider using 'const'
+122:9:1:ZL009.var_should_be_const:variable 'iter' is never reassigned; consider using 'const'
+158:9:1:ZL009.var_should_be_const:variable 'accum' is never reassigned; consider using 'const'
+188:9:1:ZL009.var_should_be_const:variable 'decoded' is never reassigned; consider using 'const'
+236:9:1:ZL009.var_should_be_const:variable 'padded' is never reassigned; consider using 'const'
+244:9:1:ZL009.var_should_be_const:variable 'padded' is never reassigned; consider using 'const'
+211:29:1:ZL010.magic_number:magic number 4; consider using a named constant
+212:28:1:ZL010.magic_number:magic number 0x0f; consider using a named constant
+218:25:1:ZL010.magic_number:magic number 0x0f; consider using a named constant
+228:19:1:ZL010.magic_number:magic number 4; consider using a named constant
+262:32:1:ZL010.magic_number:magic number 10; consider using a named constant
+263:32:1:ZL010.magic_number:magic number 10; consider using a named constant
+34:1:1:ZL011.missing_doc_comment:public declaration 'Carrier' is missing documentation
+35:1:1:ZL011.missing_doc_comment:public declaration 'Fields' is missing documentation
+36:1:1:ZL011.missing_doc_comment:public declaration 'ExtractResult' is missing documentation
+37:1:1:ZL011.missing_doc_comment:public declaration 'TextMapPropagator' is missing documentation
+39:1:1:ZL011.missing_doc_comment:public declaration 'uber_trace_id_header' is missing documentation
+40:1:1:ZL011.missing_doc_comment:public declaration 'uberctx_prefix' is missing documentation
+44:1:1:ZL011.missing_doc_comment:public declaration 'flag_debug' is missing documentation
+45:1:1:ZL011.missing_doc_comment:public declaration 'flag_firehose' is missing documentation
+47:1:1:ZL011.missing_doc_comment:public declaration 'propagator' is missing documentation
+28:25:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+29:20:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+30:29:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

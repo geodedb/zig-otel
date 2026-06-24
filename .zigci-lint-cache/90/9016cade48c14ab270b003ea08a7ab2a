@@ -1,0 +1,12 @@
+55:60:3:ZL003.no_empty_catch:empty catch block suppresses errors
+56:13:1:ZL009.var_should_be_const:variable 'record' is never reassigned; consider using 'const'
+75:9:1:ZL009.var_should_be_const:variable 'ev' is never reassigned; consider using 'const'
+24:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+32:5:1:ZL011.missing_doc_comment:public declaration 'deinit' is missing documentation
+36:5:1:ZL011.missing_doc_comment:public declaration 'withSpanContext' is missing documentation
+40:5:1:ZL011.missing_doc_comment:public declaration 'setSeverity' is missing documentation
+44:5:1:ZL011.missing_doc_comment:public declaration 'setBodyString' is missing documentation
+48:5:1:ZL011.missing_doc_comment:public declaration 'putAttribute' is missing documentation
+52:5:1:ZL011.missing_doc_comment:public declaration 'emit' is missing documentation
+8:23:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+10:20:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

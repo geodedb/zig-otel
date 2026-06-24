@@ -1,0 +1,38 @@
+316:11:1:ZL201.type_pascalcase:type 'dummyCb' should use PascalCase
+316:11:1:ZL203.const_snakecase:constant 'dummyCb' should use snake_case (or PascalCase for types)
+205:101:2:ZL300.max_line_length:line exceeds 100 characters (104)
+319:101:2:ZL300.max_line_length:line exceeds 100 characters (106)
+320:101:2:ZL300.max_line_length:line exceeds 100 characters (122)
+321:101:2:ZL300.max_line_length:line exceeds 100 characters (102)
+319:9:1:ZL009.var_should_be_const:variable 'oc' is never reassigned; consider using 'const'
+320:9:1:ZL009.var_should_be_const:variable 'oudc' is never reassigned; consider using 'const'
+321:9:1:ZL009.var_should_be_const:variable 'og' is never reassigned; consider using 'const'
+12:1:1:ZL011.missing_doc_comment:public declaration 'Temporality' is missing documentation
+14:1:1:ZL011.missing_doc_comment:public declaration 'InstrumentKind' is missing documentation
+24:1:1:ZL011.missing_doc_comment:public declaration 'ExplicitBuckets' is missing documentation
+28:1:1:ZL011.missing_doc_comment:public declaration 'InstrumentDescriptor' is missing documentation
+37:1:1:ZL011.missing_doc_comment:public declaration 'Counter' is missing documentation
+42:5:1:ZL011.missing_doc_comment:public declaration 'add' is missing documentation
+48:1:1:ZL011.missing_doc_comment:public declaration 'UpDownCounter' is missing documentation
+53:5:1:ZL011.missing_doc_comment:public declaration 'add' is missing documentation
+59:1:1:ZL011.missing_doc_comment:public declaration 'Histogram' is missing documentation
+64:5:1:ZL011.missing_doc_comment:public declaration 'record' is missing documentation
+70:1:1:ZL011.missing_doc_comment:public declaration 'Gauge' is missing documentation
+75:5:1:ZL011.missing_doc_comment:public declaration 'set' is missing documentation
+81:1:1:ZL011.missing_doc_comment:public declaration 'ObservableCallback' is missing documentation
+86:1:1:ZL011.missing_doc_comment:public declaration 'Observer' is missing documentation
+91:5:1:ZL011.missing_doc_comment:public declaration 'observeInt' is missing documentation
+96:5:1:ZL011.missing_doc_comment:public declaration 'observeDouble' is missing documentation
+147:5:1:ZL011.missing_doc_comment:public declaration 'unregister' is missing documentation
+161:5:1:ZL011.missing_doc_comment:public declaration 'unregister' is missing documentation
+167:1:1:ZL011.missing_doc_comment:public declaration 'Meter' is missing documentation
+207:5:1:ZL011.missing_doc_comment:public declaration 'counter' is missing documentation
+210:5:1:ZL011.missing_doc_comment:public declaration 'upDownCounter' is missing documentation
+213:5:1:ZL011.missing_doc_comment:public declaration 'histogram' is missing documentation
+216:5:1:ZL011.missing_doc_comment:public declaration 'gauge' is missing documentation
+219:5:1:ZL011.missing_doc_comment:public declaration 'createObservableCounter' is missing documentation
+227:5:1:ZL011.missing_doc_comment:public declaration 'createObservableUpDownCounter' is missing documentation
+235:5:1:ZL011.missing_doc_comment:public declaration 'createObservableGauge' is missing documentation
+243:5:1:ZL011.missing_doc_comment:public declaration 'registerCallback' is missing documentation
+251:5:1:ZL011.missing_doc_comment:public declaration 'unregisterCallback' is missing documentation
+8:23:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

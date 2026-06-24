@@ -1,0 +1,15 @@
+83:7:1:ZL203.const_snakecase:constant 'writeKeyValue' should use snake_case (or PascalCase for types)
+98:101:2:ZL300.max_line_length:line exceeds 100 characters (122)
+98:9:1:ZL009.var_should_be_const:variable 'index_map' is never reassigned; consider using 'const'
+112:17:1:ZL009.var_should_be_const:variable 'b' is never reassigned; consider using 'const'
+124:9:1:ZL009.var_should_be_const:variable 'w' is never reassigned; consider using 'const'
+131:9:1:ZL009.var_should_be_const:variable 'bucket_arena' is never reassigned; consider using 'const'
+91:1:1:ZL011.missing_doc_comment:public declaration 'LogScopeBucket' is missing documentation
+96:1:1:ZL011.missing_doc_comment:public declaration 'groupLogsByScope' is missing documentation
+123:1:1:ZL011.missing_doc_comment:public declaration 'encodeLogsProto' is missing documentation
+72:21:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+73:22:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+74:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+75:26:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+180:67:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+213:66:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

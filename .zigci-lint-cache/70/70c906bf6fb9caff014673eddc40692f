@@ -1,0 +1,95 @@
+39:11:1:ZL201.type_pascalcase:type 'api' should use PascalCase
+49:11:1:ZL201.type_pascalcase:type 'propagation' should use PascalCase
+70:11:1:ZL201.type_pascalcase:type 'sdk' should use PascalCase
+93:11:1:ZL201.type_pascalcase:type 'exporters' should use PascalCase
+131:11:1:ZL201.type_pascalcase:type 'instrumentation' should use PascalCase
+139:11:1:ZL201.type_pascalcase:type 'internal' should use PascalCase
+36:1:1:ZL011.missing_doc_comment:public declaration 'version' is missing documentation
+37:1:1:ZL011.missing_doc_comment:public declaration 'build_options' is missing documentation
+39:1:1:ZL011.missing_doc_comment:public declaration 'api' is missing documentation
+40:5:1:ZL011.missing_doc_comment:public declaration 'context' is missing documentation
+41:5:1:ZL011.missing_doc_comment:public declaration 'baggage' is missing documentation
+42:5:1:ZL011.missing_doc_comment:public declaration 'trace' is missing documentation
+43:5:1:ZL011.missing_doc_comment:public declaration 'metrics' is missing documentation
+44:5:1:ZL011.missing_doc_comment:public declaration 'logs' is missing documentation
+45:5:1:ZL011.missing_doc_comment:public declaration 'events' is missing documentation
+46:5:1:ZL011.missing_doc_comment:public declaration 'profiles' is missing documentation
+49:1:1:ZL011.missing_doc_comment:public declaration 'propagation' is missing documentation
+50:5:1:ZL011.missing_doc_comment:public declaration 'trace_context' is missing documentation
+51:5:1:ZL011.missing_doc_comment:public declaration 'baggage' is missing documentation
+52:5:1:ZL011.missing_doc_comment:public declaration 'composite' is missing documentation
+70:1:1:ZL011.missing_doc_comment:public declaration 'sdk' is missing documentation
+71:5:1:ZL011.missing_doc_comment:public declaration 'resource' is missing documentation
+72:5:1:ZL011.missing_doc_comment:public declaration 'trace' is missing documentation
+73:5:1:ZL011.missing_doc_comment:public declaration 'metrics' is missing documentation
+74:5:1:ZL011.missing_doc_comment:public declaration 'logs' is missing documentation
+75:5:1:ZL011.missing_doc_comment:public declaration 'config' is missing documentation
+76:5:1:ZL011.missing_doc_comment:public declaration 'exporter' is missing documentation
+77:5:1:ZL011.missing_doc_comment:public declaration 'span_pool' is missing documentation
+93:1:1:ZL011.missing_doc_comment:public declaration 'exporters' is missing documentation
+94:5:1:ZL011.missing_doc_comment:public declaration 'in_memory' is missing documentation
+95:5:1:ZL011.missing_doc_comment:public declaration 'stdout_json' is missing documentation
+96:5:1:ZL011.missing_doc_comment:public declaration 'file' is missing documentation
+97:5:1:ZL011.missing_doc_comment:public declaration 'prometheus' is missing documentation
+98:5:1:ZL011.missing_doc_comment:public declaration 'otlp_http' is missing documentation
+99:5:1:ZL011.missing_doc_comment:public declaration 'otlp_grpc' is missing documentation
+116:13:1:ZL011.missing_doc_comment:public declaration 'Server' is missing documentation
+117:17:1:ZL011.missing_doc_comment:public declaration 'endpoint' is missing documentation
+120:17:1:ZL011.missing_doc_comment:public declaration 'requestCount' is missing documentation
+123:17:1:ZL011.missing_doc_comment:public declaration 'shutdown' is missing documentation
+125:13:1:ZL011.missing_doc_comment:public declaration 'startLoopbackGrpc' is missing documentation
+131:1:1:ZL011.missing_doc_comment:public declaration 'instrumentation' is missing documentation
+132:5:1:ZL011.missing_doc_comment:public declaration 'std_log' is missing documentation
+133:5:1:ZL011.missing_doc_comment:public declaration 'http' is missing documentation
+134:5:1:ZL011.missing_doc_comment:public declaration 'runtime' is missing documentation
+137:1:1:ZL011.missing_doc_comment:public declaration 'semconv' is missing documentation
+139:1:1:ZL011.missing_doc_comment:public declaration 'internal' is missing documentation
+140:5:1:ZL011.missing_doc_comment:public declaration 'attributes' is missing documentation
+141:5:1:ZL011.missing_doc_comment:public declaration 'clock' is missing documentation
+142:5:1:ZL011.missing_doc_comment:public declaration 'id' is missing documentation
+143:5:1:ZL011.missing_doc_comment:public declaration 'redact' is missing documentation
+144:5:1:ZL011.missing_doc_comment:public declaration 'ring_buffer' is missing documentation
+145:5:1:ZL011.missing_doc_comment:public declaration 'json_codec' is missing documentation
+148:1:1:ZL011.missing_doc_comment:public declaration 'otlp_wire' is missing documentation
+151:1:1:ZL011.missing_doc_comment:public declaration 'Error' is missing documentation
+40:33:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+41:33:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+42:31:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+43:33:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+44:30:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+45:32:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+46:34:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+50:39:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+51:33:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+52:35:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+57:36:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+61:28:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+64:32:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+67:33:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+71:34:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+72:31:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+73:33:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+74:30:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+75:32:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+76:34:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+77:35:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+83:42:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+90:48:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+94:35:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+95:37:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+96:30:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+97:36:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+98:35:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+99:35:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+113:17:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+132:33:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+133:30:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+134:33:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+137:29:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+140:36:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+141:31:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+142:28:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+143:32:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+144:37:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+145:36:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+148:31:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

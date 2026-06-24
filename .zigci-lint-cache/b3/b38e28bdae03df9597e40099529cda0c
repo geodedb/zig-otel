@@ -1,0 +1,30 @@
+82:101:2:ZL300.max_line_length:line exceeds 100 characters (110)
+97:13:1:ZL009.var_should_be_const:variable 'r' is never reassigned; consider using 'const'
+17:14:1:ZL010.magic_number:magic number 3; consider using a named constant
+18:14:1:ZL010.magic_number:magic number 4; consider using a named constant
+19:13:1:ZL010.magic_number:magic number 5; consider using a named constant
+20:14:1:ZL010.magic_number:magic number 6; consider using a named constant
+21:14:1:ZL010.magic_number:magic number 7; consider using a named constant
+23:12:1:ZL010.magic_number:magic number 9; consider using a named constant
+24:13:1:ZL010.magic_number:magic number 10; consider using a named constant
+25:13:1:ZL010.magic_number:magic number 11; consider using a named constant
+26:13:1:ZL010.magic_number:magic number 12; consider using a named constant
+27:12:1:ZL010.magic_number:magic number 13; consider using a named constant
+28:13:1:ZL010.magic_number:magic number 14; consider using a named constant
+29:13:1:ZL010.magic_number:magic number 15; consider using a named constant
+31:11:1:ZL010.magic_number:magic number 17; consider using a named constant
+32:12:1:ZL010.magic_number:magic number 18; consider using a named constant
+33:12:1:ZL010.magic_number:magic number 19; consider using a named constant
+34:12:1:ZL010.magic_number:magic number 20; consider using a named constant
+35:13:1:ZL010.magic_number:magic number 21; consider using a named constant
+36:14:1:ZL010.magic_number:magic number 22; consider using a named constant
+37:14:1:ZL010.magic_number:magic number 23; consider using a named constant
+38:14:1:ZL010.magic_number:magic number 24; consider using a named constant
+13:1:1:ZL011.missing_doc_comment:public declaration 'Severity' is missing documentation
+40:5:1:ZL011.missing_doc_comment:public declaration 'shortText' is missing documentation
+53:1:1:ZL011.missing_doc_comment:public declaration 'Body' is missing documentation
+61:1:1:ZL011.missing_doc_comment:public declaration 'LogRecord' is missing documentation
+90:1:1:ZL011.missing_doc_comment:public declaration 'Logger' is missing documentation
+95:5:1:ZL011.missing_doc_comment:public declaration 'emit' is missing documentation
+8:23:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+9:20:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

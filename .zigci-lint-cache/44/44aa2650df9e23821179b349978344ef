@@ -1,0 +1,32 @@
+153:9:1:ZL009.var_should_be_const:variable 'bag' is never reassigned; consider using 'const'
+142:42:1:ZL010.magic_number:magic number 3; consider using a named constant
+142:45:1:ZL010.magic_number:magic number 4; consider using a named constant
+142:48:1:ZL010.magic_number:magic number 5; consider using a named constant
+142:51:1:ZL010.magic_number:magic number 6; consider using a named constant
+142:54:1:ZL010.magic_number:magic number 7; consider using a named constant
+142:60:1:ZL010.magic_number:magic number 9; consider using a named constant
+142:63:1:ZL010.magic_number:magic number 10; consider using a named constant
+142:67:1:ZL010.magic_number:magic number 11; consider using a named constant
+142:71:1:ZL010.magic_number:magic number 12; consider using a named constant
+142:75:1:ZL010.magic_number:magic number 13; consider using a named constant
+142:79:1:ZL010.magic_number:magic number 14; consider using a named constant
+142:83:1:ZL010.magic_number:magic number 15; consider using a named constant
+143:35:1:ZL010.magic_number:magic number 17; consider using a named constant
+143:39:1:ZL010.magic_number:magic number 18; consider using a named constant
+143:43:1:ZL010.magic_number:magic number 19; consider using a named constant
+143:47:1:ZL010.magic_number:magic number 20; consider using a named constant
+143:51:1:ZL010.magic_number:magic number 21; consider using a named constant
+143:55:1:ZL010.magic_number:magic number 22; consider using a named constant
+143:59:1:ZL010.magic_number:magic number 23; consider using a named constant
+143:63:1:ZL010.magic_number:magic number 24; consider using a named constant
+15:1:1:ZL011.missing_doc_comment:public declaration 'SpanContext' is missing documentation
+24:5:1:ZL011.missing_doc_comment:public declaration 'isValid' is missing documentation
+32:1:1:ZL011.missing_doc_comment:public declaration 'Context' is missing documentation
+39:5:1:ZL011.missing_doc_comment:public declaration 'empty' is missing documentation
+43:5:1:ZL011.missing_doc_comment:public declaration 'withSpan' is missing documentation
+50:5:1:ZL011.missing_doc_comment:public declaration 'withSpanContext' is missing documentation
+57:5:1:ZL011.missing_doc_comment:public declaration 'withBaggage' is missing documentation
+72:5:1:ZL011.missing_doc_comment:public declaration 'activeSpanContext' is missing documentation
+76:5:1:ZL011.missing_doc_comment:public declaration 'activeSpan' is missing documentation
+82:5:1:ZL011.missing_doc_comment:public declaration 'activeBaggage' is missing documentation
+12:20:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

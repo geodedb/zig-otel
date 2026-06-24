@@ -1,0 +1,26 @@
+93:101:2:ZL300.max_line_length:line exceeds 100 characters (102)
+138:101:2:ZL300.max_line_length:line exceeds 100 characters (107)
+173:29:2:ZL303.max_nesting:nesting depth exceeds 4 (5)
+201:9:1:ZL009.var_should_be_const:variable 'huge_key' is never reassigned; consider using 'const'
+206:9:1:ZL009.var_should_be_const:variable 'huge_value' is never reassigned; consider using 'const'
+224:9:1:ZL009.var_should_be_const:variable 'i' is never reassigned; consider using 'const'
+225:9:1:ZL009.var_should_be_const:variable 'key_buf' is never reassigned; consider using 'const'
+235:9:1:ZL009.var_should_be_const:variable 'as' is never reassigned; consider using 'const'
+217:30:1:ZL010.magic_number:magic number 7; consider using a named constant
+226:33:1:ZL010.magic_number:magic number 5; consider using a named constant
+231:42:1:ZL010.magic_number:magic number 5; consider using a named constant
+11:1:1:ZL011.missing_doc_comment:public declaration 'max_attributes' is missing documentation
+12:1:1:ZL011.missing_doc_comment:public declaration 'max_key_bytes' is missing documentation
+13:1:1:ZL011.missing_doc_comment:public declaration 'max_string_value_bytes' is missing documentation
+15:1:1:ZL011.missing_doc_comment:public declaration 'Value' is missing documentation
+26:1:1:ZL011.missing_doc_comment:public declaration 'Entry' is missing documentation
+47:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+56:5:1:ZL011.missing_doc_comment:public declaration 'deinit' is missing documentation
+74:5:1:ZL011.missing_doc_comment:public declaration 'count' is missing documentation
+78:5:1:ZL011.missing_doc_comment:public declaration 'getString' is missing documentation
+88:5:1:ZL011.missing_doc_comment:public declaration 'putString' is missing documentation
+97:5:1:ZL011.missing_doc_comment:public declaration 'putInt' is missing documentation
+105:5:1:ZL011.missing_doc_comment:public declaration 'putBool' is missing documentation
+113:5:1:ZL011.missing_doc_comment:public declaration 'putDouble' is missing documentation
+171:40:1:ZL603.missing_defer_cleanup:resource '.alloc(' may not be properly cleaned up; consider using defer
+183:36:1:ZL603.missing_defer_cleanup:resource '.alloc(' may not be properly cleaned up; consider using defer

@@ -1,0 +1,9 @@
+13:1:1:ZL011.missing_doc_comment:public declaration 'enabled' is missing documentation
+15:1:1:ZL011.missing_doc_comment:public declaration 'SampleType' is missing documentation
+20:1:1:ZL011.missing_doc_comment:public declaration 'Sample' is missing documentation
+29:1:1:ZL011.missing_doc_comment:public declaration 'Function' is missing documentation
+36:1:1:ZL011.missing_doc_comment:public declaration 'Location' is missing documentation
+41:1:1:ZL011.missing_doc_comment:public declaration 'Profile' is missing documentation
+53:1:1:ZL011.missing_doc_comment:public declaration 'Profiler' is missing documentation
+58:5:1:ZL011.missing_doc_comment:public declaration 'emit' is missing documentation
+10:23:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

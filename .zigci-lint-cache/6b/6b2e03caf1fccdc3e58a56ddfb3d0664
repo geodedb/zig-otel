@@ -1,0 +1,60 @@
+177:39:2:ZL001.no_undefined:use of 'undefined' may hide uninitialized memory bugs
+195:29:2:ZL001.no_undefined:use of 'undefined' may hide uninitialized memory bugs
+369:54:3:ZL003.no_empty_catch:empty catch block suppresses errors
+182:27:2:ZL204.no_dupe_import:duplicate import of 'resource.zig' (first at line 12)
+404:24:2:ZL204.no_dupe_import:duplicate import of 'resource.zig' (first at line 12)
+33:101:2:ZL300.max_line_length:line exceeds 100 characters (118)
+35:101:2:ZL300.max_line_length:line exceeds 100 characters (150)
+40:101:2:ZL300.max_line_length:line exceeds 100 characters (127)
+44:101:2:ZL300.max_line_length:line exceeds 100 characters (128)
+72:101:2:ZL300.max_line_length:line exceeds 100 characters (145)
+93:101:2:ZL300.max_line_length:line exceeds 100 characters (143)
+102:101:2:ZL300.max_line_length:line exceeds 100 characters (128)
+225:101:2:ZL300.max_line_length:line exceeds 100 characters (111)
+283:101:2:ZL300.max_line_length:line exceeds 100 characters (104)
+326:101:2:ZL300.max_line_length:line exceeds 100 characters (167)
+420:101:2:ZL300.max_line_length:line exceeds 100 characters (135)
+424:101:2:ZL300.max_line_length:line exceeds 100 characters (122)
+425:101:2:ZL300.max_line_length:line exceeds 100 characters (128)
+105:9:1:ZL009.var_should_be_const:variable 'lo' is never reassigned; consider using 'const'
+298:13:1:ZL009.var_should_be_const:variable 'self' is never reassigned; consider using 'const'
+406:9:1:ZL009.var_should_be_const:variable 'tp' is never reassigned; consider using 'const'
+418:9:1:ZL009.var_should_be_const:variable 'ratio_zero' is never reassigned; consider using 'const'
+422:9:1:ZL009.var_should_be_const:variable 'ratio_one' is never reassigned; consider using 'const'
+424:72:1:ZL010.magic_number:magic number 0xff; consider using a named constant
+424:78:1:ZL010.magic_number:magic number 0xff; consider using a named constant
+424:84:1:ZL010.magic_number:magic number 0xff; consider using a named constant
+424:90:1:ZL010.magic_number:magic number 0xff; consider using a named constant
+424:96:1:ZL010.magic_number:magic number 0xff; consider using a named constant
+424:102:1:ZL010.magic_number:magic number 0xff; consider using a named constant
+424:108:1:ZL010.magic_number:magic number 0xff; consider using a named constant
+424:114:1:ZL010.magic_number:magic number 0x7f; consider using a named constant
+18:1:1:ZL011.missing_doc_comment:public declaration 'SamplingDecision' is missing documentation
+24:1:1:ZL011.missing_doc_comment:public declaration 'SamplingResult' is missing documentation
+30:1:1:ZL011.missing_doc_comment:public declaration 'Sampler' is missing documentation
+35:5:1:ZL011.missing_doc_comment:public declaration 'shouldSample' is missing documentation
+48:1:1:ZL011.missing_doc_comment:public declaration 'alwaysOn' is missing documentation
+52:1:1:ZL011.missing_doc_comment:public declaration 'alwaysOff' is missing documentation
+56:1:1:ZL011.missing_doc_comment:public declaration 'ParentBased' is missing documentation
+59:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+63:5:1:ZL011.missing_doc_comment:public declaration 'sampler' is missing documentation
+81:1:1:ZL011.missing_doc_comment:public declaration 'TraceIdRatio' is missing documentation
+85:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+92:5:1:ZL011.missing_doc_comment:public declaration 'sampler' is missing documentation
+112:1:1:ZL011.missing_doc_comment:public declaration 'TraceConfig' is missing documentation
+141:1:1:ZL011.missing_doc_comment:public declaration 'TracerProvider' is missing documentation
+169:5:1:ZL011.missing_doc_comment:public declaration 'DefaultProcessor' is missing documentation
+175:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+238:5:1:ZL011.missing_doc_comment:public declaration 'deinit' is missing documentation
+307:5:1:ZL011.missing_doc_comment:public declaration 'shutdown' is missing documentation
+311:5:1:ZL011.missing_doc_comment:public declaration 'forceFlush' is missing documentation
+315:5:1:ZL011.missing_doc_comment:public declaration 'tracer' is missing documentation
+7:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+8:25:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+9:24:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+10:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+11:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+218:40:1:ZL603.missing_defer_cleanup:resource '.alloc(' may not be properly cleaned up; consider using defer
+228:40:1:ZL603.missing_defer_cleanup:resource '.alloc(' may not be properly cleaned up; consider using defer
+232:44:1:ZL603.missing_defer_cleanup:resource '.alloc(' may not be properly cleaned up; consider using defer
+206:41:1:ZL603.missing_defer_cleanup:resource '.create(' may not be properly cleaned up; consider using defer

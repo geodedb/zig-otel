@@ -1,0 +1,25 @@
+153:18:2:ZL001.no_undefined:use of 'undefined' may hide uninitialized memory bugs
+120:26:2:ZL204.no_dupe_import:duplicate import of 'builtin' (first at line 109)
+136:27:2:ZL204.no_dupe_import:duplicate import of 'builtin' (first at line 109)
+30:101:2:ZL300.max_line_length:line exceeds 100 characters (105)
+109:101:2:ZL300.max_line_length:line exceeds 100 characters (103)
+178:101:2:ZL300.max_line_length:line exceeds 100 characters (101)
+179:101:2:ZL300.max_line_length:line exceeds 100 characters (104)
+31:13:1:ZL009.var_should_be_const:variable 'out' is never reassigned; consider using 'const'
+88:9:1:ZL009.var_should_be_const:variable 'iter' is never reassigned; consider using 'const'
+132:9:1:ZL009.var_should_be_const:variable 'hostname_buf' is never reassigned; consider using 'const'
+160:9:1:ZL009.var_should_be_const:variable 'a' is never reassigned; consider using 'const'
+165:9:1:ZL009.var_should_be_const:variable 'b' is never reassigned; consider using 'const'
+169:9:1:ZL009.var_should_be_const:variable 'merged' is never reassigned; consider using 'const'
+183:9:1:ZL009.var_should_be_const:variable 'r' is never reassigned; consider using 'const'
+13:1:1:ZL011.missing_doc_comment:public declaration 'Resource' is missing documentation
+20:5:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+24:5:1:ZL011.missing_doc_comment:public declaration 'deinit' is missing documentation
+41:1:1:ZL011.missing_doc_comment:public declaration 'Detector' is missing documentation
+45:5:1:ZL011.missing_doc_comment:public declaration 'detect' is missing documentation
+99:1:1:ZL011.missing_doc_comment:public declaration 'processDetector' is missing documentation
+113:1:1:ZL011.missing_doc_comment:public declaration 'osDetector' is missing documentation
+125:1:1:ZL011.missing_doc_comment:public declaration 'hostDetector' is missing documentation
+106:17:2:ZL500.os_specific_code:Linux-specific code 'std.os.linux' may cause portability issues; consider adding OS detection guards
+9:23:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+10:25:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

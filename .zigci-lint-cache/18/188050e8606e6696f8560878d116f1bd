@@ -1,0 +1,4 @@
+31:1:1:ZL011.missing_doc_comment:public declaration 'Mutex' is missing documentation
+34:5:1:ZL011.missing_doc_comment:public declaration 'lock' is missing documentation
+38:5:1:ZL011.missing_doc_comment:public declaration 'unlock' is missing documentation
+42:5:1:ZL011.missing_doc_comment:public declaration 'tryLock' is missing documentation

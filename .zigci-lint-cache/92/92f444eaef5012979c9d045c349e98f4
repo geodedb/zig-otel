@@ -1,0 +1,10 @@
+20:101:2:ZL300.max_line_length:line exceeds 100 characters (102)
+35:101:2:ZL300.max_line_length:line exceeds 100 characters (102)
+36:9:1:ZL009.var_should_be_const:variable 'i' is never reassigned; consider using 'const'
+26:53:1:ZL010.magic_number:magic number 4; consider using a named constant
+27:52:1:ZL010.magic_number:magic number 0x0f; consider using a named constant
+43:46:1:ZL010.magic_number:magic number 4; consider using a named constant
+44:18:1:ZL010.magic_number:magic number 3; consider using a named constant
+63:25:1:ZL010.magic_number:magic number 0x0f; consider using a named constant
+69:32:1:ZL010.magic_number:magic number 10; consider using a named constant
+70:32:1:ZL010.magic_number:magic number 10; consider using a named constant

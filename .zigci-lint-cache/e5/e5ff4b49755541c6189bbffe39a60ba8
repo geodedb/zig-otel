@@ -1,0 +1,15 @@
+498:9:1:ZL009.var_should_be_const:variable 'bundle' is never reassigned; consider using 'const'
+44:1:1:ZL011.missing_doc_comment:public declaration 'ExporterKind' is missing documentation
+45:1:1:ZL011.missing_doc_comment:public declaration 'Protocol' is missing documentation
+46:1:1:ZL011.missing_doc_comment:public declaration 'OtlpConfig' is missing documentation
+81:5:1:ZL011.missing_doc_comment:public declaration 'deinit' is missing documentation
+88:1:1:ZL011.missing_doc_comment:public declaration 'OwnedMetricExporter' is missing documentation
+94:5:1:ZL011.missing_doc_comment:public declaration 'deinit' is missing documentation
+101:1:1:ZL011.missing_doc_comment:public declaration 'OwnedLogExporter' is missing documentation
+107:5:1:ZL011.missing_doc_comment:public declaration 'deinit' is missing documentation
+163:1:1:ZL011.missing_doc_comment:public declaration 'metricExporterFor' is missing documentation
+187:1:1:ZL011.missing_doc_comment:public declaration 'logExporterFor' is missing documentation
+39:31:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+40:31:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+41:28:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+42:31:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

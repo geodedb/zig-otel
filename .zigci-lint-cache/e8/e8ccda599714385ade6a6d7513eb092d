@@ -1,0 +1,84 @@
+319:5:2:ZL301.max_function_lines:function exceeds 80 lines (119)
+378:55:2:ZL303.max_nesting:nesting depth exceeds 4 (6)
+329:9:1:ZL009.var_should_be_const:variable 'rs' is never reassigned; consider using 'const'
+348:13:1:ZL009.var_should_be_const:variable 'ss' is never reassigned; consider using 'const'
+361:17:1:ZL009.var_should_be_const:variable 's' is never reassigned; consider using 'const'
+393:21:1:ZL009.var_should_be_const:variable 'ev_msg' is never reassigned; consider using 'const'
+407:21:1:ZL009.var_should_be_const:variable 'lk_msg' is never reassigned; consider using 'const'
+430:9:1:ZL009.var_should_be_const:variable 'req' is never reassigned; consider using 'const'
+433:9:1:ZL009.var_should_be_const:variable 'aw' is never reassigned; consider using 'const'
+459:9:1:ZL009.var_should_be_const:variable 'arena' is never reassigned; consider using 'const'
+464:9:1:ZL009.var_should_be_const:variable 'rl' is never reassigned; consider using 'const'
+474:13:1:ZL009.var_should_be_const:variable 'sl' is never reassigned; consider using 'const'
+482:17:1:ZL009.var_should_be_const:variable 'lr' is never reassigned; consider using 'const'
+517:9:1:ZL009.var_should_be_const:variable 'req' is never reassigned; consider using 'const'
+520:9:1:ZL009.var_should_be_const:variable 'aw' is never reassigned; consider using 'const'
+527:9:1:ZL009.var_should_be_const:variable 'any' is never reassigned; consider using 'const'
+82:29:1:ZL010.magic_number:magic number 3; consider using a named constant
+83:32:1:ZL010.magic_number:magic number 4; consider using a named constant
+121:24:1:ZL010.magic_number:magic number 3; consider using a named constant
+143:30:1:ZL010.magic_number:magic number 3; consider using a named constant
+144:44:1:ZL010.magic_number:magic number 4; consider using a named constant
+163:31:1:ZL010.magic_number:magic number 3; consider using a named constant
+164:30:1:ZL010.magic_number:magic number 4; consider using a named constant
+165:44:1:ZL010.magic_number:magic number 5; consider using a named constant
+192:24:1:ZL010.magic_number:magic number 5; consider using a named constant
+193:24:1:ZL010.magic_number:magic number 6; consider using a named constant
+194:40:1:ZL010.magic_number:magic number 7; consider using a named constant
+196:30:1:ZL010.magic_number:magic number 9; consider using a named constant
+197:44:1:ZL010.magic_number:magic number 10; consider using a named constant
+198:26:1:ZL010.magic_number:magic number 11; consider using a named constant
+199:40:1:ZL010.magic_number:magic number 12; consider using a named constant
+200:25:1:ZL010.magic_number:magic number 13; consider using a named constant
+201:39:1:ZL010.magic_number:magic number 14; consider using a named constant
+202:26:1:ZL010.magic_number:magic number 15; consider using a named constant
+218:30:1:ZL010.magic_number:magic number 3; consider using a named constant
+236:30:1:ZL010.magic_number:magic number 3; consider using a named constant
+274:33:1:ZL010.magic_number:magic number 3; consider using a named constant
+275:24:1:ZL010.magic_number:magic number 5; consider using a named constant
+276:30:1:ZL010.magic_number:magic number 6; consider using a named constant
+277:44:1:ZL010.magic_number:magic number 7; consider using a named constant
+279:28:1:ZL010.magic_number:magic number 9; consider using a named constant
+280:27:1:ZL010.magic_number:magic number 10; consider using a named constant
+281:43:1:ZL010.magic_number:magic number 11; consider using a named constant
+282:30:1:ZL010.magic_number:magic number 12; consider using a named constant
+294:30:1:ZL010.magic_number:magic number 3; consider using a named constant
+306:30:1:ZL010.magic_number:magic number 3; consider using a named constant
+73:5:1:ZL011.missing_doc_comment:public declaration 'AnyValue' is missing documentation
+79:9:1:ZL011.missing_doc_comment:public declaration '_desc_table' is missing documentation
+87:5:1:ZL011.missing_doc_comment:public declaration 'KeyValue' is missing documentation
+91:9:1:ZL011.missing_doc_comment:public declaration '_desc_table' is missing documentation
+97:5:1:ZL011.missing_doc_comment:public declaration 'Resource' is missing documentation
+100:9:1:ZL011.missing_doc_comment:public declaration '_desc_table' is missing documentation
+105:5:1:ZL011.missing_doc_comment:public declaration 'InstrumentationScope' is missing documentation
+109:9:1:ZL011.missing_doc_comment:public declaration '_desc_table' is missing documentation
+115:5:1:ZL011.missing_doc_comment:public declaration 'Status' is missing documentation
+119:9:1:ZL011.missing_doc_comment:public declaration '_desc_table' is missing documentation
+134:5:1:ZL011.missing_doc_comment:public declaration 'Event' is missing documentation
+140:9:1:ZL011.missing_doc_comment:public declaration '_desc_table' is missing documentation
+153:5:1:ZL011.missing_doc_comment:public declaration 'Link' is missing documentation
+160:9:1:ZL011.missing_doc_comment:public declaration '_desc_table' is missing documentation
+169:5:1:ZL011.missing_doc_comment:public declaration 'Span' is missing documentation
+189:9:1:ZL011.missing_doc_comment:public declaration '_desc_table' is missing documentation
+206:5:1:ZL011.missing_doc_comment:public declaration 'ScopeSpans' is missing documentation
+215:9:1:ZL011.missing_doc_comment:public declaration '_desc_table' is missing documentation
+222:5:1:ZL011.missing_doc_comment:public declaration 'ResourceSpans' is missing documentation
+233:9:1:ZL011.missing_doc_comment:public declaration '_desc_table' is missing documentation
+240:5:1:ZL011.missing_doc_comment:public declaration 'ExportTraceServiceRequest' is missing documentation
+243:9:1:ZL011.missing_doc_comment:public declaration '_desc_table' is missing documentation
+258:5:1:ZL011.missing_doc_comment:public declaration 'LogRecord' is missing documentation
+271:9:1:ZL011.missing_doc_comment:public declaration '_desc_table' is missing documentation
+286:5:1:ZL011.missing_doc_comment:public declaration 'ScopeLogs' is missing documentation
+291:9:1:ZL011.missing_doc_comment:public declaration '_desc_table' is missing documentation
+298:5:1:ZL011.missing_doc_comment:public declaration 'ResourceLogs' is missing documentation
+303:9:1:ZL011.missing_doc_comment:public declaration '_desc_table' is missing documentation
+310:5:1:ZL011.missing_doc_comment:public declaration 'ExportLogsServiceRequest' is missing documentation
+313:9:1:ZL011.missing_doc_comment:public declaration '_desc_table' is missing documentation
+319:1:1:ZL011.missing_doc_comment:public declaration 'encodeSpansProtoDevnw' is missing documentation
+51:21:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+52:22:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+53:26:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+54:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+55:24:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+321:45:1:ZL603.missing_defer_cleanup:resource '.alloc(' may not be properly cleaned up; consider using defer
+457:45:1:ZL603.missing_defer_cleanup:resource '.alloc(' may not be properly cleaned up; consider using defer

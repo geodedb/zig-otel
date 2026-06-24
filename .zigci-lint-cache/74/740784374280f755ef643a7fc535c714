@@ -1,0 +1,14 @@
+15:101:2:ZL300.max_line_length:line exceeds 100 characters (105)
+60:101:2:ZL300.max_line_length:line exceeds 100 characters (105)
+18:9:1:ZL009.var_should_be_const:variable 'buf' is never reassigned; consider using 'const'
+45:9:1:ZL009.var_should_be_const:variable 'members' is never reassigned; consider using 'const'
+56:13:1:ZL009.var_should_be_const:variable 'scratch' is never reassigned; consider using 'const'
+68:9:1:ZL009.var_should_be_const:variable 'arena' is never reassigned; consider using 'const'
+70:9:1:ZL009.var_should_be_const:variable 'bag' is never reassigned; consider using 'const'
+77:9:1:ZL009.var_should_be_const:variable 'mc' is never reassigned; consider using 'const'
+80:9:1:ZL009.var_should_be_const:variable 'out' is never reassigned; consider using 'const'
+89:9:1:ZL009.var_should_be_const:variable 'mc' is never reassigned; consider using 'const'
+13:1:1:ZL011.missing_doc_comment:public declaration 'baggage_header' is missing documentation
+15:1:1:ZL011.missing_doc_comment:public declaration 'inject' is missing documentation
+38:1:1:ZL011.missing_doc_comment:public declaration 'extract' is missing documentation
+9:29:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

@@ -1,0 +1,15 @@
+58:52:2:ZL204.no_dupe_import:duplicate import of 'grpc_zig' (first at line 17)
+120:13:1:ZL009.var_should_be_const:variable 'token_bytes' is never reassigned; consider using 'const'
+122:13:1:ZL009.var_should_be_const:variable 'token_hex' is never reassigned; consider using 'const'
+171:5:1:ZL009.var_should_be_const:variable 'active_server' is never reassigned; consider using 'const'
+125:49:1:ZL010.magic_number:magic number 4; consider using a named constant
+125:54:1:ZL010.magic_number:magic number 0x0f; consider using a named constant
+126:51:1:ZL010.magic_number:magic number 0x0f; consider using a named constant
+42:1:1:ZL011.missing_doc_comment:public declaration 'Server' is missing documentation
+74:5:1:ZL011.missing_doc_comment:public declaration 'endpoint' is missing documentation
+78:5:1:ZL011.missing_doc_comment:public declaration 'requestCount' is missing documentation
+207:5:1:ZL011.missing_doc_comment:public declaration 'endpoint' is missing documentation
+211:5:1:ZL011.missing_doc_comment:public declaration 'requestCount' is missing documentation
+215:5:1:ZL011.missing_doc_comment:public declaration 'shutdown' is missing documentation
+40:24:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+162:26:1:ZL603.missing_defer_cleanup:resource 'std.Thread.spawn(' may not be properly cleaned up; consider using defer

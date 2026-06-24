@@ -1,0 +1,10 @@
+36:9:1:ZL009.var_should_be_const:variable 'out' is never reassigned; consider using 'const'
+46:9:1:ZL009.var_should_be_const:variable 'c' is never reassigned; consider using 'const'
+57:9:1:ZL009.var_should_be_const:variable 'in' is never reassigned; consider using 'const'
+67:9:1:ZL009.var_should_be_const:variable 'decompress' is never reassigned; consider using 'const'
+69:9:1:ZL009.var_should_be_const:variable 'out' is never reassigned; consider using 'const'
+89:41:1:ZL010.magic_number:magic number 0x1f; consider using a named constant
+90:41:1:ZL010.magic_number:magic number 0x8b; consider using a named constant
+105:46:1:ZL010.magic_number:magic number 20; consider using a named constant
+106:41:1:ZL010.magic_number:magic number 0x1f; consider using a named constant
+107:41:1:ZL010.magic_number:magic number 0x8b; consider using a named constant

@@ -1,0 +1,27 @@
+85:101:2:ZL300.max_line_length:line exceeds 100 characters (113)
+34:29:2:ZL302.max_params:function has too many parameters (8 > 6)
+127:5:2:ZL302.max_params:function has too many parameters (11 > 6)
+154:9:1:ZL009.var_should_be_const:variable 'headers_list' is never reassigned; consider using 'const'
+158:13:1:ZL009.var_should_be_const:variable 'parsed_buf' is never reassigned; consider using 'const'
+167:9:1:ZL009.var_should_be_const:variable 'client' is never reassigned; consider using 'const'
+174:9:1:ZL009.var_should_be_const:variable 'resp_writer' is never reassigned; consider using 'const'
+91:19:1:ZL010.magic_number:magic number 207; consider using a named constant
+92:19:1:ZL010.magic_number:magic number 200; consider using a named constant
+92:36:1:ZL010.magic_number:magic number 300; consider using a named constant
+93:19:1:ZL010.magic_number:magic number 429; consider using a named constant
+94:19:1:ZL010.magic_number:magic number 500; consider using a named constant
+95:19:1:ZL010.magic_number:magic number 400; consider using a named constant
+195:71:1:ZL010.magic_number:magic number 200; consider using a named constant
+196:71:1:ZL010.magic_number:magic number 204; consider using a named constant
+197:71:1:ZL010.magic_number:magic number 299; consider using a named constant
+198:71:1:ZL010.magic_number:magic number 207; consider using a named constant
+202:73:1:ZL010.magic_number:magic number 429; consider using a named constant
+203:73:1:ZL010.magic_number:magic number 500; consider using a named constant
+204:73:1:ZL010.magic_number:magic number 503; consider using a named constant
+205:73:1:ZL010.magic_number:magic number 599; consider using a named constant
+206:69:1:ZL010.magic_number:magic number 400; consider using a named constant
+207:69:1:ZL010.magic_number:magic number 404; consider using a named constant
+208:69:1:ZL010.magic_number:magic number 499; consider using a named constant
+26:1:1:ZL011.missing_doc_comment:public declaration 'TransportResult' is missing documentation
+144:32:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+144:59:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

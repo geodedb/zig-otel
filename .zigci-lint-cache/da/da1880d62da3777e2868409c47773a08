@@ -1,0 +1,20 @@
+37:93:3:ZL003.no_empty_catch:empty catch block suppresses errors
+59:84:3:ZL003.no_empty_catch:empty catch block suppresses errors
+26:101:2:ZL300.max_line_length:line exceeds 100 characters (111)
+37:101:2:ZL300.max_line_length:line exceeds 100 characters (101)
+48:101:2:ZL300.max_line_length:line exceeds 100 characters (111)
+50:101:2:ZL300.max_line_length:line exceeds 100 characters (109)
+27:9:1:ZL009.var_should_be_const:variable 'name_buf' is never reassigned; consider using 'const'
+49:9:1:ZL009.var_should_be_const:variable 'name_buf' is never reassigned; consider using 'const'
+38:33:1:ZL010.magic_number:magic number 400; consider using a named constant
+60:24:1:ZL010.magic_number:magic number 500; consider using a named constant
+13:1:1:ZL011.missing_doc_comment:public declaration 'ClientRequest' is missing documentation
+20:1:1:ZL011.missing_doc_comment:public declaration 'ClientResponse' is missing documentation
+26:1:1:ZL011.missing_doc_comment:public declaration 'startClientSpan' is missing documentation
+36:1:1:ZL011.missing_doc_comment:public declaration 'endClientSpan' is missing documentation
+42:1:1:ZL011.missing_doc_comment:public declaration 'ServerRequest' is missing documentation
+48:1:1:ZL011.missing_doc_comment:public declaration 'startServerSpan' is missing documentation
+58:1:1:ZL011.missing_doc_comment:public declaration 'endServerSpan' is missing documentation
+9:27:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+10:25:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+11:25:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

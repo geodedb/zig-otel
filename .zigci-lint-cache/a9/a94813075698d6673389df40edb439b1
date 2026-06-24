@@ -1,0 +1,25 @@
+82:101:2:ZL300.max_line_length:line exceeds 100 characters (110)
+87:101:2:ZL300.max_line_length:line exceeds 100 characters (111)
+171:101:2:ZL300.max_line_length:line exceeds 100 characters (110)
+102:23:2:ZL303.max_nesting:nesting depth exceeds 4 (5)
+75:9:1:ZL009.var_should_be_const:variable 'buf' is never reassigned; consider using 'const'
+76:9:1:ZL009.var_should_be_const:variable 'tid_hex' is never reassigned; consider using 'const'
+78:9:1:ZL009.var_should_be_const:variable 'sid_hex' is never reassigned; consider using 'const'
+115:9:1:ZL009.var_should_be_const:variable 'fields_iter' is never reassigned; consider using 'const'
+151:9:1:ZL009.var_should_be_const:variable 'tid_hex' is never reassigned; consider using 'const'
+153:9:1:ZL009.var_should_be_const:variable 'sid_hex' is never reassigned; consider using 'const'
+219:13:1:ZL009.var_should_be_const:variable 'padded' is never reassigned; consider using 'const'
+37:1:1:ZL011.missing_doc_comment:public declaration 'Carrier' is missing documentation
+38:1:1:ZL011.missing_doc_comment:public declaration 'Fields' is missing documentation
+39:1:1:ZL011.missing_doc_comment:public declaration 'ExtractResult' is missing documentation
+40:1:1:ZL011.missing_doc_comment:public declaration 'TextMapPropagator' is missing documentation
+43:1:1:ZL011.missing_doc_comment:public declaration 'single_header_name' is missing documentation
+44:1:1:ZL011.missing_doc_comment:public declaration 'trace_id_header' is missing documentation
+45:1:1:ZL011.missing_doc_comment:public declaration 'span_id_header' is missing documentation
+46:1:1:ZL011.missing_doc_comment:public declaration 'parent_span_id_header' is missing documentation
+47:1:1:ZL011.missing_doc_comment:public declaration 'sampled_header' is missing documentation
+48:1:1:ZL011.missing_doc_comment:public declaration 'flags_header' is missing documentation
+54:1:1:ZL011.missing_doc_comment:public declaration 'single_header' is missing documentation
+59:1:1:ZL011.missing_doc_comment:public declaration 'multi_header' is missing documentation
+33:25:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+34:20:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

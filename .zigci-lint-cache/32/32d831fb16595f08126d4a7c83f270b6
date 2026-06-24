@@ -1,0 +1,101 @@
+180:21:2:ZL001.no_undefined:use of 'undefined' may hide uninitialized memory bugs
+27:101:2:ZL300.max_line_length:line exceeds 100 characters (111)
+28:101:2:ZL300.max_line_length:line exceeds 100 characters (106)
+30:101:2:ZL300.max_line_length:line exceeds 100 characters (109)
+43:101:2:ZL300.max_line_length:line exceeds 100 characters (126)
+44:101:2:ZL300.max_line_length:line exceeds 100 characters (114)
+196:101:2:ZL300.max_line_length:line exceeds 100 characters (102)
+316:101:2:ZL300.max_line_length:line exceeds 100 characters (102)
+317:101:2:ZL300.max_line_length:line exceeds 100 characters (145)
+319:101:2:ZL300.max_line_length:line exceeds 100 characters (107)
+324:101:2:ZL300.max_line_length:line exceeds 100 characters (113)
+417:101:2:ZL300.max_line_length:line exceeds 100 characters (101)
+472:101:2:ZL300.max_line_length:line exceeds 100 characters (111)
+479:101:2:ZL300.max_line_length:line exceeds 100 characters (120)
+548:101:2:ZL300.max_line_length:line exceeds 100 characters (140)
+549:101:2:ZL300.max_line_length:line exceeds 100 characters (133)
+568:101:2:ZL300.max_line_length:line exceeds 100 characters (116)
+569:101:2:ZL300.max_line_length:line exceeds 100 characters (118)
+570:101:2:ZL300.max_line_length:line exceeds 100 characters (112)
+627:101:2:ZL300.max_line_length:line exceeds 100 characters (102)
+632:101:2:ZL300.max_line_length:line exceeds 100 characters (108)
+633:101:2:ZL300.max_line_length:line exceeds 100 characters (106)
+695:101:2:ZL300.max_line_length:line exceeds 100 characters (119)
+736:101:2:ZL300.max_line_length:line exceeds 100 characters (104)
+756:101:2:ZL300.max_line_length:line exceeds 100 characters (105)
+766:101:2:ZL300.max_line_length:line exceeds 100 characters (102)
+784:101:2:ZL300.max_line_length:line exceeds 100 characters (119)
+786:101:2:ZL300.max_line_length:line exceeds 100 characters (111)
+863:101:2:ZL300.max_line_length:line exceeds 100 characters (125)
+869:101:2:ZL300.max_line_length:line exceeds 100 characters (102)
+877:101:2:ZL300.max_line_length:line exceeds 100 characters (103)
+540:5:2:ZL301.max_function_lines:function exceeds 80 lines (95)
+170:9:1:ZL009.var_should_be_const:variable 'parts' is never reassigned; consider using 'const'
+171:9:1:ZL009.var_should_be_const:variable 'n' is never reassigned; consider using 'const'
+172:9:1:ZL009.var_should_be_const:variable 'it' is never reassigned; consider using 'const'
+285:9:1:ZL009.var_should_be_const:variable 'host_buf' is never reassigned; consider using 'const'
+504:9:1:ZL009.var_should_be_const:variable 'cfg' is never reassigned; consider using 'const'
+670:9:1:ZL009.var_should_be_const:variable 'lines' is never reassigned; consider using 'const'
+806:9:1:ZL009.var_should_be_const:variable 'n' is never reassigned; consider using 'const'
+851:13:1:ZL009.var_should_be_const:variable 'docs' is never reassigned; consider using 'const'
+858:13:1:ZL009.var_should_be_const:variable 'root' is never reassigned; consider using 'const'
+1033:9:1:ZL009.var_should_be_const:variable 'iter' is never reassigned; consider using 'const'
+1060:9:1:ZL009.var_should_be_const:variable 'cfg' is never reassigned; consider using 'const'
+1066:9:1:ZL009.var_should_be_const:variable 'cfg' is never reassigned; consider using 'const'
+174:18:1:ZL010.magic_number:magic number 4; consider using a named constant
+186:28:1:ZL010.magic_number:magic number 0xff; consider using a named constant
+186:47:1:ZL010.magic_number:magic number 0xff_ffff; consider using a named constant
+187:33:1:ZL010.magic_number:magic number 24; consider using a named constant
+190:9:1:ZL010.magic_number:magic number 3; consider using a named constant
+191:28:1:ZL010.magic_number:magic number 0xff; consider using a named constant
+191:47:1:ZL010.magic_number:magic number 0xff; consider using a named constant
+191:66:1:ZL010.magic_number:magic number 0xffff; consider using a named constant
+192:33:1:ZL010.magic_number:magic number 24; consider using a named constant
+195:9:1:ZL010.magic_number:magic number 4; consider using a named constant
+196:28:1:ZL010.magic_number:magic number 0xff; consider using a named constant
+196:47:1:ZL010.magic_number:magic number 0xff; consider using a named constant
+196:66:1:ZL010.magic_number:magic number 0xff; consider using a named constant
+196:85:1:ZL010.magic_number:magic number 0xff; consider using a named constant
+197:33:1:ZL010.magic_number:magic number 24; consider using a named constant
+202:27:1:ZL010.magic_number:magic number 24; consider using a named constant
+224:37:1:ZL010.magic_number:magic number 10; consider using a named constant
+230:18:1:ZL010.magic_number:magic number 169; consider using a named constant
+230:35:1:ZL010.magic_number:magic number 254; consider using a named constant
+231:38:1:ZL010.magic_number:magic number 127; consider using a named constant
+316:63:1:ZL010.magic_number:magic number 10; consider using a named constant
+316:80:1:ZL010.magic_number:magic number 0xff; consider using a named constant
+316:98:1:ZL010.magic_number:magic number 0xff; consider using a named constant
+317:63:1:ZL010.magic_number:magic number 12; consider using a named constant
+322:21:1:ZL010.magic_number:magic number 0xfe; consider using a named constant
+322:38:1:ZL010.magic_number:magic number 0xc0; consider using a named constant
+324:67:1:ZL010.magic_number:magic number 15; consider using a named constant
+344:24:1:ZL010.magic_number:magic number 60_000; consider using a named constant
+366:30:1:ZL010.magic_number:magic number 5_000; consider using a named constant
+367:30:1:ZL010.magic_number:magic number 30_000; consider using a named constant
+368:27:1:ZL010.magic_number:magic number 2048; consider using a named constant
+382:31:1:ZL010.magic_number:magic number 60_000; consider using a named constant
+383:30:1:ZL010.magic_number:magic number 30_000; consider using a named constant
+644:37:1:ZL010.magic_number:magic number 10; consider using a named constant
+651:37:1:ZL010.magic_number:magic number 10; consider using a named constant
+752:42:1:ZL010.magic_number:magic number 10; consider using a named constant
+760:42:1:ZL010.magic_number:magic number 10; consider using a named constant
+808:55:1:ZL010.magic_number:magic number 4; consider using a named constant
+17:1:1:ZL011.missing_doc_comment:public declaration 'ExporterKind' is missing documentation
+26:5:1:ZL011.missing_doc_comment:public declaration 'fromString' is missing documentation
+37:1:1:ZL011.missing_doc_comment:public declaration 'Protocol' is missing documentation
+42:5:1:ZL011.missing_doc_comment:public declaration 'fromString' is missing documentation
+50:1:1:ZL011.missing_doc_comment:public declaration 'OtlpConfig' is missing documentation
+110:1:1:ZL011.missing_doc_comment:public declaration 'validateEndpoint' is missing documentation
+335:1:1:ZL011.missing_doc_comment:public declaration 'TraceProviderConfig' is missing documentation
+342:1:1:ZL011.missing_doc_comment:public declaration 'MetricProviderConfig' is missing documentation
+348:1:1:ZL011.missing_doc_comment:public declaration 'LogProviderConfig' is missing documentation
+386:1:1:ZL011.missing_doc_comment:public declaration 'Config' is missing documentation
+412:5:1:ZL011.missing_doc_comment:public declaration 'validate' is missing documentation
+962:1:1:ZL011.missing_doc_comment:public declaration 'PropagatorBundle' is missing documentation
+966:5:1:ZL011.missing_doc_comment:public declaration 'deinit' is missing documentation
+13:32:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+14:31:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+15:35:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+603:55:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+674:48:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path
+1073:45:1:ZL501.hardcoded_path_separator:hardcoded path may not work across operating systems; consider using std.fs.path

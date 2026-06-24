@@ -1,0 +1,26 @@
+10:8:1:ZL200.fn_camelcase:function 'RingBuffer' should use camelCase
+63:17:1:ZL009.var_should_be_const:variable 'i' is never reassigned; consider using 'const'
+95:9:1:ZL009.var_should_be_const:variable 'rb' is never reassigned; consider using 'const'
+103:9:1:ZL009.var_should_be_const:variable 'out' is never reassigned; consider using 'const'
+74:62:1:ZL010.magic_number:magic number 4; consider using a named constant
+78:36:1:ZL010.magic_number:magic number 3; consider using a named constant
+79:44:1:ZL010.magic_number:magic number 3; consider using a named constant
+82:43:1:ZL010.magic_number:magic number 3; consider using a named constant
+91:37:1:ZL010.magic_number:magic number 3; consider using a named constant
+95:61:1:ZL010.magic_number:magic number 3; consider using a named constant
+100:36:1:ZL010.magic_number:magic number 3; consider using a named constant
+101:36:1:ZL010.magic_number:magic number 4; consider using a named constant
+102:37:1:ZL010.magic_number:magic number 5; consider using a named constant
+105:44:1:ZL010.magic_number:magic number 3; consider using a named constant
+106:50:1:ZL010.magic_number:magic number 3; consider using a named constant
+106:53:1:ZL010.magic_number:magic number 4; consider using a named constant
+10:1:1:ZL011.missing_doc_comment:public declaration 'RingBuffer' is missing documentation
+19:9:1:ZL011.missing_doc_comment:public declaration 'init' is missing documentation
+25:9:1:ZL011.missing_doc_comment:public declaration 'deinit' is missing documentation
+29:9:1:ZL011.missing_doc_comment:public declaration 'capacity' is missing documentation
+33:9:1:ZL011.missing_doc_comment:public declaration 'len' is missing documentation
+37:9:1:ZL011.missing_doc_comment:public declaration 'isEmpty' is missing documentation
+41:9:1:ZL011.missing_doc_comment:public declaration 'isFull' is missing documentation
+45:9:1:ZL011.missing_doc_comment:public declaration 'push' is missing documentation
+53:9:1:ZL011.missing_doc_comment:public declaration 'pop' is missing documentation
+21:38:1:ZL603.missing_defer_cleanup:resource '.alloc(' may not be properly cleaned up; consider using defer

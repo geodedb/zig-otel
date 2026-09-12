@@ -392,6 +392,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scope. OTLP wire output groups spans correctly under their
   originating `ScopeSpans`. (GAP #1, #3)
 
+## [0.1.18] - 2026-09-12
+
+### Changed
+
+- Converge thread_pool v0.2.7, fips v0.1.1, protobuf v0.1.5 (GAP-0838 diamond sync).
+
 ## [0.1.0] - YYYY-MM-DD
 
 ### Added

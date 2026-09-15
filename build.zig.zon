@@ -1,6 +1,6 @@
 .{
     .name = .otel,
-    .version = "0.1.19",
+    .version = "0.1.20",
     .fingerprint = 0x4d774a5496f74b07,
     .minimum_zig_version = "0.16.0",
     // Initial delivery is hermetic: stdlib + in-repo implementations only.
@@ -38,8 +38,8 @@
             .hash = "tls-0.1.21-mtEaLAY4FgA8prixchxXcq6T5lMKdb04B4WgJ_DyfJhN",
         },
         .grpc_zig = .{
-            .url = "git+https://gitlab.com/devnw/zig/grpc-zig.git?ref=v0.1.9#58dbbef0e565c28ae4c7e556c233ff1b223f025c",
-            .hash = "grpc_zig-0.1.8-7FnvpKz7BQAM3rNTfY4gV_dBgDfEB4JScP6cE--HzBl9",
+            .url = "git+https://gitlab.com/devnw/zig/grpc-zig.git?ref=v0.1.10#00589ebc01a1a7fde4c5be836e833b07fc7b1cbe",
+            .hash = "grpc_zig-0.1.10-7FnvpA-kBwB9JDaJ20jRpUHGOMZJ81t5jT_gYLWEO-Ha",
         },
         .thread_pool = .{
             .url = "git+https://gitlab.com/devnw/zig/thread-pool.git?ref=v0.2.7#54a2ddda1a356c32ba2e4df70691459570fb6339",

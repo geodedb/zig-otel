@@ -30,23 +30,27 @@ test "case-insensitive sensitive token detection" {
 test "PN-NEW-7: isSensitive classification is preserved (table-driven)" {
     const sensitive = [_][]const u8{
         // canonical tokens
-        "password",      "api_key",
-        "apikey",        "secret",
-        "token",         "authorization",
+        "password",
+        "api_key",
+        "apikey",
+        "secret",
+        "token",
+        "authorization",
         "credential",
         // mixed-case forms
-        "Password",      "API-KEY",
+        "Password",
+        "API-KEY",
         // embedded / separated forms
-        "db_password",   "x-secret-header",
+        "db_password",
+        "x-secret-header",
     };
     inline for (sensitive) |key| {
         try std.testing.expect(otel.internal.redact.isSensitive(key));
     }
 
     const benign = [_][]const u8{
-        "user",  "host", "region", "count",
-        "name",  "id",   "count_total",
-        "path",
+        "user", "host", "region",      "count",
+        "name", "id",   "count_total", "path",
     };
     inline for (benign) |key| {
         try std.testing.expect(!otel.internal.redact.isSensitive(key));

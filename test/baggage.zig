@@ -103,7 +103,7 @@ test "Baggage.put hit-path does not re-dupe the key (PR-6 / #139)" {
     defer bag.deinit();
 
     // Long key + 1-byte value so the pre-fix waste dominates per iteration.
-    const key = "a-deliberately-long-baggage-key-so-the-leak-is-obvious-58B";
+    const key = "a-deliberately-long-baggage-key-so-the-leak-is-obvious-58B"; // gitleaks:allow -- baggage key test fixture, not a credential
     const value = "v";
 
     try bag.put(key, value, null);

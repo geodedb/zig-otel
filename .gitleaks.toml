@@ -13,6 +13,13 @@ paths = [
     '''zig-out''',
     '''\.git''',
 ]
+# test/baggage.zig: a baggage *key* test fixture, not a credential. CI
+# scans a shallow clone, so whichever commit is at the clone boundary shows
+# the whole file as added and per-commit .gitleaksignore fingerprints can't
+# keep up. Match this one literal value only.
+regexes = [
+    '''^a-deliberately-long-baggage-key-so-the-leak-is-obvious-58B$''',
+]
 
 # Add custom rules or allowlist entries as needed
 # [[rules]]

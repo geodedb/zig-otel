@@ -1,0 +1,10 @@
+# Per-finding suppressions (gitleaks fingerprints: commit:file:rule:line).
+# test/baggage.zig: the string is a baggage *key* test fixture
+# ("a-deliberately-long-baggage-key-so-the-leak-is-obvious-58B") used to
+# measure allocation reuse, not a credential. These are its occurrences in
+# history; the current line carries an inline gitleaks:allow.
+aefcb313b5c893c44e812e7e7eb53d422970ffe9:test/baggage.zig:generic-api-key:106
+538d582ae12bc642a807b558799697fb252b319b:test/baggage.zig:generic-api-key:65
+dfcefab8286259acd56b0f38300c4e6b53cb7325:test/baggage.zig:generic-api-key:65
+991e42662700fbd2f3b5caf403de9853a160be12:test/baggage.zig:generic-api-key:65
+a6329567c44f091f56e79af79e0ea9874d6b887b:test/baggage.zig:generic-api-key:106

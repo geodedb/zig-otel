@@ -33,7 +33,7 @@
 
 const std = @import("std");
 
-pub const version: []const u8 = "0.1.27";
+pub const version: []const u8 = "0.1.28";
 pub const build_options = @import("build_options");
 
 pub const api = struct {

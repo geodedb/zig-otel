@@ -1,6 +1,6 @@
 .{
     .name = .otel,
-    .version = "0.1.25",
+    .version = "0.1.26",
     .fingerprint = 0x4d774a5496f74b07,
     .minimum_zig_version = "0.16.0",
     // Initial delivery is hermetic: stdlib + in-repo implementations only.
@@ -10,20 +10,20 @@
     // build option (e.g. -Dotel_use_devnw_slog=true) in build.zig.
     .dependencies = .{
         .slog = .{
-            .url = "git+https://gitlab.com/devnw/zig/slog.git?ref=v0.1.14#9f070485a8246aede86dd576ab436bc3015e8181",
-            .hash = "slog-0.1.14-SamED3LlBgDuz4yt62QpFiLl6A1XNjg3roeIaD9ZFVM2",
+            .url = "git+https://gitlab.com/devnw/zig/slog.git?ref=v0.1.15#6a5015cfc39e2d6e886983f88bada18dc98b8d59",
+            .hash = "slog-0.1.15-SamEDyr7BwAE8WaNO8joc2QI1aqoX38PVFMAR7_KZuRS",
         },
         .json = .{
-            .url = "git+https://gitlab.com/devnw/zig/json.git?ref=v0.1.19#f1e1e353534cc207ac2445435ee698509dc10e32",
-            .hash = "json-0.1.19-tOue4dEGEQDZKJvAHTTMJIQyVIJO-ENZuHxrOs_ajy4l",
+            .url = "git+https://gitlab.com/devnw/zig/json.git?ref=v0.1.20#22154db734abf5264a716086fc0669eb9d6c082a",
+            .hash = "json-0.1.20-tOue4YSW6ACsmrKTooK2625fgWaZHPTZbu2R_EWVY4aU",
         },
         .yaml = .{
             .url = "git+https://gitlab.com/devnw/zig/yaml.git?ref=v0.1.10#d2455fdbc2676858988c94b4116ff11df65565a4",
             .hash = "yaml-0.1.10-lcW-hJ0sCAC3Ic7RLgYMLTI5r3HDCUT48ThG46wKCbGN",
         },
         .config = .{
-            .url = "git+https://gitlab.com/devnw/zig/config.git?ref=v0.1.17#8441abfe70cef4ef0fda49b9f731ee278ee69596",
-            .hash = "config-0.1.17-TiLummppDAB8PedftDTM9F19KLFlQdMUF9tnAqMHcYiq",
+            .url = "git+https://gitlab.com/devnw/zig/config.git?ref=v0.1.18#cf328f6f9c9d115fcafb573d2fec82f0c51fc0e8",
+            .hash = "config-0.1.18-TiLumviyDABHAt1Am31WtoSYVORg1fPL0XagLW_YeNjK",
         },
         .protobuf = .{
             .url = "git+https://gitlab.com/devnw/zig/protobuf.git?ref=v0.1.6#8d8dbd814c7f66862c91fbb9f362ffbc234042cd",
@@ -34,12 +34,12 @@
             .hash = "metrics-0.1.9-uPGXFvchAwAj3XxI3K2a4-l2RAurcqTMt6hujFpbHxJI",
         },
         .tls = .{
-            .url = "git+https://gitlab.com/devnw/zig/tls.git?ref=v0.1.22#6793f67cd39fed495012d2d812521edfda2af942",
-            .hash = "tls-0.1.22-mtEaLCtyFgD8SEo_ImH0sO_7Gdp-4Li2dG1CHWRsoelD",
+            .url = "git+https://gitlab.com/devnw/zig/tls.git?ref=v0.1.23#4b2dd229039c90ad5849ec758d79634f895ba91d",
+            .hash = "tls-0.1.23-mtEaLGHFKgCMI8d7W2QLrCkpudoBZrujDaCiutBeShwj",
         },
         .grpc_zig = .{
-            .url = "git+https://gitlab.com/devnw/zig/grpc-zig.git?ref=v0.1.14#a702266a33540ee298d08e66156851dea9814056",
-            .hash = "grpc_zig-0.1.14-7FnvpAGOCABGtCMe9VF2dEyLgcvK-oVAqLpMqxksFlZ2",
+            .url = "git+https://gitlab.com/devnw/zig/grpc-zig.git?ref=v0.1.15#b8fdb24d8f7e376a88adb21f238875498faddbb6",
+            .hash = "grpc_zig-0.1.15-7FnvpCMYCQAfwbZqWBZvrGeoz3SF1d9Vc2GlS-FYPlAh",
         },
         .thread_pool = .{
             .url = "git+https://gitlab.com/devnw/zig/thread-pool.git?ref=v0.2.9#1d7275da020a43588c4f1885f7f725d5e8ce079e",

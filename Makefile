@@ -37,7 +37,10 @@ test-stress:
 	$(ZIG) build test-stress --summary all
 
 test-all:
-	$(ZIG) build test-all --summary all
+	$(ZIG) build test -Doptimize=Debug --summary all
+	$(ZIG) build test -Doptimize=ReleaseSafe --summary all
+	$(ZIG) build test -Doptimize=ReleaseFast --summary all
+	$(ZIG) build test -Doptimize=ReleaseSmall --summary all
 
 test-release-safe:
 	$(ZIG) build test -Doptimize=ReleaseSafe --summary all

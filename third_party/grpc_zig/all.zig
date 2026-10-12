@@ -29,3 +29,5 @@ pub const GrpcClient = client.GrpcClient;
 pub const GrpcServer = server.GrpcServer;
 pub const Transport = server.Transport;
 pub const Handler = server.Handler;
+
+pub const Compression = @import("features/compression.zig").Compression;

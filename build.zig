@@ -46,7 +46,7 @@ pub fn build(b: *std.Build) void {
     opts.addOption(bool, "use_devnw_pool", use_devnw_pool);
     opts.addOption(bool, "grpc_test_server", grpc_test_server);
     opts.addOption(bool, "otel_disabled", otel_disabled);
-    opts.addOption([]const u8, "version", "0.1.0");
+    opts.addOption([]const u8, "version", "0.1.26");
     opts.addOption([]const u8, "package_name", "otel");
     const build_options_module = opts.createModule();
 
@@ -120,32 +120,9 @@ pub fn build(b: *std.Build) void {
         // directory so the synthesized `all.zig` can `@import` siblings
         // (and they can transitively `@import` each other) within the
         // single module identity.
-        const upstream_files = [_][]const u8{
-            "client.zig",
-            "server.zig",
-            "compat.zig",
-            "benchmark.zig",
-            "proto/service.zig",
-            "features/auth.zig",
-            "features/compression.zig",
-            "features/streaming.zig",
-            "features/health.zig",
-            "http2/connection.zig",
-            "http2/frame.zig",
-            "http2/hpack.zig",
-            "http2/stream.zig",
-        };
-        for (upstream_files) |sub| {
-            _ = wf.addCopyFile(grpc_src_root.path(b, sub), sub);
-        }
-        // `transport.zig` is sourced from a local patched copy because
-        // upstream's `ioWrite` calls `netWrite(..., data, &.{}, 0)`,
-        // which underflows in `netWritePosix` (the stdlib API requires
-        // at least one element in the iovec slice for the splat-pattern
-        // computation). The patched copy passes the payload as a
-        // single-element iovec with an empty header, matching the
-        // stdlib contract. Drop this entry once upstream lands a fix.
-        _ = wf.addCopyFile(b.path("third_party/grpc_zig/transport.zig"), "transport.zig");
+        // Keep the complete pinned source tree, including transport and new
+        // transitive imports, so the adapter inherits upstream repairs.
+        _ = wf.addCopyDirectory(grpc_src_root, ".", .{ .include_extensions = &.{".zig"} });
 
         const grpc_all = b.createModule(.{
             .root_source_file = umbrella_path,
@@ -158,6 +135,10 @@ pub fn build(b: *std.Build) void {
         // `module.linkLibrary`; we bind through `grpc-server`'s linkage
         // declaration.
         const upstream_server = grpc_dep.module("grpc-server");
+        var imports = upstream_server.import_table.iterator();
+        while (imports.next()) |entry| {
+            grpc_all.addImport(entry.key_ptr.*, entry.value_ptr.*);
+        }
         for (upstream_server.link_objects.items) |lo| {
             grpc_all.link_objects.append(b.allocator, lo) catch @panic("OOM");
         }

@@ -78,3 +78,6 @@ docs/audit/SECURITY_REVIEW.md
 docs/audit/SECURITY_CLOSE_PLAN.md
 docs/audit/SECURITY_VERIFY.md
 docs/audit/SECURITY_CLOSE_COMPLETE.md
+
+# Hook regression is source, not a generated test artifact.
+!/scripts/test_hook_env.py

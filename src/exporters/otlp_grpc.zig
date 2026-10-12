@@ -367,16 +367,12 @@ fn unaryExport(
     // Only `.gzip` and `.none` are exposed at the OtlpConfig surface;
     // `.deflate` is intentionally omitted (no spec mandate, and the
     // OTel docs only list `gzip`).
-    const alg: grpc_zig.client.compression.Compression.Algorithm = switch (compression) {
+    const alg: grpc_zig.Compression.Algorithm = switch (compression) {
         .none => .none,
         .gzip => .gzip,
     };
 
-    // The method path is informational from grpc-zig's perspective — the
-    // server routes to `handlers.items[0]` regardless (upstream
-    // `server.zig:122-128`). Real collectors route by path, so the
-    // caller is responsible for passing the right service method
-    // (`TraceService/Export` vs `MetricsService/Export`).
+    // The current upstream transport forwards the service method path.
     const reply = client.call(method, body, alg) catch |err| return err;
     defer allocator.free(reply);
 

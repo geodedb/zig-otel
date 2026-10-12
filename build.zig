@@ -140,7 +140,13 @@ pub fn build(b: *std.Build) void {
             grpc_all.addImport(entry.key_ptr.*, entry.value_ptr.*);
         }
         for (upstream_server.link_objects.items) |lo| {
-            grpc_all.link_objects.append(b.allocator, lo) catch @panic("OOM");
+            switch (lo) {
+                // linkLibrary also propagates the library's generated headers.
+                // Copying only link_objects drops zlib.h from this adapter's
+                // include graph and accidentally relies on host headers.
+                .other_step => |library| grpc_all.linkLibrary(library),
+                else => grpc_all.link_objects.append(b.allocator, lo) catch @panic("OOM"),
+            }
         }
         otel_module.addImport("grpc_zig", grpc_all);
     }

@@ -392,6 +392,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scope. OTLP wire output groups spans correctly under their
   originating `ScopeSpans`. (GAP #1, #3)
 
+## [0.1.25] - 2026-10-11
+
+### Changed
+
+- Dependencies converge on one version per package: fips v0.1.3 (through
+  tls v0.1.22 and grpc-zig v0.1.14), thread-pool v0.2.8, slog v0.1.14,
+  json v0.1.19, yaml v0.1.9, config v0.1.17 and metrics v0.1.8.
+- CI: create GitLab Releases with the job token.
+
 ## [0.1.19] - 2026-09-12
 
 ### Changed

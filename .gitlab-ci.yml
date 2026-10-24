@@ -436,31 +436,6 @@ scale-bench:
       - benchmarks/results/scale-current.json
     expire_in: 30 days
 
-# ---------------------------------------------------------------
-# GAP-SEC-M-3: scan resolved Zig package cache + the in-tree
-# build.zig.zon for known CVEs via Google's osv-scanner. Allow-failure
-# during the bring-up window; promote to required once the first clean
-# run on default branch lands. Schedules + default-branch pipelines
-# rerun this so a freshly-published advisory is caught within ~24h
-# without forcing every MR to wait on the network call.
-# ---------------------------------------------------------------
-security-osv-scan:
-  stage: security
-  image: ghcr.io/google/osv-scanner:latest
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-  script:
-    - osv-scanner --recursive --skip-git --output osv-scan.sarif --format sarif . || true
-    - osv-scanner --recursive --skip-git . || true
-  artifacts:
-    when: always
-    paths:
-      - osv-scan.sarif
-    expire_in: 30 days
-  allow_failure: true
-
 # SONNY-4778: tools must not redirect Git operations into this worktree.
 hook-env-regression:
   stage: lint

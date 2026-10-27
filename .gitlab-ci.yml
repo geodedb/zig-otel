@@ -20,6 +20,7 @@
 # the auto-cancel actually kicks in; opt out per-job when needed.
 workflow:
   auto_cancel:
+    on_job_failure: all
     on_new_commit: interruptible
   rules:
     - if: '$CI_COMMIT_TAG'
@@ -330,20 +331,24 @@ otlp-integration-live:
 # kill an otherwise-healthy run. The actual zig build + test phase
 # completes in well under 5 minutes once the VM is up.
 zig-build-macos-0.16.0:
+  tags: [dedicated, macos, arm]
   rules: *cross-os-rules
   timeout: 2h
 
 zig-test-macos-unit-0.16.0:
+  tags: [dedicated, macos, arm]
   rules: *cross-os-rules
   needs: ["zig-build-macos-0.16.0"]
   timeout: 2h
 
 zig-test-macos-integration-0.16.0:
+  tags: [dedicated, macos, arm]
   rules: *cross-os-rules
   needs: ["zig-build-macos-0.16.0"]
   timeout: 2h
 
 zig-test-macos-stress-0.16.0:
+  tags: [dedicated, macos, arm]
   rules: *cross-os-rules
   needs: ["zig-build-macos-0.16.0"]
   timeout: 2h

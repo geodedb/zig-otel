@@ -1,6 +1,6 @@
 .{
     .name = .otel,
-    .version = "0.1.28",
+    .version = "0.1.29",
     .fingerprint = 0x4d774a5496f74b07,
     .minimum_zig_version = "0.16.0",
     // Initial delivery is hermetic: stdlib + in-repo implementations only.
@@ -10,40 +10,40 @@
     // build option (e.g. -Dotel_use_devnw_slog=true) in build.zig.
     .dependencies = .{
         .slog = .{
-            .url = "git+https://gitlab.com/devnw/zig/slog.git?ref=v0.1.15#6a5015cfc39e2d6e886983f88bada18dc98b8d59",
-            .hash = "slog-0.1.15-SamEDyr7BwAE8WaNO8joc2QI1aqoX38PVFMAR7_KZuRS",
+            .url = "git+https://gitlab.com/devnw/zig/slog.git?ref=v0.1.16#b525a9e1784be2bc9d1c61da724deae84b514310",
+            .hash = "slog-0.1.16-SamED1H5BwCeK8xauLkBgS6gCBEgN6wWnhSLWW2tbPZy",
         },
         .json = .{
-            .url = "git+https://gitlab.com/devnw/zig/json.git?ref=v0.1.20#22154db734abf5264a716086fc0669eb9d6c082a",
-            .hash = "json-0.1.20-tOue4YSW6ACsmrKTooK2625fgWaZHPTZbu2R_EWVY4aU",
+            .url = "git+https://gitlab.com/devnw/zig/json.git?ref=v0.1.21#a73791a1fe2365949db02ba7eb5a4fb91fdd7f69",
+            .hash = "json-0.1.21-tOue4YaW6ACrNXeY2rLSDiON1ZH5jRpB_riq5dqzbKyP",
         },
         .yaml = .{
-            .url = "git+https://gitlab.com/devnw/zig/yaml.git?ref=v0.1.10#d2455fdbc2676858988c94b4116ff11df65565a4",
-            .hash = "yaml-0.1.10-lcW-hJ0sCAC3Ic7RLgYMLTI5r3HDCUT48ThG46wKCbGN",
+            .url = "git+https://gitlab.com/devnw/zig/yaml.git?ref=v0.1.11#080ce41549f85714e50c297676dcd5bdb276c188",
+            .hash = "yaml-0.1.11-lcW-hJ8sCABoerFNWFrCnSXOfs4QuKgOmp064Qu7yfsv",
         },
         .config = .{
-            .url = "git+https://gitlab.com/devnw/zig/config.git?ref=v0.1.18#cf328f6f9c9d115fcafb573d2fec82f0c51fc0e8",
-            .hash = "config-0.1.18-TiLumviyDABHAt1Am31WtoSYVORg1fPL0XagLW_YeNjK",
+            .url = "git+https://gitlab.com/devnw/zig/config.git?ref=v0.1.19#25a1eba6d04340ec2b9a6f8efd22bec9d488c6ef",
+            .hash = "config-0.1.19-TiLumvqyDABNujdbGvFqsIj3aAt7LdDphgGhqdU31Y3q",
         },
         .protobuf = .{
             .url = "git+https://gitlab.com/devnw/zig/protobuf.git?ref=v0.1.6#8d8dbd814c7f66862c91fbb9f362ffbc234042cd",
             .hash = "protobuf-0.1.6-0e82auWaKgDC4D1fIyd0DolpnGr0CF8oJZ6xwTSBuJFh",
         },
         .metrics = .{
-            .url = "git+https://gitlab.com/devnw/zig/metrics.git?ref=v0.1.9#3e14be9d12cf2674876923cba394593246b32d08",
-            .hash = "metrics-0.1.9-uPGXFvchAwAj3XxI3K2a4-l2RAurcqTMt6hujFpbHxJI",
+            .url = "git+https://gitlab.com/devnw/zig/metrics.git?ref=v0.1.10#bac700e8655c01891a0c23801f86a0a0adf484a8",
+            .hash = "metrics-0.1.10-uPGXFvohAwDdPQYEp_QXrbFU69uLrYNiBCeN1jzdqj8p",
         },
         .tls = .{
-            .url = "git+https://gitlab.com/devnw/zig/tls.git?ref=v0.1.24#9518ef9fa5f2718c523ddccc04d4b68ff8bcb620",
-            .hash = "tls-0.1.24-mtEaLGHFKgC0dE9AXYJJTmRdEwJbG2kcznZmGQbPyrut",
+            .url = "git+https://gitlab.com/devnw/zig/tls.git?ref=v0.1.28#7c47cf94b2e505110027bd7d0ac4fbe6b1e5aa35",
+            .hash = "tls-0.1.28-mtEaLO8yKwAxN3fveAslKwXiuuErF7Eg17tQCezqoNSN",
         },
         .grpc_zig = .{
             .url = "git+https://gitlab.com/devnw/zig/grpc-zig.git?ref=v0.1.15#b8fdb24d8f7e376a88adb21f238875498faddbb6",
             .hash = "grpc_zig-0.1.15-7FnvpCMYCQAfwbZqWBZvrGeoz3SF1d9Vc2GlS-FYPlAh",
         },
         .thread_pool = .{
-            .url = "git+https://gitlab.com/devnw/zig/thread-pool.git?ref=v0.2.10#698805259aa15131b14cac6798a9e95c64861797",
-            .hash = "thread_pool-0.2.10-11B1BgIlegC4g-vLCPiNdFo1QpYxROwDPX1U5erWrVTB",
+            .url = "git+https://gitlab.com/devnw/zig/thread-pool.git?ref=v0.2.11#666b7ac0cc8b92d5773df5e79ea4fd421bd77e99",
+            .hash = "thread_pool-0.2.11-11B1Bk2GegC5mn18xNrkmF0lMrgrWqijO7PXmftrkuSe",
         },
     },
     .paths = .{

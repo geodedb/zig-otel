@@ -392,6 +392,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scope. OTLP wire output groups spans correctly under their
   originating `ScopeSpans`. (GAP #1, #3)
 
+## [0.1.29] - 2026-11-16
+
+### Changed
+
+- slog v0.1.16, json v0.1.21, yaml v0.1.11, config v0.1.19, metrics v0.1.10,
+  tls v0.1.28 and thread-pool v0.2.11, so otel and its consumers resolve a
+  single thread-pool instead of v0.2.9, v0.2.10 and v0.2.11 side by side
+  (SONNY-6630).
+
 ## [0.1.25] - 2026-10-11
 
 ### Changed

@@ -392,6 +392,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scope. OTLP wire output groups spans correctly under their
   originating `ScopeSpans`. (GAP #1, #3)
 
+## [0.1.30] - 2026-11-17
+
+### Changed
+
+- grpc-zig v0.1.15 -> v0.1.16, the version geode pins: its std_shim takes
+  entropy from std.Io randomSecure (portable; an entropy failure is an
+  error) instead of looping on the raw Linux getrandom syscall, which spun
+  forever on a permanent error and trapped on macOS. otel's consumers then
+  resolve a single grpc-zig (SONNY-6630).
+
 ## [0.1.29] - 2026-11-16
 
 ### Changed
